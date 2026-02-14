@@ -2,8 +2,6 @@ package domain
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // CurrentState represents the global application state.

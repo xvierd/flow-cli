@@ -2,8 +2,6 @@ package domain
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // SessionType represents the type of work session.
