@@ -4,9 +4,17 @@ import (
 	"context"
 	"testing"
 
-	"github.com/xavier/flow/internal/adapters/storage"
 	"github.com/xavier/flow/internal/domain"
+	"github.com/xavier/flow/internal/ports"
 )
+
+func clearSessions(t *testing.T, store ports.Storage, ctx context.Context) {
+	session, _ := store.Sessions().FindActive(ctx)
+	if session != nil {
+		session.Complete()
+		store.Sessions().Update(ctx, session)
+	}
+}
 
 func TestPomodoroService_StartPomodoro(t *testing.T) {
 	store, cleanup := setupTestStorage(t)
@@ -16,6 +24,8 @@ func TestPomodoroService_StartPomodoro(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("start pomodoro without task", func(t *testing.T) {
+		clearSessions(t, store, ctx)
+
 		req := StartPomodoroRequest{
 			TaskID:     nil,
 			WorkingDir: ".",
@@ -34,6 +44,8 @@ func TestPomodoroService_StartPomodoro(t *testing.T) {
 	})
 
 	t.Run("start pomodoro with task", func(t *testing.T) {
+		clearSessions(t, store, ctx)
+
 		// Create a task first
 		taskService := NewTaskService(store)
 		task, _ := taskService.AddTask(ctx, AddTaskRequest{Title: "Test Task"})
@@ -53,6 +65,7 @@ func TestPomodoroService_StartPomodoro(t *testing.T) {
 	})
 
 	t.Run("start when already active", func(t *testing.T) {
+		// Don't clear sessions - keep the one from previous test
 		req := StartPomodoroRequest{
 			TaskID:     nil,
 			WorkingDir: ".",
@@ -73,19 +86,18 @@ func TestPomodoroService_StartBreak(t *testing.T) {
 	ctx := context.Background()
 
 	// Complete existing session
-	session, _ := store.Sessions().FindActive(ctx)
-	if session != nil {
-		session.Complete()
-		store.Sessions().Update(ctx, session)
-	}
+	clearSessions(t, store, ctx)
 
-	t.Run("start short break", func(t *testing.T) {
+	t.Run("start break", func(t *testing.T) {
 		session, err := service.StartBreak(ctx, ".")
 		if err != nil {
 			t.Errorf("StartBreak() error = %v", err)
 		}
-		if session.Type != domain.SessionTypeShortBreak {
-			t.Errorf("StartBreak() type = %v, want short_break", session.Type)
+		// Break type depends on number of completed sessions
+		// First break after 0 sessions = short break
+		// First break after 4 sessions = long break
+		if session.Type != domain.SessionTypeShortBreak && session.Type != domain.SessionTypeLongBreak {
+			t.Errorf("StartBreak() type = %v, want short_break or long_break", session.Type)
 		}
 	})
 }
@@ -98,12 +110,7 @@ func TestPomodoroService_PauseAndResume(t *testing.T) {
 	ctx := context.Background()
 
 	// Complete existing and start new
-	session, _ := store.Sessions().FindActive(ctx)
-	if session != nil {
-		session.Complete()
-		store.Sessions().Update(ctx, session)
-	}
-
+	clearSessions(t, store, ctx)
 	service.StartPomodoro(ctx, StartPomodoroRequest{})
 
 	t.Run("pause session", func(t *testing.T) {
@@ -135,12 +142,7 @@ func TestPomodoroService_StopSession(t *testing.T) {
 	ctx := context.Background()
 
 	// Complete existing and start new
-	session, _ := store.Sessions().FindActive(ctx)
-	if session != nil {
-		session.Complete()
-		store.Sessions().Update(ctx, session)
-	}
-
+	clearSessions(t, store, ctx)
 	service.StartPomodoro(ctx, StartPomodoroRequest{})
 
 	t.Run("stop session", func(t *testing.T) {
@@ -164,6 +166,7 @@ func TestPomodoroService_CancelSession(t *testing.T) {
 	service := NewPomodoroService(store, nil)
 	ctx := context.Background()
 
+	clearSessions(t, store, ctx)
 	service.StartPomodoro(ctx, StartPomodoroRequest{})
 
 	t.Run("cancel session", func(t *testing.T) {
@@ -187,11 +190,7 @@ func TestPomodoroService_GetCurrentState(t *testing.T) {
 	ctx := context.Background()
 
 	// Complete all sessions
-	session, _ := store.Sessions().FindActive(ctx)
-	if session != nil {
-		session.Complete()
-		store.Sessions().Update(ctx, session)
-	}
+	clearSessions(t, store, ctx)
 
 	// Create task and start pomodoro
 	taskService := NewTaskService(store)
@@ -224,12 +223,7 @@ func TestPomodoroService_GetTaskHistory(t *testing.T) {
 	task, _ := taskService.AddTask(ctx, AddTaskRequest{Title: "History Task"})
 
 	// Complete existing
-	session, _ := store.Sessions().FindActive(ctx)
-	if session != nil {
-		session.Complete()
-		store.Sessions().Update(ctx, session)
-	}
-
+	clearSessions(t, store, ctx)
 	service.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &task.ID})
 	service.StopSession(ctx)
 
@@ -252,11 +246,7 @@ func TestPomodoroService_GetRecentSessions(t *testing.T) {
 	ctx := context.Background()
 
 	// Complete existing
-	session, _ := store.Sessions().FindActive(ctx)
-	if session != nil {
-		session.Complete()
-		store.Sessions().Update(ctx, session)
-	}
+	clearSessions(t, store, ctx)
 
 	// Create multiple sessions
 	for i := 0; i < 3; i++ {

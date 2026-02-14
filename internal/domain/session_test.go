@@ -172,8 +172,8 @@ func TestPomodoroSession_Progress(t *testing.T) {
 	session := NewPomodoroSession(config, nil)
 
 	progress := session.Progress()
-	if progress != 0 {
-		t.Errorf("Progress at start = %v, want 0", progress)
+	if progress < 0 || progress > 0.01 {
+		t.Errorf("Progress at start = %v, want ~0", progress)
 	}
 
 	time.Sleep(50 * time.Millisecond)

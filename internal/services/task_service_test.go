@@ -6,9 +6,10 @@ import (
 
 	"github.com/xavier/flow/internal/adapters/storage"
 	"github.com/xavier/flow/internal/domain"
+	"github.com/xavier/flow/internal/ports"
 )
 
-func setupTestStorage(t *testing.T) (*storage.Storage, func()) {
+func setupTestStorage(t *testing.T) (ports.Storage, func()) {
 	store, err := storage.NewMemory()
 	if err != nil {
 		t.Fatalf("Failed to create test storage: %v", err)
