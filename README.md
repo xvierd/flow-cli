@@ -190,6 +190,7 @@ To use Flow with AI assistants, add the MCP server to your configuration:
 
 Add to your Claude Code configuration (`~/.claude/config.json`):
 
+**If installed from source:**
 ```json
 {
   "mcpServers": {
@@ -201,15 +202,52 @@ Add to your Claude Code configuration (`~/.claude/config.json`):
 }
 ```
 
+**If installed via `go install`:**
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "flow",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Or with full path:
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "~/go/bin/flow",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
 #### Cursor
 
 Add to your Cursor settings (Settings → MCP):
 
+**If installed from source:**
 ```json
 {
   "mcpServers": {
     "flow": {
       "command": "/path/to/flow",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**If installed via `go install`:**
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "flow",
       "args": ["mcp"]
     }
   }
