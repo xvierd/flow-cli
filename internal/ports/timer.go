@@ -70,4 +70,7 @@ type Timer interface {
 
 	// SetCommandCallback sets a function to call when commands are received.
 	SetCommandCallback(callback func(cmd TimerCommand))
+
+	// UpdateState updates the displayed state.
+	UpdateState(state *domain.CurrentState)
 }

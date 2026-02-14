@@ -103,7 +103,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	m.progress, cmd = m.progress.Update(msg)
+	newProgress, cmd := m.progress.Update(msg)
+	if p, ok := newProgress.(progress.Model); ok {
+		m.progress = p
+	}
 	return m, cmd
 }
 
