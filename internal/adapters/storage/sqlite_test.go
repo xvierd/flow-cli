@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xavier/flow/internal/domain"
+	"github.com/dvidx/flow-cli/internal/domain"
 )
 
 func TestNewMemory(t *testing.T) {

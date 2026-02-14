@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/xavier/flow/internal/domain"
-	"github.com/xavier/flow/internal/ports"
+	"github.com/dvidx/flow-cli/internal/domain"
+	"github.com/dvidx/flow-cli/internal/ports"
 )
 
 // TaskService handles task-related use cases.

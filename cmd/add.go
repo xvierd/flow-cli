@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/xavier/flow/internal/services"
+	"github.com/dvidx/flow-cli/internal/services"
 )
 
 // addCmd represents the add command

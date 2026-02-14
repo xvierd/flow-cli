@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/xavier/flow/internal/ports"
+	"github.com/dvidx/flow-cli/internal/ports"
 	"modernc.org/sqlite"
 )
 

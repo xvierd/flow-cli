@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/xavier/flow/internal/domain"
+	"github.com/dvidx/flow-cli/internal/domain"
 )
 
 // MCPHandler defines the interface for MCP server operations.

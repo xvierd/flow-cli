@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/xavier/flow/internal/adapters/storage"
-	"github.com/xavier/flow/internal/domain"
-	"github.com/xavier/flow/internal/ports"
+	"github.com/dvidx/flow-cli/internal/adapters/storage"
+	"github.com/dvidx/flow-cli/internal/domain"
+	"github.com/dvidx/flow-cli/internal/ports"
 )
 
 func setupTestStorage(t *testing.T) (ports.Storage, func()) {

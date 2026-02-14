@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/xavier/flow/internal/domain"
-	"github.com/xavier/flow/internal/ports"
+	"github.com/dvidx/flow-cli/internal/domain"
+	"github.com/dvidx/flow-cli/internal/ports"
 )
 
 func clearSessions(t *testing.T, store ports.Storage, ctx context.Context) {

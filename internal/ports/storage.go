@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/xavier/flow/internal/domain"
+	"github.com/dvidx/flow-cli/internal/domain"
 )
 
 // TaskRepository defines the interface for task persistence.

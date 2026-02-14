@@ -6,8 +6,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/xavier/flow/internal/domain"
-	"github.com/xavier/flow/internal/ports"
+	"github.com/dvidx/flow-cli/internal/domain"
+	"github.com/dvidx/flow-cli/internal/ports"
 )
 
 // Timer implements the ports.Timer interface using Bubbletea.

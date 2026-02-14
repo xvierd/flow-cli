@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/xavier/flow/internal/domain"
+	"github.com/dvidx/flow-cli/internal/domain"
 )
 
 // Mock implementations for testing interfaces.

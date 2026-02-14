@@ -9,10 +9,10 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
-	"github.com/xavier/flow/internal/adapters/git"
-	"github.com/xavier/flow/internal/adapters/storage"
-	"github.com/xavier/flow/internal/ports"
-	"github.com/xavier/flow/internal/services"
+	"github.com/dvidx/flow-cli/internal/adapters/git"
+	"github.com/dvidx/flow-cli/internal/adapters/storage"
+	"github.com/dvidx/flow-cli/internal/ports"
+	"github.com/dvidx/flow-cli/internal/services"
 )
 
 var (

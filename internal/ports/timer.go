@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/xavier/flow/internal/domain"
+	"github.com/dvidx/flow-cli/internal/domain"
 )
 
 // TimerView defines the interface for timer display updates.

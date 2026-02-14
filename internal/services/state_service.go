@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/xavier/flow/internal/domain"
-	"github.com/xavier/flow/internal/ports"
+	"github.com/dvidx/flow-cli/internal/domain"
+	"github.com/dvidx/flow-cli/internal/ports"
 )
 
 // StateService implements the MCPStateProvider interface.

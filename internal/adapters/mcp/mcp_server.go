@@ -8,7 +8,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/xavier/flow/internal/ports"
+	"github.com/dvidx/flow-cli/internal/ports"
 )
 
 // Server implements the MCP server using mark3labs/mcp-go.
