@@ -182,6 +182,45 @@ Returns pomodoro session history for a specific task.
 Parameters:
 - `task_id` (required): The ID of the task
 
+### MCP Configuration
+
+To use Flow with AI assistants, add the MCP server to your configuration:
+
+#### Claude Code
+
+Add to your Claude Code configuration (`~/.claude/config.json`):
+
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "/path/to/flow",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+#### Cursor
+
+Add to your Cursor settings (Settings → MCP):
+
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "/path/to/flow",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Once configured, you can ask:
+- "What task am I working on?"
+- "How many pomodoros have I completed today?"
+- "List my pending tasks"
+
 ## Configuration
 
 Flow stores its database in `~/.flow/flow.db` by default. You can specify a custom path:
