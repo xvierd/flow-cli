@@ -96,6 +96,7 @@ func (s *sqliteStorage) Migrate() error {
 		git_branch TEXT,
 		git_commit TEXT,
 		git_modified TEXT,
+		notes TEXT,
 		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
 	);
 

@@ -39,6 +39,39 @@ func (m *mockStateProvider) GetRecentSessions(ctx context.Context, limit int) ([
 	return m.recentSessions, nil
 }
 
+func (m *mockStateProvider) StartPomodoro(ctx context.Context, taskID *string, durationMinutes *int) (*domain.PomodoroSession, error) {
+	config := domain.DefaultPomodoroConfig()
+	if durationMinutes != nil {
+		config.WorkDuration = time.Duration(*durationMinutes) * time.Minute
+	}
+	session := domain.NewPomodoroSession(config, taskID)
+	return session, nil
+}
+
+func (m *mockStateProvider) StopPomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
+	return nil, nil
+}
+
+func (m *mockStateProvider) PausePomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
+	return nil, nil
+}
+
+func (m *mockStateProvider) ResumePomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
+	return nil, nil
+}
+
+func (m *mockStateProvider) CreateTask(ctx context.Context, title string, description *string, tags []string) (*domain.Task, error) {
+	return domain.NewTask(title)
+}
+
+func (m *mockStateProvider) CompleteTask(ctx context.Context, taskID string) (*domain.Task, error) {
+	return nil, nil
+}
+
+func (m *mockStateProvider) AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error) {
+	return nil, nil
+}
+
 func TestNewServer(t *testing.T) {
 	mock := &mockStateProvider{}
 	server := NewServer(mock)

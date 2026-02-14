@@ -32,8 +32,9 @@ func (s *PomodoroService) SetConfig(config domain.PomodoroConfig) {
 
 // StartPomodoroRequest contains data to start a work session.
 type StartPomodoroRequest struct {
-	TaskID    *string
+	TaskID     *string
 	WorkingDir string
+	Duration   time.Duration
 }
 
 // StartPomodoro begins a new pomodoro work session.
@@ -61,6 +62,11 @@ func (s *PomodoroService) StartPomodoro(ctx context.Context, req StartPomodoroRe
 
 	// Create and save the session
 	session := domain.NewPomodoroSession(s.config, req.TaskID)
+
+	// Apply custom duration if provided
+	if req.Duration > 0 {
+		session.Duration = req.Duration
+	}
 
 	// Detect git context if available
 	if s.gitDetector != nil && s.gitDetector.IsAvailable() {
@@ -169,6 +175,24 @@ func (s *PomodoroService) CancelSession(ctx context.Context) error {
 
 	session.Cancel()
 	return s.storage.Sessions().Update(ctx, session)
+}
+
+// AddSessionNotes adds notes to a pomodoro session.
+func (s *PomodoroService) AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error) {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return nil, domain.ErrNoActiveSession
+	}
+
+	session.AddNotes(notes)
+	if err := s.storage.Sessions().Update(ctx, session); err != nil {
+		return nil, fmt.Errorf("failed to update session: %w", err)
+	}
+
+	return session, nil
 }
 
 // GetCurrentState retrieves the complete current application state.

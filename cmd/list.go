@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -34,6 +35,30 @@ var listCmd = &cobra.Command{
 		tasks, err := taskService.ListTasks(ctx, req)
 		if err != nil {
 			return fmt.Errorf("failed to list tasks: %w", err)
+		}
+
+		if jsonOutput {
+			var taskList []map[string]interface{}
+			for _, task := range tasks {
+				taskList = append(taskList, map[string]interface{}{
+					"id":          task.ID,
+					"title":       task.Title,
+					"description": task.Description,
+					"status":      string(task.Status),
+					"tags":        task.Tags,
+					"created_at":  task.CreatedAt.Format("2006-01-02T15:04:05"),
+				})
+			}
+			data := map[string]interface{}{
+				"tasks": taskList,
+				"count": len(taskList),
+			}
+			jsonData, err := json.MarshalIndent(data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal tasks: %w", err)
+			}
+			fmt.Println(string(jsonData))
+			return nil
 		}
 
 		if len(tasks) == 0 {

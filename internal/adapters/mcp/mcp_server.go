@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -72,12 +74,103 @@ func (s *Server) registerTools() {
 		),
 	)
 	s.server.AddTool(taskHistoryTool, s.handleGetTaskHistory)
+
+	// Tool: start_pomodoro
+	startPomodoroTool := mcp.NewTool(
+		"start_pomodoro",
+		mcp.WithDescription("Start a new pomodoro work session"),
+		mcp.WithString(
+			"task_id",
+			mcp.Description("Optional task ID to associate with the session"),
+		),
+		mcp.WithNumber(
+			"duration_minutes",
+			mcp.Description("Optional custom duration in minutes (default: 25)"),
+		),
+	)
+	s.server.AddTool(startPomodoroTool, s.handleStartPomodoro)
+
+	// Tool: stop_pomodoro
+	s.server.AddTool(
+		mcp.NewTool(
+			"stop_pomodoro",
+			mcp.WithDescription("Complete the current pomodoro session"),
+		),
+		s.handleStopPomodoro,
+	)
+
+	// Tool: pause_pomodoro
+	s.server.AddTool(
+		mcp.NewTool(
+			"pause_pomodoro",
+			mcp.WithDescription("Pause the current pomodoro session"),
+		),
+		s.handlePausePomodoro,
+	)
+
+	// Tool: resume_pomodoro
+	s.server.AddTool(
+		mcp.NewTool(
+			"resume_pomodoro",
+			mcp.WithDescription("Resume a paused pomodoro session"),
+		),
+		s.handleResumePomodoro,
+	)
+
+	// Tool: create_task
+	createTaskTool := mcp.NewTool(
+		"create_task",
+		mcp.WithDescription("Create a new task"),
+		mcp.WithString(
+			"title",
+			mcp.Required(),
+			mcp.Description("The title of the task"),
+		),
+		mcp.WithString(
+			"description",
+			mcp.Description("Optional description of the task"),
+		),
+		mcp.WithArray(
+			"tags",
+			mcp.Description("Optional array of tags"),
+		),
+	)
+	s.server.AddTool(createTaskTool, s.handleCreateTask)
+
+	// Tool: complete_task
+	completeTaskTool := mcp.NewTool(
+		"complete_task",
+		mcp.WithDescription("Mark a task as completed"),
+		mcp.WithString(
+			"task_id",
+			mcp.Required(),
+			mcp.Description("The ID of the task to complete"),
+		),
+	)
+	s.server.AddTool(completeTaskTool, s.handleCompleteTask)
+
+	// Tool: add_session_notes
+	addNotesTool := mcp.NewTool(
+		"add_session_notes",
+		mcp.WithDescription("Add notes to a pomodoro session"),
+		mcp.WithString(
+			"session_id",
+			mcp.Required(),
+			mcp.Description("The ID of the session to add notes to"),
+		),
+		mcp.WithString(
+			"notes",
+			mcp.Required(),
+			mcp.Description("The notes to add"),
+		),
+	)
+	s.server.AddTool(addNotesTool, s.handleAddSessionNotes)
 }
 
 // Start begins serving MCP requests via stdio.
 func (s *Server) Start(ctx context.Context) error {
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	
+
 	// Start the stdio server
 	return server.ServeStdio(s.server)
 }
@@ -140,6 +233,7 @@ func (s *Server) handleGetCurrentState(ctx context.Context, request mcp.CallTool
 			"started_at":     session.StartedAt.Format("2006-01-02T15:04:05"),
 			"git_branch":     session.GitBranch,
 			"git_commit":     session.GitCommit,
+			"notes":          session.Notes,
 		}
 		if session.TaskID != nil {
 			sessionData["task_id"] = *session.TaskID
@@ -219,6 +313,7 @@ func (s *Server) handleGetTaskHistory(ctx context.Context, request mcp.CallToolR
 			"status":     string(session.Status),
 			"duration":   session.Duration.String(),
 			"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+			"notes":      session.Notes,
 		}
 
 		if session.CompletedAt != nil {
@@ -248,6 +343,233 @@ func (s *Server) handleGetTaskHistory(ctx context.Context, request mcp.CallToolR
 	jsonData, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal task history: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleStartPomodoro handles the start_pomodoro tool.
+func (s *Server) handleStartPomodoro(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	var taskID *string
+	if t := request.GetString("task_id", ""); t != "" {
+		taskID = &t
+	}
+
+	var durationMinutes *int
+	// Try to get duration from arguments using GetFloat first (JSON numbers are float64)
+	if d := request.GetFloat("duration_minutes", 0); d > 0 {
+		m := int(d)
+		durationMinutes = &m
+	} else if rawDuration := request.GetString("duration_minutes", ""); rawDuration != "" {
+		if m, err := strconv.Atoi(rawDuration); err == nil {
+			durationMinutes = &m
+		}
+	}
+
+	session, err := s.stateProvider.StartPomodoro(ctx, taskID, durationMinutes)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to start pomodoro: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"id":         session.ID,
+		"type":       string(session.Type),
+		"status":     string(session.Status),
+		"duration":   session.Duration.String(),
+		"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+	}
+
+	if session.TaskID != nil {
+		result["task_id"] = *session.TaskID
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal session: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleStopPomodoro handles the stop_pomodoro tool.
+func (s *Server) handleStopPomodoro(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	session, err := s.stateProvider.StopPomodoro(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to stop pomodoro: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"id":         session.ID,
+		"type":       string(session.Type),
+		"status":     string(session.Status),
+		"duration":   session.Duration.String(),
+		"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+	}
+
+	if session.TaskID != nil {
+		result["task_id"] = *session.TaskID
+	}
+	if session.CompletedAt != nil {
+		result["completed_at"] = session.CompletedAt.Format("2006-01-02T15:04:05")
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal session: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handlePausePomodoro handles the pause_pomodoro tool.
+func (s *Server) handlePausePomodoro(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	session, err := s.stateProvider.PausePomodoro(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to pause pomodoro: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"id":             session.ID,
+		"type":           string(session.Type),
+		"status":         string(session.Status),
+		"duration":       session.Duration.String(),
+		"remaining_time": session.RemainingTime().String(),
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal session: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleResumePomodoro handles the resume_pomodoro tool.
+func (s *Server) handleResumePomodoro(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	session, err := s.stateProvider.ResumePomodoro(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to resume pomodoro: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"id":             session.ID,
+		"type":           string(session.Type),
+		"status":         string(session.Status),
+		"duration":       session.Duration.String(),
+		"remaining_time": session.RemainingTime().String(),
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal session: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleCreateTask handles the create_task tool.
+func (s *Server) handleCreateTask(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	title, err := request.RequireString("title")
+	if err != nil {
+		return mcp.NewToolResultError("title is required: " + err.Error()), nil
+	}
+
+	var description *string
+	if d := request.GetString("description", ""); d != "" {
+		description = &d
+	}
+
+	var tags []string
+	if rawTags := request.GetString("tags", ""); rawTags != "" {
+		// Parse comma-separated tags
+		for _, tag := range strings.Split(rawTags, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	task, err := s.stateProvider.CreateTask(ctx, title, description, tags)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to create task: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"id":          task.ID,
+		"title":       task.Title,
+		"description": task.Description,
+		"status":      string(task.Status),
+		"tags":        task.Tags,
+		"created_at":  task.CreatedAt.Format("2006-01-02T15:04:05"),
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal task: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleCompleteTask handles the complete_task tool.
+func (s *Server) handleCompleteTask(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	taskID, err := request.RequireString("task_id")
+	if err != nil {
+		return mcp.NewToolResultError("task_id is required: " + err.Error()), nil
+	}
+
+	task, err := s.stateProvider.CompleteTask(ctx, taskID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to complete task: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"id":          task.ID,
+		"title":       task.Title,
+		"description": task.Description,
+		"status":      string(task.Status),
+		"tags":        task.Tags,
+		"completed_at": task.CompletedAt.Format("2006-01-02T15:04:05"),
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal task: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleAddSessionNotes handles the add_session_notes tool.
+func (s *Server) handleAddSessionNotes(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("session_id is required: " + err.Error()), nil
+	}
+
+	notes, err := request.RequireString("notes")
+	if err != nil {
+		return mcp.NewToolResultError("notes is required: " + err.Error()), nil
+	}
+
+	session, err := s.stateProvider.AddSessionNotes(ctx, sessionID, notes)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to add notes: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"id":         session.ID,
+		"type":       string(session.Type),
+		"status":     string(session.Status),
+		"duration":   session.Duration.String(),
+		"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+		"notes":      session.Notes,
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal session: %w", err)
 	}
 
 	return mcp.NewToolResultText(string(jsonData)), nil

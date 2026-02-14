@@ -33,4 +33,25 @@ type MCPStateProvider interface {
 
 	// GetRecentSessions returns recent pomodoro sessions.
 	GetRecentSessions(ctx context.Context, limit int) ([]*domain.PomodoroSession, error)
+
+	// StartPomodoro starts a new pomodoro session.
+	StartPomodoro(ctx context.Context, taskID *string, durationMinutes *int) (*domain.PomodoroSession, error)
+
+	// StopPomodoro completes the current pomodoro session.
+	StopPomodoro(ctx context.Context) (*domain.PomodoroSession, error)
+
+	// PausePomodoro pauses the current pomodoro session.
+	PausePomodoro(ctx context.Context) (*domain.PomodoroSession, error)
+
+	// ResumePomodoro resumes a paused pomodoro session.
+	ResumePomodoro(ctx context.Context) (*domain.PomodoroSession, error)
+
+	// CreateTask creates a new task.
+	CreateTask(ctx context.Context, title string, description *string, tags []string) (*domain.Task, error)
+
+	// CompleteTask marks a task as completed.
+	CompleteTask(ctx context.Context, taskID string) (*domain.Task, error)
+
+	// AddSessionNotes adds notes to a pomodoro session.
+	AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error)
 }
