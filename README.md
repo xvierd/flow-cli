@@ -46,7 +46,7 @@ flow/
 ### From Source
 
 ```bash
-git clone https://github.com/xavier/flow.git
+git clone https://github.com/dvidx/flow.git
 cd flow
 go build -o flow .
 ./flow --help
@@ -55,7 +55,7 @@ go build -o flow .
 ### Using go install
 
 ```bash
-go install github.com/xavier/flow@latest
+go install github.com/dvidx/flow@latest
 ```
 
 ## Usage
