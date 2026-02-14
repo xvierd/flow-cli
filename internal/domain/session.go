@@ -36,6 +36,7 @@ type PomodoroSession struct {
 	GitBranch    string
 	GitCommit    string
 	GitModified  []string
+	Notes        string
 }
 
 // PomodoroConfig holds configuration for pomodoro sessions.
@@ -184,4 +185,9 @@ func (s *PomodoroSession) SetGitContext(branch, commit string, modified []string
 	s.GitBranch = branch
 	s.GitCommit = commit
 	s.GitModified = modified
+}
+
+// AddNotes adds notes to the session.
+func (s *PomodoroSession) AddNotes(notes string) {
+	s.Notes = notes
 }

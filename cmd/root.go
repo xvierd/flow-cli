@@ -10,14 +10,18 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/dvidx/flow-cli/internal/adapters/git"
+	"github.com/dvidx/flow-cli/internal/adapters/notification"
 	"github.com/dvidx/flow-cli/internal/adapters/storage"
+	"github.com/dvidx/flow-cli/internal/config"
+	"github.com/dvidx/flow-cli/internal/domain"
 	"github.com/dvidx/flow-cli/internal/ports"
 	"github.com/dvidx/flow-cli/internal/services"
 )
 
 var (
 	// Global flags
-	dbPath string
+	dbPath     string
+	jsonOutput bool
 
 	// Global dependencies
 	storageAdapter ports.Storage
@@ -25,6 +29,8 @@ var (
 	pomodoroSvc    *services.PomodoroService
 	stateService   *services.StateService
 	gitDetector    ports.GitDetector
+	notifier       *notification.Notifier
+	appConfig      *config.Config
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -52,6 +58,7 @@ func Execute() {
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to the database file (default: ~/.flow/flow.db)")
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
 
 	// Add subcommands
 	rootCmd.AddCommand(addCmd)
@@ -68,21 +75,29 @@ func init() {
 
 // initializeServices sets up all the required services and adapters.
 func initializeServices() error {
+	// Load configuration
+	var err error
+	appConfig, err = config.Load()
+	if err != nil {
+		// If config loading fails, use defaults
+		appConfig = config.DefaultConfig()
+	}
+
+	// Initialize notifier
+	notifier = notification.New(&appConfig.Notifications)
+
 	// Determine database path
 	if dbPath == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
-		flowDir := fmt.Sprintf("%s/.flow", homeDir)
-		if err := os.MkdirAll(flowDir, 0755); err != nil {
-			return fmt.Errorf("failed to create flow directory: %w", err)
-		}
-		dbPath = fmt.Sprintf("%s/flow.db", flowDir)
+		dbPath = config.GetDBPath(appConfig)
+	}
+
+	// Ensure directory exists
+	dbDir := getDir(dbPath)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		return fmt.Errorf("failed to create database directory: %w", err)
 	}
 
 	// Initialize storage
-	var err error
 	storageAdapter, err = storage.New(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize storage: %w", err)
@@ -95,6 +110,19 @@ func initializeServices() error {
 	taskService = services.NewTaskService(storageAdapter)
 	pomodoroSvc = services.NewPomodoroService(storageAdapter, gitDetector)
 	stateService = services.NewStateService(storageAdapter)
+
+	// Configure pomodoro service from config
+	workDur, shortBreakDur, longBreakDur, sessionsBeforeLong := appConfig.ToPomodoroDomainConfig()
+	pomodoroSvc.SetConfig(domain.PomodoroConfig{
+		WorkDuration:       workDur,
+		ShortBreakDuration: shortBreakDur,
+		LongBreakDuration:  longBreakDur,
+		SessionsBeforeLong: sessionsBeforeLong,
+	})
+
+	// Wire up services for state service
+	stateService.SetTaskService(taskService)
+	stateService.SetPomodoroService(pomodoroSvc)
 
 	return nil
 }
@@ -120,4 +148,19 @@ func setupSignalHandler() context.Context {
 	}()
 
 	return ctx
+}
+
+// getDir returns the directory of a file path.
+func getDir(path string) string {
+	lastSep := 0
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' || path[i] == '\\' {
+			lastSep = i
+			break
+		}
+	}
+	if lastSep == 0 {
+		return "."
+	}
+	return path[:lastSep]
 }

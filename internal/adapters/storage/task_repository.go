@@ -9,6 +9,7 @@ import (
 
 	"github.com/dvidx/flow-cli/internal/domain"
 	"github.com/dvidx/flow-cli/internal/ports"
+	"github.com/sahilm/fuzzy"
 )
 
 // taskRepository implements ports.TaskRepository using SQLite.
@@ -186,7 +187,33 @@ func (r *taskRepository) FindActive(ctx context.Context) (*domain.Task, error) {
 	return &task, nil
 }
 
-// Delete removes a task from storage.
+// FindByTitle does a fuzzy search for tasks by title.
+func (r *taskRepository) FindByTitle(ctx context.Context, query string) ([]*domain.Task, error) {
+	// First get all tasks
+	tasks, err := r.FindAll(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tasks for fuzzy search: %w", err)
+	}
+
+	// Prepare titles for fuzzy search
+	titles := make([]string, len(tasks))
+	for i, task := range tasks {
+		titles[i] = task.Title
+	}
+
+	// Perform fuzzy search
+	matches := fuzzy.Find(query, titles)
+
+	// Collect matching tasks
+	var result []*domain.Task
+	for _, match := range matches {
+		if match.Score > 0 {
+			result = append(result, tasks[match.Index])
+		}
+	}
+
+	return result, nil
+}
 func (r *taskRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM tasks WHERE id = ?`
 

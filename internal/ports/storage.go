@@ -29,6 +29,9 @@ type TaskRepository interface {
 	// FindActive returns the currently active task (in_progress).
 	FindActive(ctx context.Context) (*domain.Task, error)
 
+	// FindByTitle does a fuzzy search for tasks by title.
+	FindByTitle(ctx context.Context, query string) ([]*domain.Task, error)
+
 	// Delete removes a task from storage.
 	Delete(ctx context.Context, id string) error
 

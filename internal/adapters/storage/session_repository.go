@@ -26,9 +26,9 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 	query := `
 		INSERT INTO sessions (
 			id, task_id, type, status, duration_ms, started_at, paused_at, 
-			completed_at, git_branch, git_commit, git_modified
+			completed_at, git_branch, git_commit, git_modified, notes
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	modified := strings.Join(session.GitModified, ",")
@@ -45,6 +45,7 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 		session.GitBranch,
 		session.GitCommit,
 		modified,
+		session.Notes,
 	)
 
 	if err != nil {
@@ -57,9 +58,9 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 // FindByID retrieves a session by its unique identifier.
 func (r *sessionRepository) FindByID(ctx context.Context, id string) (*domain.PomodoroSession, error) {
 	query := `
-		SELECT 
+		SELECT
 			id, task_id, type, status, duration_ms, started_at, paused_at,
-			completed_at, git_branch, git_commit, git_modified
+			completed_at, git_branch, git_commit, git_modified, notes
 		FROM sessions
 		WHERE id = ?
 	`
@@ -70,26 +71,26 @@ func (r *sessionRepository) FindByID(ctx context.Context, id string) (*domain.Po
 // FindActive retrieves the currently running or paused session.
 func (r *sessionRepository) FindActive(ctx context.Context) (*domain.PomodoroSession, error) {
 	query := `
-		SELECT 
+		SELECT
 			id, task_id, type, status, duration_ms, started_at, paused_at,
-			completed_at, git_branch, git_commit, git_modified
+			completed_at, git_branch, git_commit, git_modified, notes
 		FROM sessions
 		WHERE status IN (?, ?)
 		ORDER BY started_at DESC
 		LIMIT 1
 	`
 
-	return r.scanSession(r.db.QueryRowContext(ctx, query, 
-		string(domain.SessionStatusRunning), 
+	return r.scanSession(r.db.QueryRowContext(ctx, query,
+		string(domain.SessionStatusRunning),
 		string(domain.SessionStatusPaused)))
 }
 
 // FindRecent retrieves sessions within a time range.
 func (r *sessionRepository) FindRecent(ctx context.Context, since time.Time) ([]*domain.PomodoroSession, error) {
 	query := `
-		SELECT 
+		SELECT
 			id, task_id, type, status, duration_ms, started_at, paused_at,
-			completed_at, git_branch, git_commit, git_modified
+			completed_at, git_branch, git_commit, git_modified, notes
 		FROM sessions
 		WHERE started_at >= ?
 		ORDER BY started_at DESC
@@ -107,9 +108,9 @@ func (r *sessionRepository) FindRecent(ctx context.Context, since time.Time) ([]
 // FindByTask retrieves all sessions associated with a task.
 func (r *sessionRepository) FindByTask(ctx context.Context, taskID string) ([]*domain.PomodoroSession, error) {
 	query := `
-		SELECT 
+		SELECT
 			id, task_id, type, status, duration_ms, started_at, paused_at,
-			completed_at, git_branch, git_commit, git_modified
+			completed_at, git_branch, git_commit, git_modified, notes
 		FROM sessions
 		WHERE task_id = ?
 		ORDER BY started_at DESC
@@ -129,7 +130,7 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 	query := `
 		UPDATE sessions
 		SET task_id = ?, type = ?, status = ?, duration_ms = ?, started_at = ?,
-		    paused_at = ?, completed_at = ?, git_branch = ?, git_commit = ?, git_modified = ?
+		    paused_at = ?, completed_at = ?, git_branch = ?, git_commit = ?, git_modified = ?, notes = ?
 		WHERE id = ?
 	`
 
@@ -146,6 +147,7 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 		session.GitBranch,
 		session.GitCommit,
 		modified,
+		session.Notes,
 		session.ID,
 	)
 
@@ -203,6 +205,7 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 	var completedAt sql.NullTime
 	var durationMs int64
 	var modifiedStr string
+	var notes sql.NullString
 
 	err := row.Scan(
 		&session.ID,
@@ -216,6 +219,7 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 		&session.GitBranch,
 		&session.GitCommit,
 		&modifiedStr,
+		&notes,
 	)
 
 	if err == sql.ErrNoRows {
@@ -239,6 +243,9 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 	if modifiedStr != "" {
 		session.GitModified = strings.Split(modifiedStr, ",")
 	}
+	if notes.Valid {
+		session.Notes = notes.String
+	}
 
 	return &session, nil
 }
@@ -254,6 +261,7 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 		var completedAt sql.NullTime
 		var durationMs int64
 		var modifiedStr string
+		var notes sql.NullString
 
 		err := rows.Scan(
 			&session.ID,
@@ -267,6 +275,7 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 			&session.GitBranch,
 			&session.GitCommit,
 			&modifiedStr,
+			&notes,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
@@ -285,6 +294,9 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 		}
 		if modifiedStr != "" {
 			session.GitModified = strings.Split(modifiedStr, ",")
+		}
+		if notes.Valid {
+			session.Notes = notes.String
 		}
 
 		sessions = append(sessions, &session)
