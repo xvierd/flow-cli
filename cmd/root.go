@@ -270,6 +270,10 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 
 	timer.SetCommandCallback(func(cmd ports.TimerCommand) {
 		switch cmd {
+		case ports.CmdStart:
+			_, _ = pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{
+				WorkingDir: workingDir,
+			})
 		case ports.CmdPause:
 			_, _ = pomodoroSvc.PauseSession(ctx)
 		case ports.CmdResume:
@@ -280,6 +284,41 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 			_ = pomodoroSvc.CancelSession(ctx)
 		case ports.CmdBreak:
 			_, _ = pomodoroSvc.StartBreak(ctx, workingDir)
+		}
+	})
+
+	// Compute break info from config
+	_, shortBreakDur, longBreakDur, sessionsBeforeLong := appConfig.ToPomodoroDomainConfig()
+	workSessions := state.TodayStats.WorkSessions + 1 // +1 for the session about to complete
+	nextSessionCount := workSessions
+	sessionsUntilLong := sessionsBeforeLong - (nextSessionCount % sessionsBeforeLong)
+	if sessionsUntilLong == sessionsBeforeLong {
+		sessionsUntilLong = 0
+	}
+
+	nextBreakType := domain.SessionTypeShortBreak
+	nextBreakDuration := shortBreakDur
+	if sessionsUntilLong == 0 {
+		nextBreakType = domain.SessionTypeLongBreak
+		nextBreakDuration = longBreakDur
+	}
+
+	timer.SetCompletionInfo(&domain.CompletionInfo{
+		NextBreakType:      nextBreakType,
+		NextBreakDuration:  nextBreakDuration,
+		SessionsUntilLong:  sessionsUntilLong,
+		SessionsBeforeLong: sessionsBeforeLong,
+	})
+
+	// Desktop notifications on session completion
+	timer.SetOnSessionComplete(func(sessionType domain.SessionType) {
+		switch sessionType {
+		case domain.SessionTypeWork:
+			_ = notifier.NotifyPomodoroComplete(formatMinutes(shortBreakDur))
+		case domain.SessionTypeShortBreak:
+			_ = notifier.NotifyBreakComplete("Short")
+		case domain.SessionTypeLongBreak:
+			_ = notifier.NotifyBreakComplete("Long")
 		}
 	})
 

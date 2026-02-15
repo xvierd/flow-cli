@@ -75,6 +75,12 @@ type Timer interface {
 	// SetCommandCallback sets a function to call when commands are received.
 	SetCommandCallback(callback func(cmd TimerCommand))
 
+	// SetOnSessionComplete sets a callback fired when a session naturally completes.
+	SetOnSessionComplete(callback func(domain.SessionType))
+
+	// SetCompletionInfo sets pre-computed break context for the completion screen.
+	SetCompletionInfo(info *domain.CompletionInfo)
+
 	// UpdateState updates the displayed state.
 	UpdateState(state *domain.CurrentState)
 }

@@ -44,20 +44,25 @@ type stateMsg struct {
 
 // Model represents the TUI state.
 type Model struct {
-	state           *domain.CurrentState
-	progress        progress.Model
-	width           int
-	height          int
-	completed       bool
-	fetchState      func() *domain.CurrentState
-	commandCallback func(ports.TimerCommand)
+	state                *domain.CurrentState
+	progress             progress.Model
+	width                int
+	height               int
+	completed            bool
+	completedSessionType domain.SessionType
+	notified             bool
+	fetchState           func() *domain.CurrentState
+	commandCallback      func(ports.TimerCommand)
+	onSessionComplete    func(domain.SessionType)
+	completionInfo       *domain.CompletionInfo
 }
 
 // NewModel creates a new TUI model.
-func NewModel(initialState *domain.CurrentState) Model {
+func NewModel(initialState *domain.CurrentState, info *domain.CompletionInfo) Model {
 	return Model{
-		state:    initialState,
-		progress: progress.New(progress.WithDefaultGradient()),
+		state:          initialState,
+		progress:       progress.New(progress.WithDefaultGradient()),
+		completionInfo: info,
 	}
 }
 
@@ -82,8 +87,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "s":
-			if m.commandCallback != nil {
-				m.commandCallback(ports.CmdStart)
+			if m.completed && m.completedSessionType != domain.SessionTypeWork {
+				// Break just finished — start a new work session
+				if m.commandCallback != nil {
+					m.commandCallback(ports.CmdStart)
+					m.completed = false
+					m.notified = false
+				}
 			}
 		case "p":
 			if m.commandCallback != nil && m.state.ActiveSession != nil {
@@ -99,9 +109,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "b":
-			if m.commandCallback != nil {
-				m.commandCallback(ports.CmdBreak)
-				m.completed = false
+			if m.completed && m.completedSessionType == domain.SessionTypeWork {
+				// Work just finished — start a break
+				if m.commandCallback != nil {
+					m.commandCallback(ports.CmdBreak)
+					m.completed = false
+					m.notified = false
+				}
 			}
 		case "x":
 			if m.commandCallback != nil {
@@ -126,8 +140,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.state != nil {
 			// Detect session completion: had a session before, now it's gone
 			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
+				m.completedSessionType = m.state.ActiveSession.Type
 				m.completed = true
+
+				// Fire notification callback once
+				if !m.notified && m.onSessionComplete != nil {
+					m.onSessionComplete(m.completedSessionType)
+					m.notified = true
+				}
 			}
+
+			// Detect new session started → reset completed state
+			if m.completed && msg.state.ActiveSession != nil {
+				m.completed = false
+				m.notified = false
+			}
+
 			m.state = msg.state
 		}
 
@@ -161,59 +189,13 @@ func (m Model) View() string {
 	}
 
 	if m.completed {
-		// Session completed screen
-		sections = append(sections, statusStyle.Render("Session complete!"))
-		sections = append(sections, "")
-		sections = append(sections, m.progress.ViewAs(1.0))
-
-		// Daily stats
-		stats := m.state.TodayStats
-		statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
-			stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
-		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render(statsText))
-
-		// Help
-		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render("[b]reak [q]uit"))
-	} else if m.state.ActiveSession != nil {
-		session := m.state.ActiveSession
-
-		// Session type and status
-		statusText := fmt.Sprintf("Status: %s (%s)",
-			domain.GetSessionTypeLabel(session.Type),
-			domain.GetStatusLabel(session.Status))
-		sections = append(sections, statusStyle.Render(statusText))
-
-		// Timer
-		remaining := session.RemainingTime()
-		timeText := formatDuration(remaining)
-		sections = append(sections, timeStyle.Render(timeText))
-
-		// Progress bar
-		prog := session.Progress()
-		sections = append(sections, m.progress.ViewAs(prog))
-
-		// Git context
-		if session.GitBranch != "" {
-			commitShort := session.GitCommit
-			if len(commitShort) > 7 {
-				commitShort = commitShort[:7]
-			}
-			gitInfo := fmt.Sprintf("🌿 %s (%s)", session.GitBranch, commitShort)
-			sections = append(sections, helpStyle.Render(gitInfo))
+		if m.completedSessionType == domain.SessionTypeWork {
+			sections = m.viewWorkComplete(sections)
+		} else {
+			sections = m.viewBreakComplete(sections)
 		}
-
-		// Daily stats
-		stats := m.state.TodayStats
-		statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
-			stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
-		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render(statsText))
-
-		// Help
-		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render("[s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit"))
+	} else if m.state.ActiveSession != nil {
+		sections = m.viewActiveSession(sections)
 	} else {
 		sections = append(sections, statusStyle.Render("No active session"))
 		sections = append(sections, "")
@@ -221,6 +203,101 @@ func (m Model) View() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Center, sections...)
+}
+
+func (m Model) viewWorkComplete(sections []string) []string {
+	sections = append(sections, "")
+	sections = append(sections, statusStyle.Render("Session complete! Great work."))
+	sections = append(sections, m.progress.ViewAs(1.0))
+
+	// Show break info
+	if m.completionInfo != nil {
+		breakLabel := domain.GetSessionTypeLabel(m.completionInfo.NextBreakType)
+		breakDur := formatDuration(m.completionInfo.NextBreakDuration)
+
+		breakLine := fmt.Sprintf("[b] %s %s", breakDur, breakLabel)
+		if m.completionInfo.NextBreakType == domain.SessionTypeLongBreak {
+			breakLine += " - you earned it!"
+		}
+		sections = append(sections, "")
+		sections = append(sections, statusStyle.Render(breakLine))
+
+		if m.completionInfo.NextBreakType == domain.SessionTypeShortBreak {
+			countLine := fmt.Sprintf("%d of %d sessions until long break",
+				m.completionInfo.SessionsBeforeLong-m.completionInfo.SessionsUntilLong,
+				m.completionInfo.SessionsBeforeLong)
+			sections = append(sections, helpStyle.Render(countLine))
+		}
+	}
+
+	// Daily stats
+	stats := m.state.TodayStats
+	statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
+		stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+	sections = append(sections, "")
+	sections = append(sections, helpStyle.Render(statsText))
+
+	sections = append(sections, "")
+	sections = append(sections, helpStyle.Render("[b]reak  [q]uit"))
+	return sections
+}
+
+func (m Model) viewBreakComplete(sections []string) []string {
+	sections = append(sections, "")
+	sections = append(sections, statusStyle.Render("Break over! Ready to focus?"))
+	sections = append(sections, m.progress.ViewAs(1.0))
+
+	// Daily stats
+	stats := m.state.TodayStats
+	statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
+		stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+	sections = append(sections, "")
+	sections = append(sections, helpStyle.Render(statsText))
+
+	sections = append(sections, "")
+	sections = append(sections, helpStyle.Render("[s]tart new session  [q]uit"))
+	return sections
+}
+
+func (m Model) viewActiveSession(sections []string) []string {
+	session := m.state.ActiveSession
+
+	// Session type and status
+	statusText := fmt.Sprintf("Status: %s (%s)",
+		domain.GetSessionTypeLabel(session.Type),
+		domain.GetStatusLabel(session.Status))
+	sections = append(sections, statusStyle.Render(statusText))
+
+	// Timer
+	remaining := session.RemainingTime()
+	timeText := formatDuration(remaining)
+	sections = append(sections, timeStyle.Render(timeText))
+
+	// Progress bar
+	prog := session.Progress()
+	sections = append(sections, m.progress.ViewAs(prog))
+
+	// Git context
+	if session.GitBranch != "" {
+		commitShort := session.GitCommit
+		if len(commitShort) > 7 {
+			commitShort = commitShort[:7]
+		}
+		gitInfo := fmt.Sprintf("🌿 %s (%s)", session.GitBranch, commitShort)
+		sections = append(sections, helpStyle.Render(gitInfo))
+	}
+
+	// Daily stats
+	stats := m.state.TodayStats
+	statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
+		stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+	sections = append(sections, "")
+	sections = append(sections, helpStyle.Render(statsText))
+
+	// Help
+	sections = append(sections, "")
+	sections = append(sections, helpStyle.Render("[s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit"))
+	return sections
 }
 
 // tickCmd creates a command that sends a tick message.
