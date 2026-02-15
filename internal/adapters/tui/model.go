@@ -48,6 +48,7 @@ type Model struct {
 	progress        progress.Model
 	width           int
 	height          int
+	completed       bool
 	fetchState      func() *domain.CurrentState
 	commandCallback func(ports.TimerCommand)
 }
@@ -100,6 +101,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "b":
 			if m.commandCallback != nil {
 				m.commandCallback(ports.CmdBreak)
+				m.completed = false
 			}
 		case "x":
 			if m.commandCallback != nil {
@@ -122,11 +124,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stateMsg:
 		if msg.state != nil {
-			m.state = msg.state
-			// Session was auto-completed by GetCurrentState (timer expired)
-			if m.state.ActiveSession == nil {
-				// No active session means it was completed - stay open to show stats
+			// Detect session completion: had a session before, now it's gone
+			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
+				m.completed = true
 			}
+			m.state = msg.state
 		}
 
 	case *domain.CurrentState:
@@ -158,8 +160,23 @@ func (m Model) View() string {
 		sections = append(sections, taskStyle.Render(taskText))
 	}
 
-	// Session status
-	if m.state.ActiveSession != nil {
+	if m.completed {
+		// Session completed screen
+		sections = append(sections, statusStyle.Render("Session complete!"))
+		sections = append(sections, "")
+		sections = append(sections, m.progress.ViewAs(1.0))
+
+		// Daily stats
+		stats := m.state.TodayStats
+		statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
+			stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+		sections = append(sections, "")
+		sections = append(sections, helpStyle.Render(statsText))
+
+		// Help
+		sections = append(sections, "")
+		sections = append(sections, helpStyle.Render("[b]reak [q]uit"))
+	} else if m.state.ActiveSession != nil {
 		session := m.state.ActiveSession
 
 		// Session type and status
@@ -186,20 +203,22 @@ func (m Model) View() string {
 			gitInfo := fmt.Sprintf("🌿 %s (%s)", session.GitBranch, commitShort)
 			sections = append(sections, helpStyle.Render(gitInfo))
 		}
+
+		// Daily stats
+		stats := m.state.TodayStats
+		statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
+			stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+		sections = append(sections, "")
+		sections = append(sections, helpStyle.Render(statsText))
+
+		// Help
+		sections = append(sections, "")
+		sections = append(sections, helpStyle.Render("[s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit"))
 	} else {
 		sections = append(sections, statusStyle.Render("No active session"))
+		sections = append(sections, "")
+		sections = append(sections, helpStyle.Render("[q]uit"))
 	}
-
-	// Daily stats
-	stats := m.state.TodayStats
-	statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
-		stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
-	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render(statsText))
-
-	// Help
-	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit"))
 
 	return lipgloss.JoinVertical(lipgloss.Center, sections...)
 }
