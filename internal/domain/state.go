@@ -20,6 +20,15 @@ type DailyStats struct {
 	TasksCompleted    int
 }
 
+// CompletionInfo holds pre-computed context about what break comes next
+// after a work session completes, or signals that a break just ended.
+type CompletionInfo struct {
+	NextBreakType      SessionType
+	NextBreakDuration  time.Duration
+	SessionsUntilLong  int
+	SessionsBeforeLong int
+}
+
 // StateSnapshot captures the complete system state at a point in time.
 type StateSnapshot struct {
 	Timestamp     time.Time

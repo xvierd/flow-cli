@@ -12,9 +12,11 @@ import (
 
 // Timer implements the ports.Timer interface using Bubbletea.
 type Timer struct {
-	program         *tea.Program
-	fetchState      func() *domain.CurrentState
-	commandCallback func(ports.TimerCommand)
+	program           *tea.Program
+	fetchState        func() *domain.CurrentState
+	commandCallback   func(ports.TimerCommand)
+	onSessionComplete func(domain.SessionType)
+	completionInfo    *domain.CompletionInfo
 }
 
 // NewTimer creates a new TUI timer adapter.
@@ -24,9 +26,10 @@ func NewTimer() ports.Timer {
 
 // Run starts the timer interface and blocks until completion.
 func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) error {
-	model := NewModel(initialState)
+	model := NewModel(initialState, t.completionInfo)
 	model.fetchState = t.fetchState
 	model.commandCallback = t.commandCallback
+	model.onSessionComplete = t.onSessionComplete
 
 	t.program = tea.NewProgram(
 		model,
@@ -67,6 +70,16 @@ func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand)) {
 	t.commandCallback = callback
 }
 
+// SetOnSessionComplete sets a callback fired when a session naturally completes.
+func (t *Timer) SetOnSessionComplete(callback func(domain.SessionType)) {
+	t.onSessionComplete = callback
+}
+
+// SetCompletionInfo sets pre-computed break context for the completion screen.
+func (t *Timer) SetCompletionInfo(info *domain.CompletionInfo) {
+	t.completionInfo = info
+}
+
 // SendCommand sends a command to the timer (for testing or automation).
 func (t *Timer) SendCommand(cmd ports.TimerCommand) {
 	if t.commandCallback != nil {
@@ -92,7 +105,7 @@ func RunTimer(ctx context.Context, state *domain.CurrentState) error {
 
 // ShowStatus displays the current status without starting interactive mode.
 func ShowStatus(state *domain.CurrentState) {
-	model := NewModel(state)
+	model := NewModel(state, nil)
 	fmt.Println(model.View())
 }
 
