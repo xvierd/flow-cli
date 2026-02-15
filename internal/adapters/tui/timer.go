@@ -12,29 +12,24 @@ import (
 
 // Timer implements the ports.Timer interface using Bubbletea.
 type Timer struct {
-	program *tea.Program
-	model   Model
-	cmdChan chan ports.TimerCommand
+	program         *tea.Program
+	updateCallback  func()
+	commandCallback func(ports.TimerCommand)
 }
 
 // NewTimer creates a new TUI timer adapter.
 func NewTimer() ports.Timer {
-	return &Timer{
-		cmdChan: make(chan ports.TimerCommand, 10),
-	}
+	return &Timer{}
 }
 
 // Run starts the timer interface and blocks until completion.
 func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) error {
-	t.model = NewModel(initialState)
-	t.model.SetUpdateCallback(func() {
-		if t.model.updateCallback != nil {
-			t.model.updateCallback()
-		}
-	})
+	model := NewModel(initialState)
+	model.updateCallback = t.updateCallback
+	model.commandCallback = t.commandCallback
 
 	t.program = tea.NewProgram(
-		t.model,
+		model,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
@@ -64,21 +59,19 @@ func (t *Timer) Stop() {
 
 // SetUpdateCallback sets a function to call on timer updates.
 func (t *Timer) SetUpdateCallback(callback func()) {
-	t.model.SetUpdateCallback(callback)
+	t.updateCallback = callback
 }
 
 // SetCommandCallback sets a function to call when commands are received.
 func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand)) {
-	go func() {
-		for cmd := range t.cmdChan {
-			callback(cmd)
-		}
-	}()
+	t.commandCallback = callback
 }
 
 // SendCommand sends a command to the timer (for testing or automation).
 func (t *Timer) SendCommand(cmd ports.TimerCommand) {
-	t.cmdChan <- cmd
+	if t.commandCallback != nil {
+		t.commandCallback(cmd)
+	}
 }
 
 // UpdateState updates the displayed state.
