@@ -50,17 +50,17 @@ This downloads the latest release binary and installs it to `/usr/local/bin/flow
 ### Using go install
 
 ```bash
-go install github.com/xvierd/flow-cli@latest
+go install github.com/xvierd/flow-cli/cmd/flow@latest
 ```
 
-> **Note:** Make sure `$(go env GOPATH)/bin` is in your `PATH`. The binary will be named `flow-cli`.
+> **Note:** Make sure `$(go env GOPATH)/bin` is in your `PATH`.
 
 ### From Source
 
 ```bash
 git clone https://github.com/xvierd/flow-cli.git
 cd flow-cli
-go build -o flow .
+go build -o flow ./cmd/flow
 ./flow --help
 ```
 
