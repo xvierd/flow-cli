@@ -23,6 +23,11 @@ import (
 )
 
 var (
+	// Version info (set at build time via ldflags)
+	Version   = "dev"
+	BuildDate = "unknown"
+	GitCommit = "unknown"
+
 	// Global flags
 	dbPath     string
 	jsonOutput bool
@@ -68,6 +73,15 @@ func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to the database file (default: ~/.flow/flow.db)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
+
+	// Set version - cobra handles --version automatically
+	rootCmd.Version = Version
+	rootCmd.SetVersionTemplate("Flow CLI\nVersion: {{.Version}}\n")
+
+	// Add pre-run hook for initialization
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		return initializeServices()
+	}
 
 	// Add subcommands
 	rootCmd.AddCommand(addCmd)
@@ -264,26 +278,38 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 	timer := tui.NewTimer()
 
 	timer.SetFetchState(func() *domain.CurrentState {
-		newState, _ := stateService.GetCurrentState(ctx)
+		newState, err := stateService.GetCurrentState(ctx)
+		if err != nil {
+			// Log error but return nil to let TUI handle gracefully
+			fmt.Fprintf(os.Stderr, "Warning: failed to fetch state: %v\n", err)
+			return nil
+		}
 		return newState
 	})
 
-	timer.SetCommandCallback(func(cmd ports.TimerCommand) {
+	timer.SetCommandCallbackWithError(func(cmd ports.TimerCommand) error {
 		switch cmd {
 		case ports.CmdStart:
-			_, _ = pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{
+			_, err := pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{
 				WorkingDir: workingDir,
 			})
+			return err
 		case ports.CmdPause:
-			_, _ = pomodoroSvc.PauseSession(ctx)
+			_, err := pomodoroSvc.PauseSession(ctx)
+			return err
 		case ports.CmdResume:
-			_, _ = pomodoroSvc.ResumeSession(ctx)
+			_, err := pomodoroSvc.ResumeSession(ctx)
+			return err
 		case ports.CmdStop:
-			_, _ = pomodoroSvc.StopSession(ctx)
+			_, err := pomodoroSvc.StopSession(ctx)
+			return err
 		case ports.CmdCancel:
-			_ = pomodoroSvc.CancelSession(ctx)
+			return pomodoroSvc.CancelSession(ctx)
 		case ports.CmdBreak:
-			_, _ = pomodoroSvc.StartBreak(ctx, workingDir)
+			_, err := pomodoroSvc.StartBreak(ctx, workingDir)
+			return err
+		default:
+			return fmt.Errorf("unknown command: %v", cmd)
 		}
 	})
 
@@ -312,13 +338,23 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 
 	// Desktop notifications on session completion
 	timer.SetOnSessionComplete(func(sessionType domain.SessionType) {
+		if notifier == nil || !notifier.IsEnabled() {
+			return
+		}
+		
+		var err error
 		switch sessionType {
 		case domain.SessionTypeWork:
-			_ = notifier.NotifyPomodoroComplete(formatMinutes(shortBreakDur))
+			err = notifier.NotifyPomodoroComplete(formatMinutes(shortBreakDur))
 		case domain.SessionTypeShortBreak:
-			_ = notifier.NotifyBreakComplete("Short")
+			err = notifier.NotifyBreakComplete("Short")
 		case domain.SessionTypeLongBreak:
-			_ = notifier.NotifyBreakComplete("Long")
+			err = notifier.NotifyBreakComplete("Long")
+		}
+		
+		if err != nil {
+			// Log notification errors but don't fail
+			fmt.Fprintf(os.Stderr, "Warning: notification failed: %v\n", err)
 		}
 	})
 
@@ -365,4 +401,12 @@ func getDir(path string) string {
 		return "."
 	}
 	return path[:lastSep]
+}
+
+// printVersion prints version information
+func printVersion() {
+	fmt.Printf("Flow - Pomodoro CLI Timer\n")
+	fmt.Printf("  Version:   %s\n", Version)
+	fmt.Printf("  Build:     %s\n", BuildDate)
+	fmt.Printf("  Commit:    %s\n", GitCommit)
 }

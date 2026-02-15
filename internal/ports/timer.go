@@ -75,6 +75,9 @@ type Timer interface {
 	// SetCommandCallback sets a function to call when commands are received.
 	SetCommandCallback(callback func(cmd TimerCommand))
 
+	// SetCommandCallbackWithError sets a function to call when commands are received that can return errors.
+	SetCommandCallbackWithError(callback func(cmd TimerCommand) error)
+
 	// SetOnSessionComplete sets a callback fired when a session naturally completes.
 	SetOnSessionComplete(callback func(domain.SessionType))
 
