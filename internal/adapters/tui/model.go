@@ -123,6 +123,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateMsg:
 		if msg.state != nil {
 			m.state = msg.state
+			// Session was auto-completed by GetCurrentState (timer expired)
+			if m.state.ActiveSession == nil {
+				// No active session means it was completed - stay open to show stats
+			}
 		}
 
 	case *domain.CurrentState:
