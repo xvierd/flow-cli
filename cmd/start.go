@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -58,8 +57,8 @@ an active task, that task will be used.`,
 			fmt.Printf("   Session ID: %s\n", active.ID[:8])
 			fmt.Print("Do you want to stop it and start a new one? [y/N] ")
 
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
+			var answer string
+			fmt.Scanln(&answer)
 			answer = strings.TrimSpace(strings.ToLower(answer))
 
 			if answer != "y" && answer != "yes" {
