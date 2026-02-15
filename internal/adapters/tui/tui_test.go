@@ -37,8 +37,8 @@ func TestNewModel(t *testing.T) {
 		t.Error("NewModel() should store the initial state")
 	}
 
-	if model.commandChan == nil {
-		t.Error("NewModel() should initialize command channel")
+	if model.state == nil {
+		t.Error("NewModel() should store state")
 	}
 }
 

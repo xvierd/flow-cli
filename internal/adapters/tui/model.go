@@ -39,29 +39,25 @@ type tickMsg time.Time
 
 // Model represents the TUI state.
 type Model struct {
-	state         *domain.CurrentState
-	progress      progress.Model
-	width         int
-	height        int
-	commandChan   chan ports.TimerCommand
-	updateCallback func()
+	state           *domain.CurrentState
+	progress        progress.Model
+	width           int
+	height          int
+	updateCallback  func()
+	commandCallback func(ports.TimerCommand)
 }
 
 // NewModel creates a new TUI model.
 func NewModel(initialState *domain.CurrentState) Model {
 	return Model{
-		state:        initialState,
-		progress:     progress.New(progress.WithDefaultGradient()),
-		commandChan:  make(chan ports.TimerCommand, 10),
+		state:    initialState,
+		progress: progress.New(progress.WithDefaultGradient()),
 	}
 }
 
 // Init initializes the TUI.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		tickCmd(),
-		listenForCommands(m.commandChan),
-	)
+	return tickCmd()
 }
 
 // Update handles messages and updates the model.
@@ -72,19 +68,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "s":
-			m.commandChan <- ports.CmdStart
+			if m.commandCallback != nil {
+				m.commandCallback(ports.CmdStart)
+			}
 		case "p":
-			if m.state.ActiveSession != nil {
+			if m.commandCallback != nil && m.state.ActiveSession != nil {
 				if m.state.ActiveSession.Status == domain.SessionStatusRunning {
-					m.commandChan <- ports.CmdPause
+					m.commandCallback(ports.CmdPause)
 				} else {
-					m.commandChan <- ports.CmdResume
+					m.commandCallback(ports.CmdResume)
 				}
 			}
 		case "c":
-			m.commandChan <- ports.CmdCancel
+			if m.commandCallback != nil {
+				m.commandCallback(ports.CmdCancel)
+			}
+			return m, tea.Quit
 		case "b":
-			m.commandChan <- ports.CmdBreak
+			if m.commandCallback != nil {
+				m.commandCallback(ports.CmdBreak)
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -148,7 +151,11 @@ func (m Model) View() string {
 
 		// Git context
 		if session.GitBranch != "" {
-			gitInfo := fmt.Sprintf("🌿 %s (%s)", session.GitBranch, session.GitCommit[:7])
+			commitShort := session.GitCommit
+			if len(commitShort) > 7 {
+				commitShort = commitShort[:7]
+			}
+			gitInfo := fmt.Sprintf("🌿 %s (%s)", session.GitBranch, commitShort)
 			sections = append(sections, helpStyle.Render(gitInfo))
 		}
 	} else {
@@ -176,28 +183,9 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-// listenForCommands listens for commands from the command channel.
-func listenForCommands(cmdChan chan ports.TimerCommand) tea.Cmd {
-	return func() tea.Msg {
-		// This will block until a command is sent
-		// The command is processed in Update
-		return nil
-	}
-}
-
 // formatDuration formats a duration as MM:SS.
 func formatDuration(d time.Duration) string {
 	minutes := int(d.Minutes())
 	seconds := int(d.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", minutes, seconds)
-}
-
-// SetUpdateCallback sets the callback for state updates.
-func (m *Model) SetUpdateCallback(callback func()) {
-	m.updateCallback = callback
-}
-
-// SendStateUpdate sends a state update to the model.
-func (m *Model) SendStateUpdate(state *domain.CurrentState) {
-	// This is handled by the Bubbletea program
 }
