@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dvidx/flow-cli/internal/adapters/tui"
-	"github.com/dvidx/flow-cli/internal/domain"
-	"github.com/dvidx/flow-cli/internal/ports"
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/domain"
 )
 
 // breakCmd represents the break command
@@ -36,47 +34,7 @@ var breakCmd = &cobra.Command{
 			return fmt.Errorf("failed to get current state: %w", err)
 		}
 
-		// Run the TUI timer
-		ctx = setupSignalHandler()
-		timer := tui.NewTimer()
-
-		timer.SetUpdateCallback(func() {
-			newState, err := stateService.GetCurrentState(ctx)
-			if err != nil {
-				// Log error but don't fail - we'll try again on next tick
-				return
-			}
-			if newState != nil {
-				timer.UpdateState(newState)
-			}
-		})
-
-		timer.SetCommandCallback(func(cmd ports.TimerCommand) error {
-			switch cmd {
-			case ports.CmdPause:
-				_, err := pomodoroSvc.PauseSession(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to pause session: %w", err)
-				}
-			case ports.CmdResume:
-				_, err := pomodoroSvc.ResumeSession(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to resume session: %w", err)
-				}
-			case ports.CmdCancel:
-				err := pomodoroSvc.CancelSession(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to cancel session: %w", err)
-				}
-			}
-			return nil
-		})
-
-		if err := timer.Run(ctx, state); err != nil {
-			return fmt.Errorf("timer error: %w", err)
-		}
-
-		return nil
+		return launchTUI(ctx, state, workingDir)
 	},
 }
 

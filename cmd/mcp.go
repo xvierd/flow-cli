@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dvidx/flow-cli/internal/adapters/mcp"
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/adapters/mcp"
 )
 
 // mcpCmd represents the mcp command

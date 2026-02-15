@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dvidx/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/domain"
 )
 
 // TimerView defines the interface for timer display updates.
@@ -52,6 +52,9 @@ const (
 	// CmdBreak starts a break session.
 	CmdBreak TimerCommand = "break"
 
+	// CmdStop completes the current session.
+	CmdStop TimerCommand = "stop"
+
 	// CmdQuit exits the application.
 	CmdQuit TimerCommand = "quit"
 )
@@ -65,12 +68,18 @@ type Timer interface {
 	// Stop gracefully stops the timer interface.
 	Stop()
 
-	// SetUpdateCallback sets a function to call on timer updates.
-	SetUpdateCallback(callback func())
+	// SetFetchState sets a function that returns the current application state.
+	// This is called asynchronously on each tick to refresh the TUI.
+	SetFetchState(fetch func() *domain.CurrentState)
 
 	// SetCommandCallback sets a function to call when commands are received.
-	// The callback should return an error if the command fails.
-	SetCommandCallback(callback func(cmd TimerCommand) error)
+	SetCommandCallback(callback func(cmd TimerCommand))
+
+	// SetOnSessionComplete sets a callback fired when a session naturally completes.
+	SetOnSessionComplete(callback func(domain.SessionType))
+
+	// SetCompletionInfo sets pre-computed break context for the completion screen.
+	SetCompletionInfo(info *domain.CompletionInfo)
 
 	// UpdateState updates the displayed state.
 	UpdateState(state *domain.CurrentState)

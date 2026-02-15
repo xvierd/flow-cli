@@ -1,4 +1,4 @@
-module github.com/dvidx/flow-cli
+module github.com/xvierd/flow-cli
 
 go 1.24.0
 

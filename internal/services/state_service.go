@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/dvidx/flow-cli/internal/domain"
-	"github.com/dvidx/flow-cli/internal/ports"
+	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/ports"
 )
 
 // StateService implements the MCPStateProvider interface.
@@ -35,6 +35,13 @@ func (s *StateService) SetPomodoroService(pomodoroSvc *PomodoroService) {
 func (s *StateService) GetCurrentState(ctx context.Context) (*domain.CurrentState, error) {
 	activeTask, _ := s.storage.Tasks().FindActive(ctx)
 	activeSession, _ := s.storage.Sessions().FindActive(ctx)
+
+	// Auto-complete expired sessions that are still marked as running
+	if activeSession != nil && activeSession.Status == domain.SessionStatusRunning && activeSession.RemainingTime() == 0 {
+		activeSession.Complete()
+		_ = s.storage.Sessions().Update(ctx, activeSession)
+		activeSession = nil
+	}
 
 	todayStats, err := s.storage.Sessions().GetDailyStats(ctx, time.Now())
 	if err != nil {

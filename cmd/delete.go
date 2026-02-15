@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dvidx/flow-cli/internal/domain"
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/domain"
 )
 
 // deleteCmd represents the delete command

@@ -1,14 +1,12 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
-	"github.com/dvidx/flow-cli/internal/domain"
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/domain"
 )
 
 // stopCmd represents the stop command
@@ -25,12 +23,13 @@ var stopCmd = &cobra.Command{
 		}
 
 		// Prompt for notes (optional)
-		fmt.Print("Add session notes (optional, press Enter to skip): ")
-		reader := bufio.NewReader(os.Stdin)
-		notes, _ := reader.ReadString('\n')
-		notes = notes[:len(notes)-1] // Remove newline
-		if notes != "" {
-			session, _ = pomodoroSvc.AddSessionNotes(ctx, session.ID, notes)
+		if !jsonOutput {
+			fmt.Print("Add session notes (optional, press Enter to skip): ")
+			var notes string
+			fmt.Scanln(&notes)
+			if notes != "" {
+				session, _ = pomodoroSvc.AddSessionNotes(ctx, session.ID, notes)
+			}
 		}
 
 		// Send notification if enabled

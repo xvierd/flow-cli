@@ -5,15 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 
-	"github.com/dvidx/flow-cli/internal/ports"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/xvierd/flow-cli/internal/ports"
 )
 
 // Server implements the MCP server using mark3labs/mcp-go.
@@ -22,14 +19,12 @@ type Server struct {
 	stateProvider ports.MCPStateProvider
 	ctx           context.Context
 	cancel        context.CancelFunc
-	sigChan       chan os.Signal
 }
 
 // NewServer creates a new MCP server instance.
 func NewServer(stateProvider ports.MCPStateProvider) *Server {
 	s := &Server{
 		stateProvider: stateProvider,
-		sigChan:       make(chan os.Signal, 1),
 	}
 
 	// Create the MCP server
@@ -172,28 +167,11 @@ func (s *Server) registerTools() {
 	s.server.AddTool(addNotesTool, s.handleAddSessionNotes)
 }
 
-// Start begins serving MCP requests via stdio with graceful shutdown support.
+// Start begins serving MCP requests via stdio.
 func (s *Server) Start(ctx context.Context) error {
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	defer s.cancel()
-
-	// Set up signal handling for graceful shutdown
-	signal.Notify(s.sigChan, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(s.sigChan)
-
-	// Start signal handler goroutine
-	go func() {
-		select {
-		case sig := <-s.sigChan:
-			fmt.Fprintf(os.Stderr, "\nReceived signal %v, shutting down gracefully...\n", sig)
-			s.Stop()
-		case <-s.ctx.Done():
-			return
-		}
-	}()
 
 	// Start the stdio server
-	// Note: server.ServeStdio doesn't accept context directly, so we rely on signal handling
 	return server.ServeStdio(s.server)
 }
 

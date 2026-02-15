@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dvidx/flow-cli/internal/ports"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/xvierd/flow-cli/internal/ports"
 )
 
 // Detector implements the ports.GitDetector interface using go-git.
