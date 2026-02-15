@@ -39,6 +39,8 @@ var rootCmd = &cobra.Command{
 	Short: "Flow - A Pomodoro CLI timer with task tracking",
 	Long: `Flow is a command-line Pomodoro timer that helps you stay focused
 and track your work sessions with optional git integration.`,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		return initializeServices()
 	},
