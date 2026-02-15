@@ -13,6 +13,32 @@ input=$(cat)
 MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"')
 PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
 
+# Parse Go duration string to total seconds
+# Handles: "1h2m3.456s", "14m30s", "45.5s", "0s"
+parse_duration() {
+  local dur="$1"
+  local hours=0 mins=0 secs=0
+
+  # Extract hours
+  if echo "$dur" | grep -q 'h'; then
+    hours=$(echo "$dur" | sed 's/h.*//' | grep -oE '[0-9]+$')
+  fi
+  # Extract minutes
+  if echo "$dur" | grep -q 'm'; then
+    mins=$(echo "$dur" | sed 's/.*h//' | sed 's/m.*//' | grep -oE '[0-9]+$')
+  fi
+  # Extract seconds (integer part only)
+  if echo "$dur" | grep -q 's'; then
+    secs=$(echo "$dur" | sed 's/.*m//' | sed 's/.*h//' | sed 's/s$//' | cut -d. -f1)
+  fi
+
+  hours=${hours:-0}
+  mins=${mins:-0}
+  secs=${secs:-0}
+
+  echo $(( hours * 3600 + mins * 60 + secs ))
+}
+
 # Flow pomodoro status
 FLOW_STATUS=""
 if command -v flow &>/dev/null; then
@@ -25,11 +51,9 @@ if command -v flow &>/dev/null; then
       PROGRESS=$(echo "$FLOW_JSON" | jq -r '.active_session.progress')
       TASK=$(echo "$FLOW_JSON" | jq -r '.active_task.title // empty')
 
-      # Parse remaining time (Go duration like "14m30s")
-      MINS=$(echo "$REMAINING" | grep -oE '[0-9]+m' | tr -d 'm')
-      SECS=$(echo "$REMAINING" | grep -oE '[0-9]+s' | tr -d 's')
-      MINS=${MINS:-0}
-      SECS=${SECS:-0}
+      TOTAL_SECS=$(parse_duration "$REMAINING")
+      MINS=$((TOTAL_SECS / 60))
+      SECS=$((TOTAL_SECS % 60))
       TIME_STR=$(printf "%02d:%02d" "$MINS" "$SECS")
 
       # Progress bar (5 chars wide)
