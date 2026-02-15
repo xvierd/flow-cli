@@ -87,13 +87,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "s":
-			if m.completed && m.completedSessionType != domain.SessionTypeWork {
-				// Break just finished — start a new work session
-				if m.commandCallback != nil {
-					m.commandCallback(ports.CmdStart)
-					m.completed = false
-					m.notified = false
-				}
+			if m.completed && m.commandCallback != nil {
+				// Start a new work session (skip break or resume after break)
+				m.commandCallback(ports.CmdStart)
+				m.completed = false
+				m.notified = false
 			}
 		case "p":
 			if m.commandCallback != nil && m.state.ActiveSession != nil {
@@ -238,7 +236,9 @@ func (m Model) viewWorkComplete(sections []string) []string {
 	sections = append(sections, helpStyle.Render(statsText))
 
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[b]reak  [q]uit"))
+	sections = append(sections, helpStyle.Render("[b]reak  [s]kip  [q]uit"))
+	sections = append(sections, "")
+	sections = append(sections, helpStyle.Render("Customize durations in ~/.flow/config.toml"))
 	return sections
 }
 

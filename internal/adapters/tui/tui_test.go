@@ -129,6 +129,9 @@ func TestModel_View_WorkComplete(t *testing.T) {
 	if !strings.Contains(view, "[b]reak") {
 		t.Error("Work-complete view should show [b]reak option")
 	}
+	if !strings.Contains(view, "[s]kip") {
+		t.Error("Work-complete view should show [s]kip option")
+	}
 }
 
 func TestModel_View_WorkComplete_LongBreak(t *testing.T) {
