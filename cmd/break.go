@@ -51,6 +51,8 @@ var breakCmd = &cobra.Command{
 				_, _ = pomodoroSvc.PauseSession(ctx)
 			case ports.CmdResume:
 				_, _ = pomodoroSvc.ResumeSession(ctx)
+			case ports.CmdStop:
+				_, _ = pomodoroSvc.StopSession(ctx)
 			case ports.CmdCancel:
 				_ = pomodoroSvc.CancelSession(ctx)
 			}

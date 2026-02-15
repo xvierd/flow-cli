@@ -101,6 +101,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.commandCallback != nil {
 				m.commandCallback(ports.CmdBreak)
 			}
+		case "x":
+			if m.commandCallback != nil {
+				m.commandCallback(ports.CmdStop)
+			}
+			return m, tea.Quit
 		}
 
 	case tea.WindowSizeMsg:
@@ -190,7 +195,7 @@ func (m Model) View() string {
 
 	// Help
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[s]tart [p]ause [c]ancel [b]reak [q]uit"))
+	sections = append(sections, helpStyle.Render("[s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit"))
 
 	return lipgloss.JoinVertical(lipgloss.Center, sections...)
 }
