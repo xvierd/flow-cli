@@ -1,273 +1,104 @@
 # Flow
 
-Flow is a Pomodoro CLI timer with task tracking, interactive TUI, and MCP (Model Context Protocol) server support, built in Go.
-
-## Features
-
-- **Task Tracking**: Manage tasks with statuses and metadata
-- **Pomodoro Timer**: Work sessions with integrated timer
-- **Interactive TUI**: Visual interface using Bubbletea with progress bar animation
-- **MCP Server**: Model Context Protocol integration for AI assistants
-- **Git Integration**: Automatic detection of git context (branch, commit, modified files)
-- **SQLite Storage**: Lightweight local persistence
-
-## Architecture
-
-The project follows hexagonal architecture (clean architecture) principles:
+A Pomodoro CLI that gets out of your way. Built in Go with an interactive TUI, git awareness, and AI assistant integration.
 
 ```
-flow/
-├── cmd/                    # CLI commands (cobra)
-│   ├── add.go             # Add task command
-│   ├── list.go            # List tasks command
-│   ├── start.go           # Start pomodoro command
-│   ├── status.go          # Show status command
-│   ├── break.go           # Start break command
-│   ├── mcp.go             # MCP server command
-│   └── ...
-├── internal/
-│   ├── domain/            # Business entities (Task, PomodoroSession)
-│   ├── ports/             # Interfaces (Storage, Timer, MCP, Git)
-│   ├── services/          # Use cases (TaskService, PomodoroService, StateService)
-│   └── adapters/          # Implementations
-│       ├── storage/       # SQLite repository implementation
-│       ├── tui/           # Bubbletea TUI implementation
-│       ├── mcp/           # MCP server implementation
-│       └── git/           # Git context detector
-└── main.go                # Application entry point
+$ flow
+
+  What are you working on? (Enter to skip): Write API docs
+  Duration? [25m]:
+
+  Starting 25m session...
 ```
 
-## Installation
+```
+       🍅 Flow - Pomodoro Timer
 
-### Quick Install
+       📋 Task: Write API docs
+       Status: Work Session (Running)
+              21:34
+       ██░░░░░░░░░░░░░░░░░░░░░░░░░░
+       🌿 main (a5e7d58)
+
+       📊 Today: 3 work sessions, 1 breaks, 1h15m worked
+
+       [s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit
+```
+
+## Why
+
+Most pomodoro apps are either too heavy (Electron apps with accounts and syncing) or too simple (a bash timer). Flow sits in between: it tracks your tasks, knows what git branch you're on, and integrates with AI coding assistants - all from the terminal.
+
+## Install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/install.sh | sh
-```
+# Homebrew (macOS)
+brew tap xvierd/tap
+brew install flow
 
-This downloads the latest release binary and installs it to `/usr/local/bin/flow`.
-
-### Using go install
-
-```bash
+# Go
 go install github.com/xvierd/flow-cli/cmd/flow@latest
-```
 
-> **Note:** Make sure `$(go env GOPATH)/bin` is in your `PATH`.
+# Script
+curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/install.sh | sh
 
-### From Source
-
-```bash
+# From source
 git clone https://github.com/xvierd/flow-cli.git
-cd flow-cli
-go build -o flow ./cmd/flow
-./flow --help
+cd flow-cli && go build -o flow ./cmd/flow
 ```
 
-## Usage
-
-### Quick Start
+## Quick Start
 
 ```bash
-# Add a task
-flow add "Implement feature X"
+# Just type flow - the wizard handles the rest
+flow
 
-# List tasks
-flow list
-
-# Start a pomodoro session (without task)
-flow start
-
-# Start a pomodoro session with a task
-flow start --task <task-id>
-
-# Check current status
-flow status
-
-# Start a break
-flow break
+# Or use commands directly
+flow add "Fix auth bug"        # create a task
+flow start abc123              # start a pomodoro for that task
+flow status                    # check current state
+flow break                     # take a break
+flow complete abc123           # mark task done
 ```
 
-### Commands
+## Commands
 
-#### `flow add "task title"`
-Add a new task to the list.
+| Command | What it does |
+|---------|-------------|
+| `flow` | Interactive wizard - ask task name, duration, start |
+| `flow add "title"` | Create a new task |
+| `flow list` | List tasks (`--all`, `--status pending`) |
+| `flow start [task-id]` | Start a pomodoro (`--task` flag also works) |
+| `flow status` | Show current session and daily stats |
+| `flow break` | Start a short or long break |
+| `flow pause` | Pause the active session |
+| `flow resume` | Resume a paused session |
+| `flow stop` | Complete the current session |
+| `flow complete <id>` | Mark a task as completed |
+| `flow mcp` | Start the MCP server |
 
-```bash
-flow add "Fix bug in authentication"
+## TUI Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `s` | Start session |
+| `p` | Pause / Resume |
+| `b` | Start break |
+| `c` | Cancel session |
+| `x` | Stop session |
+| `q` | Quit TUI (session keeps running) |
+
+## Claude Code Integration
+
+### Status Line
+
+See your pomodoro timer in Claude Code's status bar:
+
+```
+[Opus 4.6] 12% ctx | 🍅 18:32 ███░░ Write API docs
 ```
 
-#### `flow list`
-List all tasks. Use flags to filter:
-
-```bash
-# List all tasks (including completed)
-flow list --all
-
-# Filter by status
-flow list --status pending
-flow list --status in_progress
-flow list --status completed
-```
-
-#### `flow start [task-id]`
-Start a pomodoro work session. Optionally specify a task ID to associate with the session.
-
-```bash
-# Start without task
-flow start
-
-# Start with specific task
-flow start abc123
-
-# Or use the --task flag
-flow start --task abc123
-```
-
-#### `flow status`
-Display the current pomodoro session status and today's statistics.
-
-#### `flow break`
-Start a pomodoro break session (short or long depending on work completed).
-
-#### `flow pause`
-Pause the currently running pomodoro session.
-
-#### `flow resume`
-Resume a paused pomodoro session.
-
-#### `flow stop`
-Complete the current pomodoro session.
-
-#### `flow complete [task-id]`
-Mark a task as completed.
-
-```bash
-flow complete abc123
-```
-
-#### `flow mcp`
-Start the Model Context Protocol (MCP) server for integration with AI assistants.
-
-```bash
-flow mcp
-```
-
-### TUI Controls
-
-During a pomodoro or break session, the TUI provides:
-
-- **Visual progress bar**: Animated progress showing session completion
-- **Timer display**: Countdown in MM:SS format
-- **Git context**: Shows current branch and commit when available
-- **Daily stats**: Today's work sessions, breaks, and total work time
-
-**Keyboard shortcuts:**
-- `s` - Start (or pause/resume if running)
-- `p` - Pause/Resume
-- `c` - Cancel current session
-- `b` - Start break
-- `q` or `Ctrl+C` - Quit
-
-### MCP Server Tools
-
-When running `flow mcp`, the following tools are available:
-
-#### `get_current_state`
-Returns the current Flow state including active task, session, and daily stats.
-
-#### `list_tasks`
-Lists all tasks, optionally filtered by status.
-
-Parameters:
-- `status` (optional): Filter by status (pending, in_progress, completed, cancelled)
-
-#### `get_task_history`
-Returns pomodoro session history for a specific task.
-
-Parameters:
-- `task_id` (required): The ID of the task
-
-### MCP Configuration
-
-To use Flow with AI assistants, add the MCP server to your configuration:
-
-#### Claude Code
-
-Add to your Claude Code configuration (`~/.claude/config.json`):
-
-**If installed from source:**
-```json
-{
-  "mcpServers": {
-    "flow": {
-      "command": "/path/to/flow",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-**If installed via `go install`:**
-```json
-{
-  "mcpServers": {
-    "flow": {
-      "command": "flow",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Or with full path:
-```json
-{
-  "mcpServers": {
-    "flow": {
-      "command": "~/go/bin/flow",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-#### Cursor
-
-Add to your Cursor settings (Settings → MCP):
-
-**If installed from source:**
-```json
-{
-  "mcpServers": {
-    "flow": {
-      "command": "/path/to/flow",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-**If installed via `go install`:**
-```json
-{
-  "mcpServers": {
-    "flow": {
-      "command": "flow",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Once configured, you can ask:
-- "What task am I working on?"
-- "How many pomodoros have I completed today?"
-- "List my pending tasks"
-
-### Claude Code Status Line
-
-Show your pomodoro timer directly in Claude Code's status bar:
+Setup:
 
 ```bash
 cp scripts/claude-statusline.sh ~/.claude/flow-statusline.sh
@@ -284,32 +115,65 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-The status line shows: `[Opus 4.6] 42% ctx | 🍅 18:32 ███░░ Implement feature X`
+### MCP Server
+
+Let AI assistants read your flow state. Add to your editor's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "flow",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Works with Claude Code, Cursor, and any MCP-compatible client.
+
+Available tools: `get_current_state`, `list_tasks`, `get_task_history`, `start_pomodoro`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `create_task`, `complete_task`, `add_session_notes`.
 
 ## Configuration
 
-Flow stores its database in `~/.flow/flow.db` by default. You can specify a custom path:
+Flow stores config at `~/.flow/config.toml` and data at `~/.flow/flow.db`.
 
-```bash
-flow --db /path/to/custom.db add "My task"
+```toml
+[pomodoro]
+work_duration = "25m"
+short_break = "5m"
+long_break = "15m"
+sessions_before_long = 4
+
+[notifications]
+enabled = true
+sound = true
+```
+
+## Architecture
+
+Hexagonal architecture with clean separation between business logic and external concerns.
+
+```
+internal/
+├── domain/       # Entities: Task, PomodoroSession, State
+├── ports/        # Interfaces: Storage, Timer, GitDetector, MCP
+├── services/     # Use cases: TaskService, PomodoroService, StateService
+└── adapters/     # Implementations
+    ├── storage/  # SQLite
+    ├── tui/      # Bubbletea
+    ├── mcp/      # MCP server
+    ├── git/      # Git context detection
+    └── notification/
 ```
 
 ## Development
 
-### Running Tests
-
 ```bash
-go test ./...
+go test ./...        # run tests
+go vet ./...         # lint
+go build -o flow .   # build
 ```
-
-### Project Structure
-
-The codebase follows clean architecture principles:
-
-1. **Domain Layer** (`internal/domain/`): Pure business logic, no external dependencies
-2. **Ports Layer** (`internal/ports/`): Interface definitions for adapters
-3. **Services Layer** (`internal/services/`): Application use cases, orchestrate domain and ports
-4. **Adapters Layer** (`internal/adapters/`): Concrete implementations of external concerns
 
 ## License
 
