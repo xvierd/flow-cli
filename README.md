@@ -265,6 +265,27 @@ Once configured, you can ask:
 - "How many pomodoros have I completed today?"
 - "List my pending tasks"
 
+### Claude Code Status Line
+
+Show your pomodoro timer directly in Claude Code's status bar:
+
+```bash
+cp scripts/claude-statusline.sh ~/.claude/flow-statusline.sh
+```
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/flow-statusline.sh"
+  }
+}
+```
+
+The status line shows: `[Opus 4.6] 42% ctx | 🍅 18:32 ███░░ Implement feature X`
+
 ## Configuration
 
 Flow stores its database in `~/.flow/flow.db` by default. You can specify a custom path:
