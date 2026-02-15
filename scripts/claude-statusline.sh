@@ -68,6 +68,8 @@ if command -v flow &>/dev/null; then
       done
 
       # Color based on session type
+      YELLOW="\033[33m"
+      RESET="\033[0m"
       if [ "$SESSION_TYPE" = "work" ]; then
         ICON="🍅"
         COLOR="\033[31m"  # red
@@ -75,10 +77,9 @@ if command -v flow &>/dev/null; then
         ICON="☕"
         COLOR="\033[32m"  # green
       fi
-      RESET="\033[0m"
 
       if [ -n "$TASK" ]; then
-        FLOW_STATUS="${COLOR}${ICON} ${TIME_STR} ${BAR} ${TASK}${RESET}"
+        FLOW_STATUS="${COLOR}${ICON} ${TIME_STR} ${BAR} ${YELLOW}${TASK}${RESET}"
       else
         FLOW_STATUS="${COLOR}${ICON} ${TIME_STR} ${BAR}${RESET}"
       fi
