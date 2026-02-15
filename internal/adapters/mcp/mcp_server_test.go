@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/dvidx/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/domain"
 )
 
 // mockStateProvider is a mock implementation of ports.MCPStateProvider for testing.

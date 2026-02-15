@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/dvidx/flow-cli/internal/adapters/tui"
-	"github.com/dvidx/flow-cli/internal/domain"
-	"github.com/dvidx/flow-cli/internal/ports"
+	"github.com/xvierd/flow-cli/internal/adapters/tui"
+	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/ports"
 )
 
 // breakCmd represents the break command
