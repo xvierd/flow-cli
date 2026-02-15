@@ -40,11 +40,9 @@ var breakCmd = &cobra.Command{
 		ctx = setupSignalHandler()
 		timer := tui.NewTimer()
 		
-		timer.SetUpdateCallback(func() {
+		timer.SetFetchState(func() *domain.CurrentState {
 			newState, _ := stateService.GetCurrentState(ctx)
-			if newState != nil {
-				timer.UpdateState(newState)
-			}
+			return newState
 		})
 
 		timer.SetCommandCallback(func(cmd ports.TimerCommand) {
