@@ -10,12 +10,12 @@ import (
 
 // Common domain errors.
 var (
-	ErrInvalidTaskID        = errors.New("invalid task ID")
-	ErrEmptyTaskTitle       = errors.New("task title cannot be empty")
-	ErrTaskNotFound         = errors.New("task not found")
-	ErrInvalidDuration      = errors.New("invalid duration")
+	ErrInvalidTaskID      = errors.New("invalid task ID")
+	ErrEmptyTaskTitle     = errors.New("task title cannot be empty")
+	ErrTaskNotFound       = errors.New("task not found")
+	ErrInvalidDuration    = errors.New("invalid duration")
 	ErrSessionAlreadyActive = errors.New("session already active")
-	ErrNoActiveSession      = errors.New("no active session")
+	ErrNoActiveSession    = errors.New("no active session")
 )
 
 // TaskStatus represents the current state of a task.

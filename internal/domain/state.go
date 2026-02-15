@@ -13,11 +13,11 @@ type CurrentState struct {
 
 // DailyStats aggregates pomodoro statistics for a day.
 type DailyStats struct {
-	Date           time.Time
-	WorkSessions   int
-	BreaksTaken    int
-	TotalWorkTime  time.Duration
-	TasksCompleted int
+	Date              time.Time
+	WorkSessions      int
+	BreaksTaken       int
+	TotalWorkTime     time.Duration
+	TasksCompleted    int
 }
 
 // CompletionInfo holds pre-computed context about what break comes next
@@ -31,22 +31,22 @@ type CompletionInfo struct {
 
 // StateSnapshot captures the complete system state at a point in time.
 type StateSnapshot struct {
-	Timestamp      time.Time
-	CurrentState   CurrentState
-	PendingTasks   []*Task
+	Timestamp     time.Time
+	CurrentState  CurrentState
+	PendingTasks  []*Task
 	RecentSessions []*PomodoroSession
 }
 
 // IsSessionActive returns true if there's a running or paused session.
 func (cs *CurrentState) IsSessionActive() bool {
-	return cs.ActiveSession != nil &&
-		(cs.ActiveSession.Status == SessionStatusRunning ||
-			cs.ActiveSession.Status == SessionStatusPaused)
+	return cs.ActiveSession != nil && 
+		(cs.ActiveSession.Status == SessionStatusRunning || 
+		 cs.ActiveSession.Status == SessionStatusPaused)
 }
 
 // CanStartSession returns true if a new session can be started.
 func (cs *CurrentState) CanStartSession() bool {
-	return cs.ActiveSession == nil ||
+	return cs.ActiveSession == nil || 
 		cs.ActiveSession.Status == SessionStatusCompleted ||
 		cs.ActiveSession.Status == SessionStatusCancelled
 }

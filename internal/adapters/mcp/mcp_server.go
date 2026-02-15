@@ -525,11 +525,11 @@ func (s *Server) handleCompleteTask(ctx context.Context, request mcp.CallToolReq
 	}
 
 	result := map[string]interface{}{
-		"id":           task.ID,
-		"title":        task.Title,
-		"description":  task.Description,
-		"status":       string(task.Status),
-		"tags":         task.Tags,
+		"id":          task.ID,
+		"title":       task.Title,
+		"description": task.Description,
+		"status":      string(task.Status),
+		"tags":        task.Tags,
 		"completed_at": task.CompletedAt.Format("2006-01-02T15:04:05"),
 	}
 

@@ -48,7 +48,7 @@ func (s *TaskService) AddTask(ctx context.Context, req AddTaskRequest) (*domain.
 
 // ListTasksRequest contains filters for listing tasks.
 type ListTasksRequest struct {
-	Status      *domain.TaskStatus
+	Status *domain.TaskStatus
 	OnlyPending bool
 }
 

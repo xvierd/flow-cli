@@ -4,8 +4,8 @@ package notification
 import (
 	"fmt"
 
-	"github.com/gen2brain/beeep"
 	"github.com/xvierd/flow-cli/internal/config"
+	"github.com/gen2brain/beeep"
 )
 
 // Notifier handles desktop notifications.

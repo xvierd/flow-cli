@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
@@ -30,8 +34,9 @@ var deleteCmd = &cobra.Command{
 		// Confirm deletion
 		if !jsonOutput {
 			fmt.Printf("Are you sure you want to delete task '%s' (%s)? [y/N]: ", task.Title, task.ID[:8])
-			var confirm string
-			fmt.Scanln(&confirm)
+			reader := bufio.NewReader(os.Stdin)
+			confirm, _ := reader.ReadString('\n')
+			confirm = strings.TrimSpace(confirm)
 			if confirm != "y" && confirm != "Y" {
 				fmt.Println("Deletion cancelled.")
 				return nil
@@ -48,7 +53,11 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			fmt.Printf(`{"deleted": true, "task_id": "%s"}\n`, taskID)
+			data, _ := json.Marshal(map[string]interface{}{
+				"deleted": true,
+				"task_id": taskID,
+			})
+			fmt.Println(string(data))
 		} else {
 			fmt.Printf("✅ Task '%s' deleted successfully.\n", task.Title)
 		}

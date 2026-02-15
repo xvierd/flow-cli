@@ -11,9 +11,9 @@ import (
 
 // PomodoroService handles pomodoro session use cases.
 type PomodoroService struct {
-	storage     ports.Storage
+	storage    ports.Storage
 	gitDetector ports.GitDetector
-	config      domain.PomodoroConfig
+	config     domain.PomodoroConfig
 }
 
 // NewPomodoroService creates a new pomodoro service.

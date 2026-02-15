@@ -16,22 +16,22 @@ import (
 // Styles for the TUI.
 var (
 	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FF6B6B")).
-			MarginBottom(1)
+		Bold(true).
+		Foreground(lipgloss.Color("#FF6B6B")).
+		MarginBottom(1)
 
 	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#4ECDC4"))
+		Foreground(lipgloss.Color("#4ECDC4"))
 
 	taskStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFE66D"))
+		Foreground(lipgloss.Color("#FFE66D"))
 
 	timeStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF"))
+		Bold(true).
+		Foreground(lipgloss.Color("#FFFFFF"))
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#95A5A6"))
+		Foreground(lipgloss.Color("#95A5A6"))
 )
 
 // tickMsg is sent on every timer tick.
