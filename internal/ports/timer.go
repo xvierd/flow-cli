@@ -65,8 +65,9 @@ type Timer interface {
 	// Stop gracefully stops the timer interface.
 	Stop()
 
-	// SetUpdateCallback sets a function to call on timer updates.
-	SetUpdateCallback(callback func())
+	// SetFetchState sets a function that returns the current application state.
+	// This is called asynchronously on each tick to refresh the TUI.
+	SetFetchState(fetch func() *domain.CurrentState)
 
 	// SetCommandCallback sets a function to call when commands are received.
 	SetCommandCallback(callback func(cmd TimerCommand))

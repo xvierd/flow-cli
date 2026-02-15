@@ -37,13 +37,18 @@ var (
 // tickMsg is sent on every timer tick.
 type tickMsg time.Time
 
+// stateMsg wraps an updated state fetched asynchronously.
+type stateMsg struct {
+	state *domain.CurrentState
+}
+
 // Model represents the TUI state.
 type Model struct {
 	state           *domain.CurrentState
 	progress        progress.Model
 	width           int
 	height          int
-	updateCallback  func()
+	fetchState      func() *domain.CurrentState
 	commandCallback func(ports.TimerCommand)
 }
 
@@ -58,6 +63,14 @@ func NewModel(initialState *domain.CurrentState) Model {
 // Init initializes the TUI.
 func (m Model) Init() tea.Cmd {
 	return tickCmd()
+}
+
+// fetchStateCmd returns a tea.Cmd that fetches state asynchronously.
+func fetchStateCmd(fetch func() *domain.CurrentState) tea.Cmd {
+	return func() tea.Msg {
+		s := fetch()
+		return stateMsg{state: s}
+	}
 }
 
 // Update handles messages and updates the model.
@@ -96,10 +109,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progress.Width = msg.Width - 4
 
 	case tickMsg:
-		if m.updateCallback != nil {
-			m.updateCallback()
+		cmds := []tea.Cmd{tickCmd()}
+		if m.fetchState != nil {
+			cmds = append(cmds, fetchStateCmd(m.fetchState))
 		}
-		return m, tickCmd()
+		return m, tea.Batch(cmds...)
+
+	case stateMsg:
+		if msg.state != nil {
+			m.state = msg.state
+		}
 
 	case *domain.CurrentState:
 		m.state = msg

@@ -13,7 +13,7 @@ import (
 // Timer implements the ports.Timer interface using Bubbletea.
 type Timer struct {
 	program         *tea.Program
-	updateCallback  func()
+	fetchState      func() *domain.CurrentState
 	commandCallback func(ports.TimerCommand)
 }
 
@@ -25,7 +25,7 @@ func NewTimer() ports.Timer {
 // Run starts the timer interface and blocks until completion.
 func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) error {
 	model := NewModel(initialState)
-	model.updateCallback = t.updateCallback
+	model.fetchState = t.fetchState
 	model.commandCallback = t.commandCallback
 
 	t.program = tea.NewProgram(
@@ -57,9 +57,9 @@ func (t *Timer) Stop() {
 	}
 }
 
-// SetUpdateCallback sets a function to call on timer updates.
-func (t *Timer) SetUpdateCallback(callback func()) {
-	t.updateCallback = callback
+// SetFetchState sets a function that returns the current state.
+func (t *Timer) SetFetchState(fetch func() *domain.CurrentState) {
+	t.fetchState = fetch
 }
 
 // SetCommandCallback sets a function to call when commands are received.

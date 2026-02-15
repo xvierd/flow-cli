@@ -99,12 +99,10 @@ an active task, that task will be used.`,
 		ctx = setupSignalHandler()
 		timer := tui.NewTimer()
 		
-		// Set up update callback to refresh state
-		timer.SetUpdateCallback(func() {
+		// Set up async state fetcher for TUI refresh
+		timer.SetFetchState(func() *domain.CurrentState {
 			newState, _ := stateService.GetCurrentState(ctx)
-			if newState != nil {
-				timer.UpdateState(newState)
-			}
+			return newState
 		})
 
 		// Set up command callback to handle timer commands
