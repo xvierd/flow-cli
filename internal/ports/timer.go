@@ -52,6 +52,9 @@ const (
 	// CmdBreak starts a break session.
 	CmdBreak TimerCommand = "break"
 
+	// CmdStop completes the current session.
+	CmdStop TimerCommand = "stop"
+
 	// CmdQuit exits the application.
 	CmdQuit TimerCommand = "quit"
 )
