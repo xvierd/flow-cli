@@ -4,7 +4,7 @@ package notification
 import (
 	"fmt"
 
-	"github.com/dvidx/flow-cli/internal/config"
+	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/gen2brain/beeep"
 )
 

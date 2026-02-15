@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dvidx/flow-cli/cmd"
+import "github.com/xvierd/flow-cli/cmd"
 
 func main() {
 	cmd.Execute()

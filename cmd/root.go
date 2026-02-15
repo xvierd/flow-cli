@@ -9,13 +9,13 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
-	"github.com/dvidx/flow-cli/internal/adapters/git"
-	"github.com/dvidx/flow-cli/internal/adapters/notification"
-	"github.com/dvidx/flow-cli/internal/adapters/storage"
-	"github.com/dvidx/flow-cli/internal/config"
-	"github.com/dvidx/flow-cli/internal/domain"
-	"github.com/dvidx/flow-cli/internal/ports"
-	"github.com/dvidx/flow-cli/internal/services"
+	"github.com/xvierd/flow-cli/internal/adapters/git"
+	"github.com/xvierd/flow-cli/internal/adapters/notification"
+	"github.com/xvierd/flow-cli/internal/adapters/storage"
+	"github.com/xvierd/flow-cli/internal/config"
+	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/ports"
+	"github.com/xvierd/flow-cli/internal/services"
 )
 
 var (

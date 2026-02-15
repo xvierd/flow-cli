@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/dvidx/flow-cli/internal/adapters/tui"
-	"github.com/dvidx/flow-cli/internal/ports"
-	"github.com/dvidx/flow-cli/internal/services"
+	"github.com/xvierd/flow-cli/internal/adapters/tui"
+	"github.com/xvierd/flow-cli/internal/ports"
+	"github.com/xvierd/flow-cli/internal/services"
 )
 
 var startTaskID string
