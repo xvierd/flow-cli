@@ -12,10 +12,10 @@ import (
 
 // Config holds all configuration for the Flow application.
 type Config struct {
-	Pomodoro      PomodoroConfig      `mapstructure:"pomodoro"`
-	Notifications NotificationConfig  `mapstructure:"notifications"`
-	MCP           MCPConfig           `mapstructure:"mcp"`
-	Storage       StorageConfig       `mapstructure:"storage"`
+	Pomodoro      PomodoroConfig     `mapstructure:"pomodoro"`
+	Notifications NotificationConfig `mapstructure:"notifications"`
+	MCP           MCPConfig          `mapstructure:"mcp"`
+	Storage       StorageConfig      `mapstructure:"storage"`
 }
 
 // PomodoroConfig holds pomodoro timer settings.

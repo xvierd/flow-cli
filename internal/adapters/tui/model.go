@@ -16,22 +16,27 @@ import (
 // Styles for the TUI.
 var (
 	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#FF6B6B")).
-		MarginBottom(1)
+			Bold(true).
+			Foreground(lipgloss.Color("#FF6B6B")).
+			MarginBottom(1)
 
 	statusStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#4ECDC4"))
+			Foreground(lipgloss.Color("#4ECDC4"))
 
 	taskStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFE66D"))
+			Foreground(lipgloss.Color("#FFE66D"))
 
 	timeStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#FFFFFF"))
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF"))
 
 	helpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#95A5A6"))
+			Foreground(lipgloss.Color("#95A5A6"))
+
+	errorStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#E74C3C")).
+			MarginTop(1)
 )
 
 // tickMsg is sent on every timer tick.
@@ -39,20 +44,21 @@ type tickMsg time.Time
 
 // Model represents the TUI state.
 type Model struct {
-	state         *domain.CurrentState
-	progress      progress.Model
-	width         int
-	height        int
-	commandChan   chan ports.TimerCommand
+	state          *domain.CurrentState
+	progress       progress.Model
+	width          int
+	height         int
+	commandChan    chan ports.TimerCommand
 	updateCallback func()
+	lastError      error
 }
 
 // NewModel creates a new TUI model.
 func NewModel(initialState *domain.CurrentState) Model {
 	return Model{
-		state:        initialState,
-		progress:     progress.New(progress.WithDefaultGradient()),
-		commandChan:  make(chan ports.TimerCommand, 10),
+		state:       initialState,
+		progress:    progress.New(progress.WithDefaultGradient()),
+		commandChan: make(chan ports.TimerCommand, 10),
 	}
 }
 
@@ -120,6 +126,11 @@ func (m Model) View() string {
 
 	// Title
 	sections = append(sections, titleStyle.Render("🍅 Flow - Pomodoro Timer"))
+
+	// Display error if present
+	if m.lastError != nil {
+		sections = append(sections, errorStyle.Render(fmt.Sprintf("⚠️  Error: %v", m.lastError)))
+	}
 
 	// Active task
 	if m.state.ActiveTask != nil {

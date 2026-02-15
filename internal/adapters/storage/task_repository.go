@@ -180,6 +180,8 @@ func (r *taskRepository) FindActive(ctx context.Context) (*domain.Task, error) {
 		task.CompletedAt = &completedAt.Time
 	}
 
+	// Initialize tags as empty slice to avoid null in JSON
+	task.Tags = []string{}
 	if tagsStr != "" {
 		task.Tags = strings.Split(tagsStr, ",")
 	}
@@ -290,6 +292,8 @@ func (r *taskRepository) scanTasks(rows *sql.Rows) ([]*domain.Task, error) {
 			task.CompletedAt = &completedAt.Time
 		}
 
+		// Initialize tags as empty slice to avoid null in JSON
+		task.Tags = []string{}
 		if tagsStr != "" {
 			task.Tags = strings.Split(tagsStr, ",")
 		}

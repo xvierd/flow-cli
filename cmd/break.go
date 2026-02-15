@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/dvidx/flow-cli/internal/adapters/tui"
 	"github.com/dvidx/flow-cli/internal/domain"
 	"github.com/dvidx/flow-cli/internal/ports"
+	"github.com/spf13/cobra"
 )
 
 // breakCmd represents the break command
@@ -26,8 +26,8 @@ var breakCmd = &cobra.Command{
 			return fmt.Errorf("failed to start break: %w", err)
 		}
 
-		fmt.Printf("☕ Break started! Duration: %s (%s)\n", 
-			session.Duration, 
+		fmt.Printf("☕ Break started! Duration: %s (%s)\n",
+			session.Duration,
 			getBreakTypeLabel(session.Type))
 
 		// Get the current state for the TUI
@@ -39,23 +39,37 @@ var breakCmd = &cobra.Command{
 		// Run the TUI timer
 		ctx = setupSignalHandler()
 		timer := tui.NewTimer()
-		
+
 		timer.SetUpdateCallback(func() {
-			newState, _ := stateService.GetCurrentState(ctx)
+			newState, err := stateService.GetCurrentState(ctx)
+			if err != nil {
+				// Log error but don't fail - we'll try again on next tick
+				return
+			}
 			if newState != nil {
 				timer.UpdateState(newState)
 			}
 		})
 
-		timer.SetCommandCallback(func(cmd ports.TimerCommand) {
+		timer.SetCommandCallback(func(cmd ports.TimerCommand) error {
 			switch cmd {
 			case ports.CmdPause:
-				_, _ = pomodoroSvc.PauseSession(ctx)
+				_, err := pomodoroSvc.PauseSession(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to pause session: %w", err)
+				}
 			case ports.CmdResume:
-				_, _ = pomodoroSvc.ResumeSession(ctx)
+				_, err := pomodoroSvc.ResumeSession(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to resume session: %w", err)
+				}
 			case ports.CmdCancel:
-				_ = pomodoroSvc.CancelSession(ctx)
+				err := pomodoroSvc.CancelSession(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to cancel session: %w", err)
+				}
 			}
+			return nil
 		})
 
 		if err := timer.Run(ctx, state); err != nil {

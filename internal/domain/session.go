@@ -8,7 +8,7 @@ import (
 type SessionType string
 
 const (
-	SessionTypeWork     SessionType = "work"
+	SessionTypeWork       SessionType = "work"
 	SessionTypeShortBreak SessionType = "short_break"
 	SessionTypeLongBreak  SessionType = "long_break"
 )
@@ -25,18 +25,18 @@ const (
 
 // PomodoroSession represents a single work or break interval.
 type PomodoroSession struct {
-	ID           string
-	TaskID       *string
-	Type         SessionType
-	Status       SessionStatus
-	Duration     time.Duration
-	StartedAt    time.Time
-	PausedAt     *time.Time
-	CompletedAt  *time.Time
-	GitBranch    string
-	GitCommit    string
-	GitModified  []string
-	Notes        string
+	ID          string
+	TaskID      *string
+	Type        SessionType
+	Status      SessionStatus
+	Duration    time.Duration
+	StartedAt   time.Time
+	PausedAt    *time.Time
+	CompletedAt *time.Time
+	GitBranch   string
+	GitCommit   string
+	GitModified []string
+	Notes       string
 }
 
 // PomodoroConfig holds configuration for pomodoro sessions.

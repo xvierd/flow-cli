@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"github.com/dvidx/flow-cli/internal/adapters/tui"
 	"github.com/dvidx/flow-cli/internal/domain"
+	"github.com/spf13/cobra"
 )
 
 // statusCmd represents the status command
@@ -28,9 +28,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		// Use the TUI to display the status
-		tui.ShowStatus(state)
-
-		return nil
+		return tui.ShowStatus(state)
 	},
 }
 

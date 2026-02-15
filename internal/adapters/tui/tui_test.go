@@ -51,8 +51,8 @@ func TestModel_View(t *testing.T) {
 		ActiveTask:    task,
 		ActiveSession: session,
 		TodayStats: domain.DailyStats{
-			WorkSessions: 2,
-			BreaksTaken:  1,
+			WorkSessions:  2,
+			BreaksTaken:   1,
 			TotalWorkTime: 50 * time.Minute,
 		},
 	}

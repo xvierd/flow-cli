@@ -11,9 +11,9 @@ import (
 
 // sqliteStorage implements the ports.Storage interface using SQLite.
 type sqliteStorage struct {
-	db            *sql.DB
-	taskRepo      ports.TaskRepository
-	sessionRepo   ports.SessionRepository
+	db          *sql.DB
+	taskRepo    ports.TaskRepository
+	sessionRepo ports.SessionRepository
 }
 
 // Ensure sqliteStorage implements ports.Storage.

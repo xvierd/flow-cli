@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/spf13/cobra"
 	"github.com/dvidx/flow-cli/internal/adapters/git"
 	"github.com/dvidx/flow-cli/internal/adapters/notification"
 	"github.com/dvidx/flow-cli/internal/adapters/storage"
@@ -16,6 +15,7 @@ import (
 	"github.com/dvidx/flow-cli/internal/domain"
 	"github.com/dvidx/flow-cli/internal/ports"
 	"github.com/dvidx/flow-cli/internal/services"
+	"github.com/spf13/cobra"
 )
 
 var (
