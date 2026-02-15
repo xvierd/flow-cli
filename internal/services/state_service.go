@@ -36,6 +36,13 @@ func (s *StateService) GetCurrentState(ctx context.Context) (*domain.CurrentStat
 	activeTask, _ := s.storage.Tasks().FindActive(ctx)
 	activeSession, _ := s.storage.Sessions().FindActive(ctx)
 
+	// Auto-complete expired sessions that are still marked as running
+	if activeSession != nil && activeSession.Status == domain.SessionStatusRunning && activeSession.RemainingTime() == 0 {
+		activeSession.Complete()
+		_ = s.storage.Sessions().Update(ctx, activeSession)
+		activeSession = nil
+	}
+
 	todayStats, err := s.storage.Sessions().GetDailyStats(ctx, time.Now())
 	if err != nil {
 		todayStats = &domain.DailyStats{}

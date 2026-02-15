@@ -2,16 +2,20 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/adapters/git"
 	"github.com/xvierd/flow-cli/internal/adapters/notification"
 	"github.com/xvierd/flow-cli/internal/adapters/storage"
+	"github.com/xvierd/flow-cli/internal/adapters/tui"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/ports"
@@ -38,7 +42,9 @@ var rootCmd = &cobra.Command{
 	Use:   "flow",
 	Short: "Flow - A Pomodoro CLI timer with task tracking",
 	Long: `Flow is a command-line Pomodoro timer that helps you stay focused
-and track your work sessions with optional git integration.`,
+and track your work sessions with optional git integration.
+
+Run "flow" with no arguments to start a quick session interactively.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -47,6 +53,7 @@ and track your work sessions with optional git integration.`,
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 		return cleanupServices()
 	},
+	RunE: runWizard,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -150,6 +157,160 @@ func setupSignalHandler() context.Context {
 	}()
 
 	return ctx
+}
+
+// runWizard implements the interactive wizard flow for bare "flow" command.
+func runWizard(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+	reader := bufio.NewReader(os.Stdin)
+	workingDir, _ := os.Getwd()
+
+	// Check for active session
+	state, err := stateService.GetCurrentState(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current state: %w", err)
+	}
+
+	if state.ActiveSession != nil {
+		active := state.ActiveSession
+		remaining := active.RemainingTime()
+		sessionType := domain.GetSessionTypeLabel(active.Type)
+		sessionInfo := fmt.Sprintf("%s (%s remaining)", sessionType, formatWizardDuration(remaining))
+
+		if state.ActiveTask != nil {
+			sessionInfo = fmt.Sprintf("%s for \"%s\" (%s remaining)", sessionType, state.ActiveTask.Title, formatWizardDuration(remaining))
+		}
+
+		fmt.Printf("\n  Active session: %s\n", sessionInfo)
+		fmt.Print("  Resume it? [Y/n] ")
+
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(strings.ToLower(answer))
+
+		if answer == "" || answer == "y" || answer == "yes" {
+			// Resume: just open the TUI for the existing session
+			return launchTUI(ctx, state, workingDir)
+		}
+
+		// Stop old session and start fresh
+		_, err := pomodoroSvc.StopSession(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to stop current session: %w", err)
+		}
+	}
+
+	// --- Wizard prompts ---
+	fmt.Println()
+
+	// 1. Ask for task name
+	fmt.Print("  What are you working on? (Enter to skip): ")
+	taskName, _ := reader.ReadString('\n')
+	taskName = strings.TrimSpace(taskName)
+
+	var taskID *string
+	if taskName != "" {
+		// Create the task inline
+		task, err := taskService.AddTask(ctx, services.AddTaskRequest{
+			Title: taskName,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create task: %w", err)
+		}
+		taskID = &task.ID
+	}
+
+	// 2. Ask for duration with default
+	defaultDuration := time.Duration(appConfig.Pomodoro.WorkDuration)
+	defaultLabel := formatMinutes(defaultDuration)
+	fmt.Printf("  Duration? [%s]: ", defaultLabel)
+	durationInput, _ := reader.ReadString('\n')
+	durationInput = strings.TrimSpace(durationInput)
+
+	var customDuration time.Duration
+	if durationInput != "" {
+		parsed, err := time.ParseDuration(durationInput)
+		if err != nil {
+			return fmt.Errorf("invalid duration %q (use format like 25m, 1h, 45m): %w", durationInput, err)
+		}
+		customDuration = parsed
+	}
+
+	// Start the session
+	req := services.StartPomodoroRequest{
+		TaskID:     taskID,
+		WorkingDir: workingDir,
+		Duration:   customDuration,
+	}
+
+	session, err := pomodoroSvc.StartPomodoro(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to start pomodoro: %w", err)
+	}
+
+	fmt.Printf("\n  Starting %s session...\n\n", formatMinutes(session.Duration))
+
+	// Refresh state and launch TUI
+	state, err = stateService.GetCurrentState(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current state: %w", err)
+	}
+
+	return launchTUI(ctx, state, workingDir)
+}
+
+// launchTUI starts the Bubbletea timer interface.
+func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir string) error {
+	ctx = setupSignalHandler()
+	timer := tui.NewTimer()
+
+	timer.SetFetchState(func() *domain.CurrentState {
+		newState, _ := stateService.GetCurrentState(ctx)
+		return newState
+	})
+
+	timer.SetCommandCallback(func(cmd ports.TimerCommand) {
+		switch cmd {
+		case ports.CmdPause:
+			_, _ = pomodoroSvc.PauseSession(ctx)
+		case ports.CmdResume:
+			_, _ = pomodoroSvc.ResumeSession(ctx)
+		case ports.CmdStop:
+			_, _ = pomodoroSvc.StopSession(ctx)
+		case ports.CmdCancel:
+			_ = pomodoroSvc.CancelSession(ctx)
+		case ports.CmdBreak:
+			_, _ = pomodoroSvc.StartBreak(ctx, workingDir)
+		}
+	})
+
+	if err := timer.Run(ctx, state); err != nil {
+		return fmt.Errorf("timer error: %w", err)
+	}
+
+	return nil
+}
+
+// formatMinutes formats a duration as a human-friendly string like "25m" or "1h30m".
+func formatMinutes(d time.Duration) string {
+	if d.Minutes() == float64(int(d.Minutes())) && int(d.Minutes())%60 == 0 && d >= time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	if d >= time.Hour {
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		if m == 0 {
+			return fmt.Sprintf("%dh", h)
+		}
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	return fmt.Sprintf("%dm", int(d.Minutes()))
+}
+
+// formatWizardDuration formats a duration as MM:SS.
+func formatWizardDuration(d time.Duration) string {
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	return fmt.Sprintf("%02d:%02d", m, s)
 }
 
 // getDir returns the directory of a file path.
