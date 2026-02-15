@@ -39,9 +39,21 @@ flow/
 
 ## Installation
 
-### Prerequisites
+### Quick Install
 
-- Go 1.23 or later
+```bash
+curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/install.sh | sh
+```
+
+This downloads the latest release binary and installs it to `/usr/local/bin/flow`.
+
+### Using go install
+
+```bash
+go install github.com/xvierd/flow-cli@latest
+```
+
+> **Note:** Make sure `$(go env GOPATH)/bin` is in your `PATH`. The binary will be named `flow-cli`.
 
 ### From Source
 
@@ -50,12 +62,6 @@ git clone https://github.com/xvierd/flow-cli.git
 cd flow-cli
 go build -o flow .
 ./flow --help
-```
-
-### Using go install
-
-```bash
-go install github.com/xvierd/flow-cli@latest
 ```
 
 ## Usage
