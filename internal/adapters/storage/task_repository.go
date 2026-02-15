@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sahilm/fuzzy"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/ports"
-	"github.com/sahilm/fuzzy"
 )
 
 // taskRepository implements ports.TaskRepository using SQLite.
@@ -180,6 +180,8 @@ func (r *taskRepository) FindActive(ctx context.Context) (*domain.Task, error) {
 		task.CompletedAt = &completedAt.Time
 	}
 
+	// Initialize tags as empty slice to avoid null in JSON
+	task.Tags = []string{}
 	if tagsStr != "" {
 		task.Tags = strings.Split(tagsStr, ",")
 	}
@@ -214,6 +216,8 @@ func (r *taskRepository) FindByTitle(ctx context.Context, query string) ([]*doma
 
 	return result, nil
 }
+
+// Delete removes a task from storage.
 func (r *taskRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM tasks WHERE id = ?`
 
@@ -290,6 +294,8 @@ func (r *taskRepository) scanTasks(rows *sql.Rows) ([]*domain.Task, error) {
 			task.CompletedAt = &completedAt.Time
 		}
 
+		// Initialize tags as empty slice to avoid null in JSON
+		task.Tags = []string{}
 		if tagsStr != "" {
 			task.Tags = strings.Split(tagsStr, ",")
 		}

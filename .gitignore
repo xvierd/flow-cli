@@ -1,5 +1,6 @@
 # Binary
 flow
+flow-test
 
 # IDE
 .idea/
@@ -15,3 +16,9 @@ Thumbs.db
 *.test
 *.out
 coverage.txt
+
+# Local data
+~/.flow/
+*.db
+*.db-shm
+*.db-wal
