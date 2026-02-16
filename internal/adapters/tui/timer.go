@@ -19,6 +19,10 @@ type Timer struct {
 	onSessionComplete  func(domain.SessionType)
 	completionInfo     *domain.CompletionInfo
 	theme              *config.ThemeConfig
+	inline             bool
+	presets            []config.SessionPreset
+	breakInfo          string
+	onStartSession     func(presetIndex int, taskName string) error
 }
 
 // NewTimer creates a new TUI timer adapter.
@@ -26,8 +30,17 @@ func NewTimer(theme *config.ThemeConfig) ports.Timer {
 	return &Timer{theme: theme}
 }
 
+// NewInlineTimer creates a TUI timer that renders in-place without alt screen.
+func NewInlineTimer(theme *config.ThemeConfig) *Timer {
+	return &Timer{theme: theme, inline: true}
+}
+
 // Run starts the timer interface and blocks until completion.
 func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) error {
+	if t.inline {
+		return t.runInline(ctx, initialState)
+	}
+
 	model := NewModel(initialState, t.completionInfo, t.theme)
 	model.fetchState = t.fetchState
 	model.commandCallback = t.commandCallback
@@ -55,6 +68,31 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	return nil
 }
 
+func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState) error {
+	model := NewInlineModel(initialState, t.completionInfo, t.theme)
+	model.fetchState = t.fetchState
+	model.commandCallback = t.commandCallback
+	model.onSessionComplete = t.onSessionComplete
+	model.presets = t.presets
+	model.breakInfo = t.breakInfo
+	model.onStartSession = t.onStartSession
+
+	t.program = tea.NewProgram(model)
+
+	go func() {
+		<-ctx.Done()
+		if t.program != nil {
+			t.program.Quit()
+		}
+	}()
+
+	_, err := t.program.Run()
+	if err != nil {
+		return fmt.Errorf("failed to run inline TUI: %w", err)
+	}
+	return nil
+}
+
 // Stop gracefully stops the timer interface.
 func (t *Timer) Stop() {
 	if t.program != nil {
@@ -75,6 +113,13 @@ func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand) error) 
 // SetOnSessionComplete sets a callback fired when a session naturally completes.
 func (t *Timer) SetOnSessionComplete(callback func(domain.SessionType)) {
 	t.onSessionComplete = callback
+}
+
+// SetInlineSetup configures the inline setup phase (presets, break info, start callback).
+func (t *Timer) SetInlineSetup(presets []config.SessionPreset, breakInfo string, onStart func(presetIndex int, taskName string) error) {
+	t.presets = presets
+	t.breakInfo = breakInfo
+	t.onStartSession = onStart
 }
 
 // SetCompletionInfo sets pre-computed break context for the completion screen.

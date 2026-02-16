@@ -94,6 +94,7 @@ type Model struct {
 	completedSessionType domain.SessionType
 	notified             bool
 	confirmBreak         bool
+	confirmFinish        bool
 	fetchState           func() *domain.CurrentState
 	commandCallback      func(ports.TimerCommand) error
 	onSessionComplete    func(domain.SessionType)
@@ -145,7 +146,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "ctrl+c":
+			return m, tea.Quit
+		case "c":
 			return m, tea.Quit
 		case "s":
 			if m.completed && m.commandCallback != nil {
@@ -172,6 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.confirmBreak = false
+			m.confirmFinish = false
 		case "b":
 			if m.completed && m.completedSessionType == domain.SessionTypeWork {
 				if m.commandCallback != nil {
@@ -182,7 +186,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.Type == domain.SessionTypeWork {
 				if m.confirmBreak {
 					if m.commandCallback != nil {
-						// Stop the active session first, then start break
 						_ = m.commandCallback(ports.CmdStop)
 						_ = m.commandCallback(ports.CmdBreak)
 						m.completed = false
@@ -191,16 +194,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				} else {
 					m.confirmBreak = true
+					m.confirmFinish = false
+						}
+			}
+		case "f":
+			if m.completed || m.state.ActiveSession == nil {
+				// Nothing to finish
+				return m, nil
+			}
+			if m.confirmFinish {
+				if m.commandCallback != nil {
+					_ = m.commandCallback(ports.CmdStop)
 				}
+				m.confirmFinish = false
+				m.confirmBreak = false
+					return m, tea.Quit
 			}
-		case "x":
-			if m.commandCallback != nil {
-				_ = m.commandCallback(ports.CmdStop)
-			}
+			m.confirmFinish = true
 			m.confirmBreak = false
-			return m, tea.Quit
 		default:
 			m.confirmBreak = false
+			m.confirmFinish = false
 		}
 
 	case tea.WindowSizeMsg:
@@ -282,7 +296,7 @@ func (m Model) View() string {
 		sections = append(sections, idleStyle.Render("No active session"))
 		sections = append(sections, "")
 		helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
-		sections = append(sections, helpStyle.Render("[s]tart  [q]uit"))
+		sections = append(sections, helpStyle.Render("[s]tart  [c]lose"))
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
@@ -325,7 +339,7 @@ func (m Model) viewWorkComplete(sections []string) []string {
 	sections = append(sections, helpStyle.Render(statsText))
 
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[b]reak  [s]kip  [q]uit"))
+	sections = append(sections, helpStyle.Render("[b]reak  [s]kip  [c]lose"))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render("Customize in ~/.flow/config.toml"))
 	return sections
@@ -347,7 +361,7 @@ func (m Model) viewBreakComplete(sections []string) []string {
 	sections = append(sections, helpStyle.Render(statsText))
 
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[s]tart new session  [q]uit"))
+	sections = append(sections, helpStyle.Render("[s]tart new session  [c]lose"))
 	return sections
 }
 
@@ -407,12 +421,14 @@ func (m Model) viewActiveSession(sections []string) []string {
 
 	// Help
 	sections = append(sections, "")
-	if m.confirmBreak {
+	if m.confirmFinish {
+		sections = append(sections, helpStyle.Render("Stop session? Press [f] again to confirm"))
+	} else if m.confirmBreak {
 		sections = append(sections, helpStyle.Render("End session and start break? Press [b] again to confirm"))
 	} else if session.IsBreakSession() {
-		sections = append(sections, helpStyle.Render("[s] skip  [p]ause  [x] finish  [q]uit"))
+		sections = append(sections, helpStyle.Render("[s]kip  [p]ause  [f]inish  [c]lose"))
 	} else {
-		sections = append(sections, helpStyle.Render("[p]ause  [x] finish  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render("[p]ause  [f]inish  [b]reak  [c]lose"))
 	}
 	return sections
 }
