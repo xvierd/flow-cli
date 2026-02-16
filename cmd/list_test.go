@@ -16,7 +16,7 @@ func TestListCmd(t *testing.T) {
 	t.Run("list command has status flag", func(t *testing.T) {
 		flag := listCmd.Flags().Lookup("status")
 		if flag == nil {
-			t.Error("listCmd should have --status flag")
+			t.Fatal("listCmd should have --status flag")
 		}
 		if flag.Shorthand != "s" {
 			t.Errorf("status flag shorthand = %q, want %q", flag.Shorthand, "s")
@@ -26,7 +26,7 @@ func TestListCmd(t *testing.T) {
 	t.Run("list command has all flag", func(t *testing.T) {
 		flag := listCmd.Flags().Lookup("all")
 		if flag == nil {
-			t.Error("listCmd should have --all flag")
+			t.Fatal("listCmd should have --all flag")
 		}
 		if flag.Shorthand != "a" {
 			t.Errorf("all flag shorthand = %q, want %q", flag.Shorthand, "a")

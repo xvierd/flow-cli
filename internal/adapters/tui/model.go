@@ -89,7 +89,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "s":
 			if m.completed && m.commandCallback != nil {
-				m.commandCallback(ports.CmdStart)
+				_ = m.commandCallback(ports.CmdStart)
 				m.completed = false
 				m.notified = false
 				m.confirmBreak = false
@@ -97,16 +97,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "p":
 			if m.commandCallback != nil && m.state.ActiveSession != nil {
 				if m.state.ActiveSession.Status == domain.SessionStatusRunning {
-					m.commandCallback(ports.CmdPause)
+					_ = m.commandCallback(ports.CmdPause)
 				} else {
-					m.commandCallback(ports.CmdResume)
+					_ = m.commandCallback(ports.CmdResume)
 				}
 			}
 			m.confirmBreak = false
 		case "b":
 			if m.completed && m.completedSessionType == domain.SessionTypeWork {
 				if m.commandCallback != nil {
-					m.commandCallback(ports.CmdBreak)
+					_ = m.commandCallback(ports.CmdBreak)
 					m.completed = false
 					m.notified = false
 				}
@@ -114,8 +114,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.confirmBreak {
 					if m.commandCallback != nil {
 						// Stop the active session first, then start break
-						m.commandCallback(ports.CmdStop)
-						m.commandCallback(ports.CmdBreak)
+						_ = m.commandCallback(ports.CmdStop)
+						_ = m.commandCallback(ports.CmdBreak)
 						m.completed = false
 						m.notified = false
 						m.confirmBreak = false
@@ -126,7 +126,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "x":
 			if m.commandCallback != nil {
-				m.commandCallback(ports.CmdStop)
+				_ = m.commandCallback(ports.CmdStop)
 			}
 			m.confirmBreak = false
 			return m, tea.Quit

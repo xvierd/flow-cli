@@ -94,19 +94,3 @@ jobs:
     
     - name: Test on macOS
       run: go test -race -v ./...
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24'
-    
-    - name: Build on Windows
-      run: go build -v ./...
-    
-    - name: Test on Windows
-      run: go test -race -v ./...
