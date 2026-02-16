@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/xvierd/flow-cli/internal/ports"
-	"modernc.org/sqlite"
+	_ "modernc.org/sqlite"
 )
 
 // sqliteStorage implements the ports.Storage interface using SQLite.
@@ -111,13 +111,4 @@ func (s *sqliteStorage) Migrate() error {
 	}
 
 	return nil
-}
-
-// isUniqueConstraintError checks if an error is a unique constraint violation.
-func isUniqueConstraintError(err error) bool {
-	if err == nil {
-		return false
-	}
-	sqliteErr, ok := err.(*sqlite.Error)
-	return ok && sqliteErr.Code() == 2067 // SQLITE_CONSTRAINT_UNIQUE
 }

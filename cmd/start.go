@@ -56,7 +56,7 @@ an active task, that task will be used.`,
 			fmt.Print("Do you want to stop it and start a new one? [y/N] ")
 
 			var answer string
-			fmt.Scanln(&answer)
+			_, _ = fmt.Scanln(&answer)
 			answer = strings.TrimSpace(strings.ToLower(answer))
 
 			if answer != "y" && answer != "yes" {

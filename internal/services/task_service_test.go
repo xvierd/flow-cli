@@ -63,8 +63,8 @@ func TestTaskService_ListTasks(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test tasks
-	service.AddTask(ctx, AddTaskRequest{Title: "Task 1"})
-	service.AddTask(ctx, AddTaskRequest{Title: "Task 2"})
+	_, _ = service.AddTask(ctx, AddTaskRequest{Title: "Task 1"})
+	_, _ = service.AddTask(ctx, AddTaskRequest{Title: "Task 2"})
 
 	t.Run("list all tasks", func(t *testing.T) {
 		tasks, err := service.ListTasks(ctx, ListTasksRequest{})

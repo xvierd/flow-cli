@@ -26,7 +26,7 @@ var stopCmd = &cobra.Command{
 		if !jsonOutput {
 			fmt.Print("Add session notes (optional, press Enter to skip): ")
 			var notes string
-			fmt.Scanln(&notes)
+			_, _ = fmt.Scanln(&notes)
 			if notes != "" {
 				session, _ = pomodoroSvc.AddSessionNotes(ctx, session.ID, notes)
 			}
@@ -34,7 +34,7 @@ var stopCmd = &cobra.Command{
 
 		// Send notification if enabled
 		if notifier != nil && notifier.IsEnabled() {
-			notifier.NotifyPomodoroComplete(session.Duration.String())
+			_ = notifier.NotifyPomodoroComplete(session.Duration.String())
 		}
 
 		if jsonOutput {

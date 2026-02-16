@@ -120,13 +120,13 @@ func TestStartPauseResumeStop(t *testing.T) {
 	
 	t.Run("start pause resume stop flow", func(t *testing.T) {
 		// Start
-		session, err := pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{})
+		_, err := pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{})
 		if err != nil {
 			t.Fatalf("failed to start: %v", err)
 		}
 		
 		// Pause
-		session, err = pomodoroSvc.PauseSession(ctx)
+		session, err := pomodoroSvc.PauseSession(ctx)
 		if err != nil {
 			t.Fatalf("failed to pause: %v", err)
 		}
@@ -141,7 +141,7 @@ func TestStartPauseResumeStop(t *testing.T) {
 		}
 		
 		// Resume
-		session, err = pomodoroSvc.ResumeSession(ctx)
+		_, err = pomodoroSvc.ResumeSession(ctx)
 		if err != nil {
 			t.Fatalf("failed to resume: %v", err)
 		}

@@ -12,7 +12,7 @@ func clearSessions(t *testing.T, store ports.Storage, ctx context.Context) {
 	session, _ := store.Sessions().FindActive(ctx)
 	if session != nil {
 		session.Complete()
-		store.Sessions().Update(ctx, session)
+		_ = store.Sessions().Update(ctx, session)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestPomodoroService_PauseAndResume(t *testing.T) {
 
 	// Complete existing and start new
 	clearSessions(t, store, ctx)
-	service.StartPomodoro(ctx, StartPomodoroRequest{})
+	_, _ = service.StartPomodoro(ctx, StartPomodoroRequest{})
 
 	t.Run("pause session", func(t *testing.T) {
 		session, err := service.PauseSession(ctx)
@@ -143,7 +143,7 @@ func TestPomodoroService_StopSession(t *testing.T) {
 
 	// Complete existing and start new
 	clearSessions(t, store, ctx)
-	service.StartPomodoro(ctx, StartPomodoroRequest{})
+	_, _ = service.StartPomodoro(ctx, StartPomodoroRequest{})
 
 	t.Run("stop session", func(t *testing.T) {
 		session, err := service.StopSession(ctx)
@@ -167,7 +167,7 @@ func TestPomodoroService_CancelSession(t *testing.T) {
 	ctx := context.Background()
 
 	clearSessions(t, store, ctx)
-	service.StartPomodoro(ctx, StartPomodoroRequest{})
+	_, _ = service.StartPomodoro(ctx, StartPomodoroRequest{})
 
 	t.Run("cancel session", func(t *testing.T) {
 		err := service.CancelSession(ctx)
@@ -224,8 +224,8 @@ func TestPomodoroService_GetTaskHistory(t *testing.T) {
 
 	// Complete existing
 	clearSessions(t, store, ctx)
-	service.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &task.ID})
-	service.StopSession(ctx)
+	_, _ = service.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &task.ID})
+	_, _ = service.StopSession(ctx)
 
 	t.Run("get task history", func(t *testing.T) {
 		history, err := service.GetTaskHistory(ctx, task.ID)
@@ -250,8 +250,8 @@ func TestPomodoroService_GetRecentSessions(t *testing.T) {
 
 	// Create multiple sessions
 	for i := 0; i < 3; i++ {
-		service.StartPomodoro(ctx, StartPomodoroRequest{})
-		service.StopSession(ctx)
+		_, _ = service.StartPomodoro(ctx, StartPomodoroRequest{})
+		_, _ = service.StopSession(ctx)
 	}
 
 	t.Run("get recent sessions", func(t *testing.T) {

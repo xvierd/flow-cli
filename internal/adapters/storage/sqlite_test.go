@@ -78,9 +78,9 @@ func TestTaskRepository_FindAll(t *testing.T) {
 	task3, _ := domain.NewTask("Task 3")
 	task3.Complete()
 
-	repo.Save(ctx, task1)
-	repo.Save(ctx, task2)
-	repo.Save(ctx, task3)
+	_ = repo.Save(ctx, task1)
+	_ = repo.Save(ctx, task2)
+	_ = repo.Save(ctx, task3)
 
 	t.Run("find all without filter", func(t *testing.T) {
 		tasks, err := repo.FindAll(ctx, nil)
@@ -117,9 +117,9 @@ func TestTaskRepository_FindPending(t *testing.T) {
 	task3, _ := domain.NewTask("Completed Task")
 	task3.Complete()
 
-	repo.Save(ctx, task1)
-	repo.Save(ctx, task2)
-	repo.Save(ctx, task3)
+	_ = repo.Save(ctx, task1)
+	_ = repo.Save(ctx, task2)
+	_ = repo.Save(ctx, task3)
 
 	tasks, err := repo.FindPending(ctx)
 	if err != nil {

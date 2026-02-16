@@ -17,7 +17,6 @@ type Timer struct {
 	commandCallback    func(ports.TimerCommand) error
 	onSessionComplete  func(domain.SessionType)
 	completionInfo     *domain.CompletionInfo
-	lastError          error
 }
 
 // NewTimer creates a new TUI timer adapter.

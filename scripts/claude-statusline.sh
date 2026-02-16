@@ -9,58 +9,46 @@
 
 input=$(cat)
 
-# Claude context info
-MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"')
-PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
-
-# Parse Go duration string to total seconds
-# Handles: "1h2m3.456s", "14m30s", "45.5s", "0s"
-parse_duration() {
-  local dur="$1"
-  local hours=0 mins=0 secs=0
-
-  # Extract hours
-  if echo "$dur" | grep -q 'h'; then
-    hours=$(echo "$dur" | sed 's/h.*//' | grep -oE '[0-9]+$')
-  fi
-  # Extract minutes
-  if echo "$dur" | grep -q 'm'; then
-    mins=$(echo "$dur" | sed 's/.*h//' | sed 's/m.*//' | grep -oE '[0-9]+$')
-  fi
-  # Extract seconds (integer part only)
-  if echo "$dur" | grep -q 's'; then
-    secs=$(echo "$dur" | sed 's/.*m//' | sed 's/.*h//' | sed 's/s$//' | cut -d. -f1)
-  fi
-
-  hours=${hours:-0}
-  mins=${mins:-0}
-  secs=${secs:-0}
-
-  echo $(( hours * 3600 + mins * 60 + secs ))
-}
+# Claude context info — separate jq calls to handle spaces in model name
+MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"' 2>/dev/null)
+PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' 2>/dev/null)
+PCT=${PCT%%.*}
+MODEL=${MODEL:-Claude}
+PCT=${PCT:-0}
 
 # Flow pomodoro status
 FLOW_STATUS=""
 if command -v flow &>/dev/null; then
-  FLOW_JSON=$(flow status --json 2>/dev/null)
-  if [ $? -eq 0 ] && [ -n "$FLOW_JSON" ]; then
-    SESSION_STATUS=$(echo "$FLOW_JSON" | jq -r '.active_session.status // empty')
-    if [ -n "$SESSION_STATUS" ]; then
-      SESSION_TYPE=$(echo "$FLOW_JSON" | jq -r '.active_session.type')
-      REMAINING=$(echo "$FLOW_JSON" | jq -r '.active_session.remaining_time')
-      PROGRESS=$(echo "$FLOW_JSON" | jq -r '.active_session.progress')
-      TASK=$(echo "$FLOW_JSON" | jq -r '.active_task.title // empty')
+  FLOW_JSON=$(flow status --json 2>/dev/null) || FLOW_JSON=""
+  if [ -n "$FLOW_JSON" ]; then
+    # Extract fields with tab delimiter to handle spaces in task titles
+    IFS=$'\t' read -r SESSION_STATUS SESSION_TYPE REMAINING PROGRESS TASK <<< "$(echo "$FLOW_JSON" | jq -r '
+      [(.active_session.status // ""), (.active_session.type // ""), (.active_session.remaining_time // ""), (.active_session.progress // ""), (.active_task.title // "")] | join("\t")
+    ' 2>/dev/null)"
 
-      TOTAL_SECS=$(parse_duration "$REMAINING")
+    if [ -n "$SESSION_STATUS" ] && [ "$SESSION_STATUS" != "null" ]; then
+      # Parse Go duration (e.g. "14m30.5s", "1h2m3s") using bash only
+      TOTAL_SECS=0
+      rem="$REMAINING"
+      if [[ "$rem" =~ ([0-9]+)h ]]; then
+        TOTAL_SECS=$(( TOTAL_SECS + ${BASH_REMATCH[1]} * 3600 ))
+      fi
+      if [[ "$rem" =~ ([0-9]+)m ]]; then
+        TOTAL_SECS=$(( TOTAL_SECS + ${BASH_REMATCH[1]} * 60 ))
+      fi
+      if [[ "$rem" =~ ([0-9]+)(\.[0-9]+)?s ]]; then
+        TOTAL_SECS=$(( TOTAL_SECS + ${BASH_REMATCH[1]} ))
+      fi
+
       MINS=$((TOTAL_SECS / 60))
       SECS=$((TOTAL_SECS % 60))
       TIME_STR=$(printf "%02d:%02d" "$MINS" "$SECS")
 
       # Progress bar (5 chars wide)
-      PCT_DONE=$(echo "$PROGRESS" | awk '{printf "%d", $1 * 5}')
+      PCT_DONE=$(printf "%.0f" "$(echo "$PROGRESS * 5" | bc 2>/dev/null || echo 0)")
       BAR=""
       for i in 1 2 3 4 5; do
-        if [ "$i" -le "$PCT_DONE" ]; then
+        if [ "$i" -le "${PCT_DONE:-0}" ]; then
           BAR="${BAR}█"
         else
           BAR="${BAR}░"
@@ -72,13 +60,13 @@ if command -v flow &>/dev/null; then
       RESET="\033[0m"
       if [ "$SESSION_TYPE" = "work" ]; then
         ICON="🍅"
-        COLOR="\033[31m"  # red
+        COLOR="\033[31m"
       else
         ICON="☕"
-        COLOR="\033[32m"  # green
+        COLOR="\033[32m"
       fi
 
-      if [ -n "$TASK" ]; then
+      if [ -n "$TASK" ] && [ "$TASK" != "null" ]; then
         FLOW_STATUS="${COLOR}${ICON} ${TIME_STR} ${BAR} ${YELLOW}${TASK}${RESET}"
       else
         FLOW_STATUS="${COLOR}${ICON} ${TIME_STR} ${BAR}${RESET}"

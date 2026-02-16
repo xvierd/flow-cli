@@ -36,7 +36,7 @@ func TestAddCmd(t *testing.T) {
 	t.Run("add command has tags flag", func(t *testing.T) {
 		flag := addCmd.Flags().Lookup("tags")
 		if flag == nil {
-			t.Error("addCmd should have --tags flag")
+			t.Fatal("addCmd should have --tags flag")
 		}
 		if flag.Shorthand != "t" {
 			t.Errorf("tags flag shorthand = %q, want %q", flag.Shorthand, "t")
