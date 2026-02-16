@@ -101,6 +101,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.completed = false
 				m.notified = false
 				m.confirmBreak = false
+			} else if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.IsBreakSession() && m.commandCallback != nil {
+				_ = m.commandCallback(ports.CmdStop)
+				_ = m.commandCallback(ports.CmdStart)
+				m.completed = false
+				m.notified = false
 			} else if !m.completed && m.state.ActiveSession == nil && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdStart)
 				m.completed = false
@@ -350,7 +355,7 @@ func (m Model) viewActiveSession(sections []string) []string {
 	if m.confirmBreak {
 		sections = append(sections, helpStyle.Render("End session and start break? Press [b] again to confirm"))
 	} else if session.IsBreakSession() {
-		sections = append(sections, helpStyle.Render("[p]ause  [x] finish  [q]uit"))
+		sections = append(sections, helpStyle.Render("[s] skip  [p]ause  [x] finish  [q]uit"))
 	} else {
 		sections = append(sections, helpStyle.Render("[p]ause  [x] finish  [b]reak  [q]uit"))
 	}
