@@ -12,11 +12,12 @@ import (
 
 // Timer implements the ports.Timer interface using Bubbletea.
 type Timer struct {
-	program           *tea.Program
-	fetchState        func() *domain.CurrentState
-	commandCallback   func(ports.TimerCommand)
-	onSessionComplete func(domain.SessionType)
-	completionInfo    *domain.CompletionInfo
+	program            *tea.Program
+	fetchState         func() *domain.CurrentState
+	commandCallback    func(ports.TimerCommand) error
+	onSessionComplete  func(domain.SessionType)
+	completionInfo     *domain.CompletionInfo
+	lastError          error
 }
 
 // NewTimer creates a new TUI timer adapter.
@@ -66,7 +67,7 @@ func (t *Timer) SetFetchState(fetch func() *domain.CurrentState) {
 }
 
 // SetCommandCallback sets a function to call when commands are received.
-func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand)) {
+func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand) error) {
 	t.commandCallback = callback
 }
 
@@ -83,7 +84,7 @@ func (t *Timer) SetCompletionInfo(info *domain.CompletionInfo) {
 // SendCommand sends a command to the timer (for testing or automation).
 func (t *Timer) SendCommand(cmd ports.TimerCommand) {
 	if t.commandCallback != nil {
-		t.commandCallback(cmd)
+		_ = t.commandCallback(cmd)
 	}
 }
 

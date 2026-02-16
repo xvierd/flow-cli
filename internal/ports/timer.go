@@ -73,7 +73,7 @@ type Timer interface {
 	SetFetchState(fetch func() *domain.CurrentState)
 
 	// SetCommandCallback sets a function to call when commands are received.
-	SetCommandCallback(callback func(cmd TimerCommand))
+	SetCommandCallback(callback func(cmd TimerCommand) error)
 
 	// SetOnSessionComplete sets a callback fired when a session naturally completes.
 	SetOnSessionComplete(callback func(domain.SessionType))

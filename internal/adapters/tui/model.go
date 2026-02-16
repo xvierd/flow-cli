@@ -51,8 +51,9 @@ type Model struct {
 	completed            bool
 	completedSessionType domain.SessionType
 	notified             bool
+	confirmBreak         bool
 	fetchState           func() *domain.CurrentState
-	commandCallback      func(ports.TimerCommand)
+	commandCallback      func(ports.TimerCommand) error
 	onSessionComplete    func(domain.SessionType)
 	completionInfo       *domain.CompletionInfo
 }
@@ -88,10 +89,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "s":
 			if m.completed && m.commandCallback != nil {
-				// Start a new work session (skip break or resume after break)
 				m.commandCallback(ports.CmdStart)
 				m.completed = false
 				m.notified = false
+				m.confirmBreak = false
 			}
 		case "p":
 			if m.commandCallback != nil && m.state.ActiveSession != nil {
@@ -101,25 +102,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.commandCallback(ports.CmdResume)
 				}
 			}
-		case "c":
-			if m.commandCallback != nil {
-				m.commandCallback(ports.CmdCancel)
-			}
-			return m, tea.Quit
+			m.confirmBreak = false
 		case "b":
 			if m.completed && m.completedSessionType == domain.SessionTypeWork {
-				// Work just finished — start a break
 				if m.commandCallback != nil {
 					m.commandCallback(ports.CmdBreak)
 					m.completed = false
 					m.notified = false
+				}
+			} else if !m.completed && m.state.ActiveSession != nil {
+				if m.confirmBreak {
+					if m.commandCallback != nil {
+						m.commandCallback(ports.CmdBreak)
+						m.completed = false
+						m.notified = false
+						m.confirmBreak = false
+					}
+				} else {
+					m.confirmBreak = true
 				}
 			}
 		case "x":
 			if m.commandCallback != nil {
 				m.commandCallback(ports.CmdStop)
 			}
+			m.confirmBreak = false
 			return m, tea.Quit
+		default:
+			m.confirmBreak = false
 		}
 
 	case tea.WindowSizeMsg:
@@ -200,7 +210,8 @@ func (m Model) View() string {
 		sections = append(sections, helpStyle.Render("[q]uit"))
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Center, sections...)
+	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
 func (m Model) viewWorkComplete(sections []string) []string {
@@ -296,7 +307,11 @@ func (m Model) viewActiveSession(sections []string) []string {
 
 	// Help
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit"))
+	if m.confirmBreak {
+		sections = append(sections, helpStyle.Render("End session and start break? Press [b] again to confirm"))
+	} else {
+		sections = append(sections, helpStyle.Render("[p]ause  [x] stop  [b]reak  [q]uit"))
+	}
 	return sections
 }
 
