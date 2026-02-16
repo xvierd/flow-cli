@@ -13,25 +13,17 @@ import (
 	"github.com/xvierd/flow-cli/internal/ports"
 )
 
-// Styles for the TUI.
+// Theme colors.
 var (
-	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#FF6B6B")).
-		MarginBottom(1)
-
-	statusStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#4ECDC4"))
+	colorWork   = lipgloss.Color("#FF6B6B") // red
+	colorBreak  = lipgloss.Color("#4ECDC4") // teal/green
+	colorPaused = lipgloss.Color("#95A5A6") // gray
 
 	taskStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFE66D"))
-
-	timeStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#FFFFFF"))
+			Foreground(lipgloss.Color("#FFE66D"))
 
 	helpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#95A5A6"))
+			Foreground(lipgloss.Color("#95A5A6"))
 )
 
 // tickMsg is sent on every timer tick.
@@ -80,6 +72,22 @@ func fetchStateCmd(fetch func() *domain.CurrentState) tea.Cmd {
 	}
 }
 
+// getThemeColor returns the color for the current session type.
+func (m Model) getThemeColor() lipgloss.Color {
+	if m.state.ActiveSession != nil && m.state.ActiveSession.IsBreakSession() {
+		return colorBreak
+	}
+	return colorWork
+}
+
+// getTimerColor returns the color for the timer, accounting for pause state.
+func (m Model) getTimerColor() lipgloss.Color {
+	if m.state.ActiveSession != nil && m.state.ActiveSession.Status == domain.SessionStatusPaused {
+		return colorPaused
+	}
+	return m.getThemeColor()
+}
+
 // Update handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -93,6 +101,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.completed = false
 				m.notified = false
 				m.confirmBreak = false
+			} else if !m.completed && m.state.ActiveSession == nil && m.commandCallback != nil {
+				_ = m.commandCallback(ports.CmdStart)
+				m.completed = false
+				m.notified = false
 			}
 		case "p":
 			if m.commandCallback != nil && m.state.ActiveSession != nil {
@@ -110,7 +122,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.completed = false
 					m.notified = false
 				}
-			} else if !m.completed && m.state.ActiveSession != nil {
+			} else if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.Type == domain.SessionTypeWork {
 				if m.confirmBreak {
 					if m.commandCallback != nil {
 						// Stop the active session first, then start break
@@ -189,7 +201,9 @@ func (m Model) View() string {
 
 	var sections []string
 
-	// Title
+	// Title — dynamic color based on session type
+	themeColor := m.getThemeColor()
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(themeColor).MarginBottom(1)
 	sections = append(sections, titleStyle.Render("🍅 Flow - Pomodoro Timer"))
 
 	// Active task
@@ -207,9 +221,10 @@ func (m Model) View() string {
 	} else if m.state.ActiveSession != nil {
 		sections = m.viewActiveSession(sections)
 	} else {
+		statusStyle := lipgloss.NewStyle().Foreground(themeColor)
 		sections = append(sections, statusStyle.Render("No active session"))
 		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render("[q]uit"))
+		sections = append(sections, helpStyle.Render("[s]tart  [q]uit"))
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
@@ -217,6 +232,8 @@ func (m Model) View() string {
 }
 
 func (m Model) viewWorkComplete(sections []string) []string {
+	statusStyle := lipgloss.NewStyle().Foreground(m.getThemeColor())
+
 	sections = append(sections, "")
 	sections = append(sections, statusStyle.Render("Session complete! Great work."))
 	sections = append(sections, m.progress.ViewAs(1.0))
@@ -256,6 +273,8 @@ func (m Model) viewWorkComplete(sections []string) []string {
 }
 
 func (m Model) viewBreakComplete(sections []string) []string {
+	statusStyle := lipgloss.NewStyle().Foreground(m.getThemeColor())
+
 	sections = append(sections, "")
 	sections = append(sections, statusStyle.Render("Break over! Ready to focus?"))
 	sections = append(sections, m.progress.ViewAs(1.0))
@@ -274,6 +293,9 @@ func (m Model) viewBreakComplete(sections []string) []string {
 
 func (m Model) viewActiveSession(sections []string) []string {
 	session := m.state.ActiveSession
+	themeColor := m.getThemeColor()
+	timerColor := m.getTimerColor()
+	statusStyle := lipgloss.NewStyle().Foreground(themeColor)
 
 	// Session type and status
 	statusText := fmt.Sprintf("Status: %s (%s)",
@@ -281,14 +303,37 @@ func (m Model) viewActiveSession(sections []string) []string {
 		domain.GetStatusLabel(session.Status))
 	sections = append(sections, statusStyle.Render(statusText))
 
-	// Timer
+	// Big ASCII timer
 	remaining := session.RemainingTime()
-	timeText := formatDuration(remaining)
-	sections = append(sections, timeStyle.Render(timeText))
+	timeStr := formatDuration(remaining)
+	sections = append(sections, "")
+	sections = append(sections, renderBigTime(timeStr, timerColor, m.width))
 
-	// Progress bar
+	// Pause badge
+	if session.Status == domain.SessionStatusPaused {
+		pauseBadge := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#95A5A6")).
+			Padding(0, 1).
+			Render("⏸ PAUSED")
+		sections = append(sections, "")
+		sections = append(sections, pauseBadge)
+	}
+
+	// Dynamic progress bar
+	sections = append(sections, "")
 	prog := session.Progress()
-	sections = append(sections, m.progress.ViewAs(prog))
+	var pbar progress.Model
+	if session.Status == domain.SessionStatusPaused {
+		pbar = progress.New(progress.WithGradient("#95A5A6", "#7F8C8D"))
+	} else if session.IsBreakSession() {
+		pbar = progress.New(progress.WithGradient("#4ECDC4", "#2ECC71"))
+	} else {
+		pbar = progress.New(progress.WithGradient("#FF6B6B", "#FF8E53"))
+	}
+	pbar.Width = m.width - 4
+	sections = append(sections, pbar.ViewAs(prog))
 
 	// Git context
 	if session.GitBranch != "" {
@@ -300,19 +345,14 @@ func (m Model) viewActiveSession(sections []string) []string {
 		sections = append(sections, helpStyle.Render(gitInfo))
 	}
 
-	// Daily stats
-	stats := m.state.TodayStats
-	statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
-		stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
-	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render(statsText))
-
 	// Help
 	sections = append(sections, "")
 	if m.confirmBreak {
 		sections = append(sections, helpStyle.Render("End session and start break? Press [b] again to confirm"))
+	} else if session.IsBreakSession() {
+		sections = append(sections, helpStyle.Render("[p]ause  [x] finish  [q]uit"))
 	} else {
-		sections = append(sections, helpStyle.Render("[p]ause  [x] stop  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render("[p]ause  [x] finish  [b]reak  [q]uit"))
 	}
 	return sections
 }
