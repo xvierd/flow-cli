@@ -31,7 +31,7 @@ func TestDetector_Detect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize a git repo
 	repo, err := git.PlainInit(tmpDir, false)
@@ -104,7 +104,7 @@ func TestDetector_Detect_WithModifiedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize a git repo
 	repo, err := git.PlainInit(tmpDir, false)
@@ -188,7 +188,7 @@ func TestDetector_Detect_NoGitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	d := NewDetector()
 	ctx := context.Background()
@@ -205,7 +205,7 @@ func TestFindGitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create a subdirectory structure
 	subDir := filepath.Join(tmpDir, "level1", "level2")
@@ -235,7 +235,7 @@ func TestFindGitRepo_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	_, err = findGitRepo(tmpDir)
 	if err == nil {

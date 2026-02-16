@@ -31,6 +31,7 @@ var (
 	// Global flags
 	dbPath     string
 	jsonOutput bool
+	inlineMode bool
 
 	// Global dependencies
 	storageAdapter ports.Storage
@@ -73,6 +74,7 @@ func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to the database file (default: ~/.flow/flow.db)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
+	rootCmd.PersistentFlags().BoolVarP(&inlineMode, "inline", "i", false, "Compact inline timer (no fullscreen)")
 
 	// Set version - cobra handles --version automatically
 	rootCmd.Version = Version
@@ -171,7 +173,6 @@ func setupSignalHandler() context.Context {
 // runWizard implements the interactive wizard flow for bare "flow" command.
 func runWizard(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	reader := bufio.NewReader(os.Stdin)
 	workingDir, _ := os.Getwd()
 
 	// Check for active session
@@ -179,6 +180,14 @@ func runWizard(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get current state: %w", err)
 	}
+
+	// Inline mode: entire flow runs inside a single bubbletea program
+	if inlineMode {
+		return launchTUI(ctx, state, workingDir)
+	}
+
+	// Fullscreen mode: wizard prompts then TUI
+	reader := bufio.NewReader(os.Stdin)
 
 	if state.ActiveSession != nil {
 		active := state.ActiveSession
@@ -197,11 +206,9 @@ func runWizard(cmd *cobra.Command, args []string) error {
 		answer = strings.TrimSpace(strings.ToLower(answer))
 
 		if answer == "" || answer == "y" || answer == "yes" {
-			// Resume: just open the TUI for the existing session
 			return launchTUI(ctx, state, workingDir)
 		}
 
-		// Stop old session and start fresh
 		_, err := pomodoroSvc.StopSession(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to stop current session: %w", err)
@@ -218,7 +225,6 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 	var taskID *string
 	if taskName != "" {
-		// Create the task inline
 		task, err := taskService.AddTask(ctx, services.AddTaskRequest{
 			Title: taskName,
 		})
@@ -228,21 +234,28 @@ func runWizard(cmd *cobra.Command, args []string) error {
 		taskID = &task.ID
 	}
 
-	// 2. Ask for duration with default
-	defaultDuration := time.Duration(appConfig.Pomodoro.WorkDuration)
-	defaultLabel := formatMinutes(defaultDuration)
-	fmt.Printf("  Duration? [%s]: ", defaultLabel)
-	durationInput, _ := reader.ReadString('\n')
-	durationInput = strings.TrimSpace(durationInput)
+	// 2. Pick session type with arrow-key picker
+	presets := appConfig.Pomodoro.GetPresets()
+	shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
+	longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
 
-	var customDuration time.Duration
-	if durationInput != "" {
-		parsed, err := time.ParseDuration(durationInput)
-		if err != nil {
-			return fmt.Errorf("invalid duration %q (use format like 25m, 1h, 45m): %w", durationInput, err)
-		}
-		customDuration = parsed
+	var items []tui.PickerItem
+	for _, p := range presets {
+		items = append(items, tui.PickerItem{
+			Label: p.Name,
+			Desc:  formatMinutes(p.Duration),
+		})
 	}
+
+	footer := fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
+		formatMinutes(shortBreak), formatMinutes(longBreak), appConfig.Pomodoro.SessionsBeforeLong)
+
+	result := tui.RunPicker("Duration:", items, footer, &appConfig.Theme)
+	if result.Aborted {
+		return nil
+	}
+
+	customDuration := presets[result.Index].Duration
 
 	// Start the session
 	req := services.StartPomodoroRequest{
@@ -270,7 +283,41 @@ func runWizard(cmd *cobra.Command, args []string) error {
 // launchTUI starts the Bubbletea timer interface.
 func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir string) error {
 	ctx = setupSignalHandler()
-	timer := tui.NewTimer()
+	var timer ports.Timer
+	if inlineMode {
+		inlineTimer := tui.NewInlineTimer(&appConfig.Theme)
+
+		// Configure the setup phase (preset picker + task input)
+		presets := appConfig.Pomodoro.GetPresets()
+		shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
+		longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
+		breakInfo := fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
+			formatMinutes(shortBreak), formatMinutes(longBreak), appConfig.Pomodoro.SessionsBeforeLong)
+
+		inlineTimer.SetInlineSetup(presets, breakInfo, func(presetIndex int, taskName string) error {
+			var taskID *string
+			if taskName != "" {
+				task, err := taskService.AddTask(ctx, services.AddTaskRequest{
+					Title: taskName,
+				})
+				if err != nil {
+					return err
+				}
+				taskID = &task.ID
+			}
+
+			_, err := pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{
+				TaskID:     taskID,
+				WorkingDir: workingDir,
+				Duration:   presets[presetIndex].Duration,
+			})
+			return err
+		})
+
+		timer = inlineTimer
+	} else {
+		timer = tui.NewTimer(&appConfig.Theme)
+	}
 
 	timer.SetFetchState(func() *domain.CurrentState {
 		newState, err := stateService.GetCurrentState(ctx)

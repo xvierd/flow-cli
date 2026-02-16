@@ -115,7 +115,7 @@ func (r *taskRepository) FindAll(ctx context.Context, status *domain.TaskStatus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return r.scanTasks(rows)
 }
@@ -139,7 +139,7 @@ func (r *taskRepository) FindPending(ctx context.Context) ([]*domain.Task, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pending tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return r.scanTasks(rows)
 }

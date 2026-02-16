@@ -100,7 +100,7 @@ func (r *sessionRepository) FindRecent(ctx context.Context, since time.Time) ([]
 	if err != nil {
 		return nil, fmt.Errorf("failed to query recent sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return r.scanSessions(rows)
 }
@@ -120,7 +120,7 @@ func (r *sessionRepository) FindByTask(ctx context.Context, taskID string) ([]*d
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sessions by task: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return r.scanSessions(rows)
 }

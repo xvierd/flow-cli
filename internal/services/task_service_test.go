@@ -14,7 +14,7 @@ func setupTestStorage(t *testing.T) (ports.Storage, func()) {
 	if err != nil {
 		t.Fatalf("Failed to create test storage: %v", err)
 	}
-	return store, func() { store.Close() }
+	return store, func() { _ = store.Close() }
 }
 
 func TestTaskService_AddTask(t *testing.T) {

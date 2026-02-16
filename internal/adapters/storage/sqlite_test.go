@@ -13,7 +13,7 @@ func TestNewMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMemory() error = %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	if storage == nil {
 		t.Error("NewMemory() returned nil storage")
@@ -25,7 +25,7 @@ func TestTaskRepository_SaveAndFind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMemory() error = %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -67,7 +67,7 @@ func TestTaskRepository_SaveAndFind(t *testing.T) {
 
 func TestTaskRepository_FindAll(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -106,7 +106,7 @@ func TestTaskRepository_FindAll(t *testing.T) {
 
 func TestTaskRepository_FindPending(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -132,7 +132,7 @@ func TestTaskRepository_FindPending(t *testing.T) {
 
 func TestTaskRepository_FindActive(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -150,7 +150,9 @@ func TestTaskRepository_FindActive(t *testing.T) {
 	t.Run("with active task", func(t *testing.T) {
 		task, _ := domain.NewTask("Active Task")
 		task.Start()
-		repo.Save(ctx, task)
+		if err := repo.Save(ctx, task); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
 
 		active, err := repo.FindActive(ctx)
 		if err != nil {
@@ -167,13 +169,15 @@ func TestTaskRepository_FindActive(t *testing.T) {
 
 func TestTaskRepository_Update(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
 
 	task, _ := domain.NewTask("Original Title")
-	repo.Save(ctx, task)
+	if err := repo.Save(ctx, task); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
 
 	task.Title = "Updated Title"
 	task.Start()
@@ -194,13 +198,15 @@ func TestTaskRepository_Update(t *testing.T) {
 
 func TestTaskRepository_Delete(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
 
 	task, _ := domain.NewTask("To Delete")
-	repo.Save(ctx, task)
+	if err := repo.Save(ctx, task); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
 
 	err := repo.Delete(ctx, task.ID)
 	if err != nil {
@@ -215,7 +221,7 @@ func TestTaskRepository_Delete(t *testing.T) {
 
 func TestSessionRepository_SaveAndFind(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
@@ -239,7 +245,9 @@ func TestSessionRepository_SaveAndFind(t *testing.T) {
 
 	t.Run("find by id", func(t *testing.T) {
 		session := domain.NewPomodoroSession(config, nil)
-		repo.Save(ctx, session)
+		if err := repo.Save(ctx, session); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
 
 		found, err := repo.FindByID(ctx, session.ID)
 		if err != nil {
@@ -256,7 +264,7 @@ func TestSessionRepository_SaveAndFind(t *testing.T) {
 
 func TestSessionRepository_FindActive(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
@@ -264,7 +272,9 @@ func TestSessionRepository_FindActive(t *testing.T) {
 
 	t.Run("find running session", func(t *testing.T) {
 		session := domain.NewPomodoroSession(config, nil)
-		repo.Save(ctx, session)
+		if err := repo.Save(ctx, session); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
 
 		active, err := repo.FindActive(ctx)
 		if err != nil {
@@ -281,7 +291,9 @@ func TestSessionRepository_FindActive(t *testing.T) {
 	t.Run("find paused session", func(t *testing.T) {
 		session := domain.NewPomodoroSession(config, nil)
 		session.Pause()
-		repo.Save(ctx, session)
+		if err := repo.Save(ctx, session); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
 
 		active, err := repo.FindActive(ctx)
 		if err != nil {
@@ -295,14 +307,16 @@ func TestSessionRepository_FindActive(t *testing.T) {
 
 func TestSessionRepository_Update(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
 	config := domain.DefaultPomodoroConfig()
 
 	session := domain.NewPomodoroSession(config, nil)
-	repo.Save(ctx, session)
+	if err := repo.Save(ctx, session); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
 
 	session.Complete()
 	err := repo.Update(ctx, session)
@@ -321,7 +335,7 @@ func TestSessionRepository_Update(t *testing.T) {
 
 func TestSessionRepository_FindRecent(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
@@ -330,7 +344,9 @@ func TestSessionRepository_FindRecent(t *testing.T) {
 	// Create sessions
 	session1 := domain.NewPomodoroSession(config, nil)
 	session1.Complete()
-	repo.Save(ctx, session1)
+	if err := repo.Save(ctx, session1); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
 
 	sessions, err := repo.FindRecent(ctx, time.Now().Add(-time.Hour))
 	if err != nil {
@@ -343,7 +359,7 @@ func TestSessionRepository_FindRecent(t *testing.T) {
 
 func TestSessionRepository_GetDailyStats(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
@@ -352,12 +368,16 @@ func TestSessionRepository_GetDailyStats(t *testing.T) {
 	// Create completed work session
 	session := domain.NewPomodoroSession(config, nil)
 	session.Complete()
-	repo.Save(ctx, session)
+	if err := repo.Save(ctx, session); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
 
 	// Create completed break session
 	breakSession := domain.NewBreakSession(config, 1)
 	breakSession.Complete()
-	repo.Save(ctx, breakSession)
+	if err := repo.Save(ctx, breakSession); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
 
 	stats, err := repo.GetDailyStats(ctx, time.Now())
 	if err != nil {
