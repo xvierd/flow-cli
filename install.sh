@@ -3,7 +3,7 @@ set -e
 
 REPO="xvierd/flow-cli"
 BINARY="flow"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect OS
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -40,13 +40,20 @@ trap 'rm -rf "$TMPDIR"' EXIT
 curl -sSL "$URL" -o "${TMPDIR}/${TARBALL}"
 tar xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
 
-if [ -w "$INSTALL_DIR" ]; then
-  mv "${TMPDIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
-else
-  echo "Need sudo to install to ${INSTALL_DIR}"
-  sudo mv "${TMPDIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
-fi
-
+mkdir -p "$INSTALL_DIR"
+mv "${TMPDIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
 chmod +x "${INSTALL_DIR}/${BINARY}"
 
 echo "${BINARY} ${VERSION} installed to ${INSTALL_DIR}/${BINARY}"
+
+# Check if INSTALL_DIR is in PATH
+case ":$PATH:" in
+  *":${INSTALL_DIR}:"*) ;;
+  *)
+    echo ""
+    echo "Add ${INSTALL_DIR} to your PATH:"
+    echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+    echo ""
+    echo "Add it to your shell profile (~/.zshrc or ~/.bashrc) to make it permanent."
+    ;;
+esac
