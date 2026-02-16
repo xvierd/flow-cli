@@ -6,6 +6,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/ports"
 )
@@ -17,16 +18,17 @@ type Timer struct {
 	commandCallback    func(ports.TimerCommand) error
 	onSessionComplete  func(domain.SessionType)
 	completionInfo     *domain.CompletionInfo
+	theme              *config.ThemeConfig
 }
 
 // NewTimer creates a new TUI timer adapter.
-func NewTimer() ports.Timer {
-	return &Timer{}
+func NewTimer(theme *config.ThemeConfig) ports.Timer {
+	return &Timer{theme: theme}
 }
 
 // Run starts the timer interface and blocks until completion.
 func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) error {
-	model := NewModel(initialState, t.completionInfo)
+	model := NewModel(initialState, t.completionInfo, t.theme)
 	model.fetchState = t.fetchState
 	model.commandCallback = t.commandCallback
 	model.onSessionComplete = t.onSessionComplete
@@ -99,13 +101,13 @@ var _ ports.Timer = (*Timer)(nil)
 
 // RunTimer is a convenience function to run the timer directly.
 func RunTimer(ctx context.Context, state *domain.CurrentState) error {
-	timer := NewTimer()
+	timer := NewTimer(nil)
 	return timer.Run(ctx, state)
 }
 
 // ShowStatus displays the current status without starting interactive mode.
-func ShowStatus(state *domain.CurrentState) {
-	model := NewModel(state, nil)
+func ShowStatus(state *domain.CurrentState, theme *config.ThemeConfig) {
+	model := NewModel(state, nil, theme)
 	fmt.Println(model.View())
 }
 

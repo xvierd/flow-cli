@@ -32,7 +32,7 @@ func TestFormatDuration(t *testing.T) {
 
 func TestNewModel(t *testing.T) {
 	state := &domain.CurrentState{}
-	model := NewModel(state, nil)
+	model := NewModel(state, nil, nil)
 
 	if model.state != state {
 		t.Error("NewModel() should store the initial state")
@@ -58,7 +58,7 @@ func TestModel_View(t *testing.T) {
 		},
 	}
 
-	model := NewModel(state, nil)
+	model := NewModel(state, nil, nil)
 	model.width = 80
 	model.height = 24
 
@@ -79,7 +79,7 @@ func TestModel_View_NoActiveSession(t *testing.T) {
 		TodayStats:    domain.DailyStats{},
 	}
 
-	model := NewModel(state, nil)
+	model := NewModel(state, nil, nil)
 	model.width = 80
 	model.height = 24
 
@@ -106,7 +106,7 @@ func TestModel_View_WorkComplete(t *testing.T) {
 		SessionsBeforeLong: 4,
 	}
 
-	model := NewModel(state, info)
+	model := NewModel(state, info, nil)
 	model.width = 80
 	model.height = 24
 	model.completed = true
@@ -150,7 +150,7 @@ func TestModel_View_WorkComplete_LongBreak(t *testing.T) {
 		SessionsBeforeLong: 4,
 	}
 
-	model := NewModel(state, info)
+	model := NewModel(state, info, nil)
 	model.width = 80
 	model.height = 24
 	model.completed = true
@@ -175,7 +175,7 @@ func TestModel_View_BreakComplete(t *testing.T) {
 		},
 	}
 
-	model := NewModel(state, nil)
+	model := NewModel(state, nil, nil)
 	model.width = 80
 	model.height = 24
 	model.completed = true

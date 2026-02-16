@@ -9,22 +9,72 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/ports"
 )
 
-// Theme colors.
-var (
-	colorWork   = lipgloss.Color("#FF6B6B") // red
-	colorBreak  = lipgloss.Color("#4ECDC4") // teal/green
-	colorPaused = lipgloss.Color("#95A5A6") // gray
-
-	taskStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFE66D"))
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#95A5A6"))
-)
+// resolveTheme fills any empty fields in the given ThemeConfig with defaults.
+// If theme is nil, returns the full default theme.
+func resolveTheme(theme *config.ThemeConfig) config.ThemeConfig {
+	defaults := config.DefaultThemeConfig()
+	if theme == nil {
+		return defaults
+	}
+	resolved := *theme
+	if resolved.ColorWork == "" {
+		resolved.ColorWork = defaults.ColorWork
+	}
+	if resolved.ColorBreak == "" {
+		resolved.ColorBreak = defaults.ColorBreak
+	}
+	if resolved.ColorPaused == "" {
+		resolved.ColorPaused = defaults.ColorPaused
+	}
+	if resolved.ColorTitle == "" {
+		resolved.ColorTitle = defaults.ColorTitle
+	}
+	if resolved.ColorTask == "" {
+		resolved.ColorTask = defaults.ColorTask
+	}
+	if resolved.ColorHelp == "" {
+		resolved.ColorHelp = defaults.ColorHelp
+	}
+	if resolved.WorkGradientStart == "" {
+		resolved.WorkGradientStart = defaults.WorkGradientStart
+	}
+	if resolved.WorkGradientEnd == "" {
+		resolved.WorkGradientEnd = defaults.WorkGradientEnd
+	}
+	if resolved.BreakGradientStart == "" {
+		resolved.BreakGradientStart = defaults.BreakGradientStart
+	}
+	if resolved.BreakGradientEnd == "" {
+		resolved.BreakGradientEnd = defaults.BreakGradientEnd
+	}
+	if resolved.PausedGradientStart == "" {
+		resolved.PausedGradientStart = defaults.PausedGradientStart
+	}
+	if resolved.PausedGradientEnd == "" {
+		resolved.PausedGradientEnd = defaults.PausedGradientEnd
+	}
+	if resolved.IconApp == "" {
+		resolved.IconApp = defaults.IconApp
+	}
+	if resolved.IconTask == "" {
+		resolved.IconTask = defaults.IconTask
+	}
+	if resolved.IconStats == "" {
+		resolved.IconStats = defaults.IconStats
+	}
+	if resolved.IconGit == "" {
+		resolved.IconGit = defaults.IconGit
+	}
+	if resolved.IconPaused == "" {
+		resolved.IconPaused = defaults.IconPaused
+	}
+	return resolved
+}
 
 // tickMsg is sent on every timer tick.
 type tickMsg time.Time
@@ -48,14 +98,16 @@ type Model struct {
 	commandCallback      func(ports.TimerCommand) error
 	onSessionComplete    func(domain.SessionType)
 	completionInfo       *domain.CompletionInfo
+	theme                config.ThemeConfig
 }
 
 // NewModel creates a new TUI model.
-func NewModel(initialState *domain.CurrentState, info *domain.CompletionInfo) Model {
+func NewModel(initialState *domain.CurrentState, info *domain.CompletionInfo, theme *config.ThemeConfig) Model {
 	return Model{
 		state:          initialState,
 		progress:       progress.New(progress.WithDefaultGradient()),
 		completionInfo: info,
+		theme:          resolveTheme(theme),
 	}
 }
 
@@ -75,15 +127,15 @@ func fetchStateCmd(fetch func() *domain.CurrentState) tea.Cmd {
 // getThemeColor returns the color for the current session type.
 func (m Model) getThemeColor() lipgloss.Color {
 	if m.state.ActiveSession != nil && m.state.ActiveSession.IsBreakSession() {
-		return colorBreak
+		return lipgloss.Color(m.theme.ColorBreak)
 	}
-	return colorWork
+	return lipgloss.Color(m.theme.ColorWork)
 }
 
 // getTimerColor returns the color for the timer, accounting for pause state.
 func (m Model) getTimerColor() lipgloss.Color {
 	if m.state.ActiveSession != nil && m.state.ActiveSession.Status == domain.SessionStatusPaused {
-		return colorPaused
+		return lipgloss.Color(m.theme.ColorPaused)
 	}
 	return m.getThemeColor()
 }
@@ -206,14 +258,14 @@ func (m Model) View() string {
 
 	var sections []string
 
-	// Title — dynamic color based on session type
-	themeColor := m.getThemeColor()
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(themeColor).MarginBottom(1)
-	sections = append(sections, titleStyle.Render("🍅 Flow - Pomodoro Timer"))
+	// Title — subdued, not competing with the timer
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle)).MarginBottom(1)
+	sections = append(sections, titleStyle.Render(fmt.Sprintf("%s Flow - Pomodoro Timer", m.theme.IconApp)))
 
 	// Active task
 	if m.state.ActiveTask != nil {
-		taskText := fmt.Sprintf("📋 Task: %s", m.state.ActiveTask.Title)
+		taskText := fmt.Sprintf("%s Task: %s", m.theme.IconTask, m.state.ActiveTask.Title)
+		taskStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorTask))
 		sections = append(sections, taskStyle.Render(taskText))
 	}
 
@@ -226,9 +278,10 @@ func (m Model) View() string {
 	} else if m.state.ActiveSession != nil {
 		sections = m.viewActiveSession(sections)
 	} else {
-		statusStyle := lipgloss.NewStyle().Foreground(themeColor)
-		sections = append(sections, statusStyle.Render("No active session"))
+		idleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused))
+		sections = append(sections, idleStyle.Render("No active session"))
 		sections = append(sections, "")
+		helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 		sections = append(sections, helpStyle.Render("[s]tart  [q]uit"))
 	}
 
@@ -238,6 +291,7 @@ func (m Model) View() string {
 
 func (m Model) viewWorkComplete(sections []string) []string {
 	statusStyle := lipgloss.NewStyle().Foreground(m.getThemeColor())
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	sections = append(sections, "")
 	sections = append(sections, statusStyle.Render("Session complete! Great work."))
@@ -265,20 +319,21 @@ func (m Model) viewWorkComplete(sections []string) []string {
 
 	// Daily stats
 	stats := m.state.TodayStats
-	statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
-		stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+	statsText := fmt.Sprintf("%s Today: %d work sessions, %d breaks, %s worked",
+		m.theme.IconStats, stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
 
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render("[b]reak  [s]kip  [q]uit"))
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("Customize durations in ~/.flow/config.toml"))
+	sections = append(sections, helpStyle.Render("Customize in ~/.flow/config.toml"))
 	return sections
 }
 
 func (m Model) viewBreakComplete(sections []string) []string {
 	statusStyle := lipgloss.NewStyle().Foreground(m.getThemeColor())
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	sections = append(sections, "")
 	sections = append(sections, statusStyle.Render("Break over! Ready to focus?"))
@@ -286,8 +341,8 @@ func (m Model) viewBreakComplete(sections []string) []string {
 
 	// Daily stats
 	stats := m.state.TodayStats
-	statsText := fmt.Sprintf("📊 Today: %d work sessions, %d breaks, %s worked",
-		stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+	statsText := fmt.Sprintf("%s Today: %d work sessions, %d breaks, %s worked",
+		m.theme.IconStats, stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
 
@@ -298,9 +353,9 @@ func (m Model) viewBreakComplete(sections []string) []string {
 
 func (m Model) viewActiveSession(sections []string) []string {
 	session := m.state.ActiveSession
-	themeColor := m.getThemeColor()
 	timerColor := m.getTimerColor()
-	statusStyle := lipgloss.NewStyle().Foreground(themeColor)
+	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused))
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	// Session type and status
 	statusText := fmt.Sprintf("Status: %s (%s)",
@@ -319,9 +374,9 @@ func (m Model) viewActiveSession(sections []string) []string {
 		pauseBadge := lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#95A5A6")).
+			Background(lipgloss.Color(m.theme.ColorPaused)).
 			Padding(0, 1).
-			Render("⏸ PAUSED")
+			Render(fmt.Sprintf("%s PAUSED", m.theme.IconPaused))
 		sections = append(sections, "")
 		sections = append(sections, pauseBadge)
 	}
@@ -331,11 +386,11 @@ func (m Model) viewActiveSession(sections []string) []string {
 	prog := session.Progress()
 	var pbar progress.Model
 	if session.Status == domain.SessionStatusPaused {
-		pbar = progress.New(progress.WithGradient("#95A5A6", "#7F8C8D"))
+		pbar = progress.New(progress.WithGradient(m.theme.PausedGradientStart, m.theme.PausedGradientEnd))
 	} else if session.IsBreakSession() {
-		pbar = progress.New(progress.WithGradient("#4ECDC4", "#2ECC71"))
+		pbar = progress.New(progress.WithGradient(m.theme.BreakGradientStart, m.theme.BreakGradientEnd))
 	} else {
-		pbar = progress.New(progress.WithGradient("#FF6B6B", "#FF8E53"))
+		pbar = progress.New(progress.WithGradient(m.theme.WorkGradientStart, m.theme.WorkGradientEnd))
 	}
 	pbar.Width = m.width - 4
 	sections = append(sections, pbar.ViewAs(prog))
@@ -346,7 +401,7 @@ func (m Model) viewActiveSession(sections []string) []string {
 		if len(commitShort) > 7 {
 			commitShort = commitShort[:7]
 		}
-		gitInfo := fmt.Sprintf("🌿 %s (%s)", session.GitBranch, commitShort)
+		gitInfo := fmt.Sprintf("%s %s (%s)", m.theme.IconGit, session.GitBranch, commitShort)
 		sections = append(sections, helpStyle.Render(gitInfo))
 	}
 

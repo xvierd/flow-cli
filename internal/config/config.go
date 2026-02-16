@@ -16,6 +16,51 @@ type Config struct {
 	Notifications NotificationConfig  `mapstructure:"notifications"`
 	MCP           MCPConfig           `mapstructure:"mcp"`
 	Storage       StorageConfig       `mapstructure:"storage"`
+	Theme         ThemeConfig         `mapstructure:"theme"`
+}
+
+// ThemeConfig holds theme customization settings (colors and icons).
+type ThemeConfig struct {
+	ColorWork           string `mapstructure:"color_work"`
+	ColorBreak          string `mapstructure:"color_break"`
+	ColorPaused         string `mapstructure:"color_paused"`
+	ColorTitle          string `mapstructure:"color_title"`
+	ColorTask           string `mapstructure:"color_task"`
+	ColorHelp           string `mapstructure:"color_help"`
+	WorkGradientStart   string `mapstructure:"work_gradient_start"`
+	WorkGradientEnd     string `mapstructure:"work_gradient_end"`
+	BreakGradientStart  string `mapstructure:"break_gradient_start"`
+	BreakGradientEnd    string `mapstructure:"break_gradient_end"`
+	PausedGradientStart string `mapstructure:"paused_gradient_start"`
+	PausedGradientEnd   string `mapstructure:"paused_gradient_end"`
+	IconApp             string `mapstructure:"icon_app"`
+	IconTask            string `mapstructure:"icon_task"`
+	IconStats           string `mapstructure:"icon_stats"`
+	IconGit             string `mapstructure:"icon_git"`
+	IconPaused          string `mapstructure:"icon_paused"`
+}
+
+// DefaultThemeConfig returns the default theme configuration.
+func DefaultThemeConfig() ThemeConfig {
+	return ThemeConfig{
+		ColorWork:           "#7C6FE0",
+		ColorBreak:          "#4ECDC4",
+		ColorPaused:         "#6B7280",
+		ColorTitle:          "#6B7280",
+		ColorTask:           "#A0AEC0",
+		ColorHelp:           "#95A5A6",
+		WorkGradientStart:   "#7C6FE0",
+		WorkGradientEnd:     "#A78BFA",
+		BreakGradientStart:  "#4ECDC4",
+		BreakGradientEnd:    "#2ECC71",
+		PausedGradientStart: "#6B7280",
+		PausedGradientEnd:   "#4B5563",
+		IconApp:             "🍅",
+		IconTask:            "📋",
+		IconStats:           "📊",
+		IconGit:             "🌿",
+		IconPaused:          "⏸",
+	}
 }
 
 // PomodoroConfig holds pomodoro timer settings.
@@ -24,6 +69,27 @@ type PomodoroConfig struct {
 	ShortBreak         Duration `mapstructure:"short_break"`
 	LongBreak          Duration `mapstructure:"long_break"`
 	SessionsBeforeLong int      `mapstructure:"sessions_before_long"`
+	Preset1Name        string   `mapstructure:"preset1_name"`
+	Preset1Duration    Duration `mapstructure:"preset1_duration"`
+	Preset2Name        string   `mapstructure:"preset2_name"`
+	Preset2Duration    Duration `mapstructure:"preset2_duration"`
+	Preset3Name        string   `mapstructure:"preset3_name"`
+	Preset3Duration    Duration `mapstructure:"preset3_duration"`
+}
+
+// SessionPreset represents a named session duration preset.
+type SessionPreset struct {
+	Name     string
+	Duration time.Duration
+}
+
+// GetPresets returns the three session presets.
+func (c *PomodoroConfig) GetPresets() []SessionPreset {
+	return []SessionPreset{
+		{Name: c.Preset1Name, Duration: time.Duration(c.Preset1Duration)},
+		{Name: c.Preset2Name, Duration: time.Duration(c.Preset2Duration)},
+		{Name: c.Preset3Name, Duration: time.Duration(c.Preset3Duration)},
+	}
 }
 
 // NotificationConfig holds notification settings.
@@ -74,6 +140,12 @@ func DefaultConfig() *Config {
 			ShortBreak:         Duration(5 * time.Minute),
 			LongBreak:          Duration(15 * time.Minute),
 			SessionsBeforeLong: 4,
+			Preset1Name:        "Focus",
+			Preset1Duration:    Duration(25 * time.Minute),
+			Preset2Name:        "Short",
+			Preset2Duration:    Duration(15 * time.Minute),
+			Preset3Name:        "Deep",
+			Preset3Duration:    Duration(50 * time.Minute),
 		},
 		Notifications: NotificationConfig{
 			Enabled: true,
@@ -86,6 +158,7 @@ func DefaultConfig() *Config {
 		Storage: StorageConfig{
 			DataDir: "~/.flow",
 		},
+		Theme: DefaultThemeConfig(),
 	}
 }
 
@@ -158,6 +231,12 @@ func Save(cfg *Config) error {
 	viper.Set("pomodoro.short_break", cfg.Pomodoro.ShortBreak.String())
 	viper.Set("pomodoro.long_break", cfg.Pomodoro.LongBreak.String())
 	viper.Set("pomodoro.sessions_before_long", cfg.Pomodoro.SessionsBeforeLong)
+	viper.Set("pomodoro.preset1_name", cfg.Pomodoro.Preset1Name)
+	viper.Set("pomodoro.preset1_duration", cfg.Pomodoro.Preset1Duration.String())
+	viper.Set("pomodoro.preset2_name", cfg.Pomodoro.Preset2Name)
+	viper.Set("pomodoro.preset2_duration", cfg.Pomodoro.Preset2Duration.String())
+	viper.Set("pomodoro.preset3_name", cfg.Pomodoro.Preset3Name)
+	viper.Set("pomodoro.preset3_duration", cfg.Pomodoro.Preset3Duration.String())
 	viper.Set("notifications.enabled", cfg.Notifications.Enabled)
 	viper.Set("notifications.sound", cfg.Notifications.Sound)
 	viper.Set("mcp.enabled", cfg.MCP.Enabled)
@@ -187,11 +266,37 @@ func setDefaults() {
 	viper.SetDefault("pomodoro.short_break", "5m")
 	viper.SetDefault("pomodoro.long_break", "15m")
 	viper.SetDefault("pomodoro.sessions_before_long", 4)
+	viper.SetDefault("pomodoro.preset1_name", "Focus")
+	viper.SetDefault("pomodoro.preset1_duration", "25m0s")
+	viper.SetDefault("pomodoro.preset2_name", "Short")
+	viper.SetDefault("pomodoro.preset2_duration", "15m0s")
+	viper.SetDefault("pomodoro.preset3_name", "Deep")
+	viper.SetDefault("pomodoro.preset3_duration", "50m0s")
 	viper.SetDefault("notifications.enabled", true)
 	viper.SetDefault("notifications.sound", true)
 	viper.SetDefault("mcp.enabled", true)
 	viper.SetDefault("mcp.auto_start", false)
 	viper.SetDefault("storage.data_dir", "~/.flow")
+
+	// Theme defaults
+	defaults := DefaultThemeConfig()
+	viper.SetDefault("theme.color_work", defaults.ColorWork)
+	viper.SetDefault("theme.color_break", defaults.ColorBreak)
+	viper.SetDefault("theme.color_paused", defaults.ColorPaused)
+	viper.SetDefault("theme.color_title", defaults.ColorTitle)
+	viper.SetDefault("theme.color_task", defaults.ColorTask)
+	viper.SetDefault("theme.color_help", defaults.ColorHelp)
+	viper.SetDefault("theme.work_gradient_start", defaults.WorkGradientStart)
+	viper.SetDefault("theme.work_gradient_end", defaults.WorkGradientEnd)
+	viper.SetDefault("theme.break_gradient_start", defaults.BreakGradientStart)
+	viper.SetDefault("theme.break_gradient_end", defaults.BreakGradientEnd)
+	viper.SetDefault("theme.paused_gradient_start", defaults.PausedGradientStart)
+	viper.SetDefault("theme.paused_gradient_end", defaults.PausedGradientEnd)
+	viper.SetDefault("theme.icon_app", defaults.IconApp)
+	viper.SetDefault("theme.icon_task", defaults.IconTask)
+	viper.SetDefault("theme.icon_stats", defaults.IconStats)
+	viper.SetDefault("theme.icon_git", defaults.IconGit)
+	viper.SetDefault("theme.icon_paused", defaults.IconPaused)
 }
 
 // ToPomodoroDomainConfig converts the config to the domain PomodoroConfig.

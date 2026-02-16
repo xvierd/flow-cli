@@ -28,7 +28,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		// Use the TUI to display the status
-		tui.ShowStatus(state)
+		tui.ShowStatus(state, &appConfig.Theme)
 
 		return nil
 	},

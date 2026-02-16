@@ -228,21 +228,28 @@ func runWizard(cmd *cobra.Command, args []string) error {
 		taskID = &task.ID
 	}
 
-	// 2. Ask for duration with default
-	defaultDuration := time.Duration(appConfig.Pomodoro.WorkDuration)
-	defaultLabel := formatMinutes(defaultDuration)
-	fmt.Printf("  Duration? [%s]: ", defaultLabel)
-	durationInput, _ := reader.ReadString('\n')
-	durationInput = strings.TrimSpace(durationInput)
+	// 2. Pick session type with arrow keys
+	presets := appConfig.Pomodoro.GetPresets()
+	shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
+	longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
 
-	var customDuration time.Duration
-	if durationInput != "" {
-		parsed, err := time.ParseDuration(durationInput)
-		if err != nil {
-			return fmt.Errorf("invalid duration %q (use format like 25m, 1h, 45m): %w", durationInput, err)
-		}
-		customDuration = parsed
+	var items []tui.PickerItem
+	for _, p := range presets {
+		items = append(items, tui.PickerItem{
+			Label: p.Name,
+			Desc:  formatMinutes(p.Duration),
+		})
 	}
+
+	footer := fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
+		formatMinutes(shortBreak), formatMinutes(longBreak), appConfig.Pomodoro.SessionsBeforeLong)
+
+	result := tui.RunPicker("Duration:", items, footer, &appConfig.Theme)
+	if result.Aborted {
+		return nil
+	}
+
+	customDuration := presets[result.Index].Duration
 
 	// Start the session
 	req := services.StartPomodoroRequest{
@@ -270,7 +277,7 @@ func runWizard(cmd *cobra.Command, args []string) error {
 // launchTUI starts the Bubbletea timer interface.
 func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir string) error {
 	ctx = setupSignalHandler()
-	timer := tui.NewTimer()
+	timer := tui.NewTimer(&appConfig.Theme)
 
 	timer.SetFetchState(func() *domain.CurrentState {
 		newState, err := stateService.GetCurrentState(ctx)

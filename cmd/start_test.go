@@ -19,7 +19,7 @@ func TestStartCmd(t *testing.T) {
 	t.Run("start command has task flag", func(t *testing.T) {
 		flag := startCmd.Flags().Lookup("task")
 		if flag == nil {
-			t.Error("startCmd should have --task flag")
+			t.Fatal("startCmd should have --task flag")
 		}
 		if flag.Shorthand != "t" {
 			t.Errorf("task flag shorthand = %q, want %q", flag.Shorthand, "t")

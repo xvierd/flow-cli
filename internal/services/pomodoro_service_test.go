@@ -195,7 +195,9 @@ func TestPomodoroService_GetCurrentState(t *testing.T) {
 	// Create task and start pomodoro
 	taskService := NewTaskService(store)
 	task, _ := taskService.AddTask(ctx, AddTaskRequest{Title: "Active Task"})
-	service.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &task.ID})
+	if _, err := service.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &task.ID}); err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
 
 	t.Run("get current state", func(t *testing.T) {
 		state, err := service.GetCurrentState(ctx)
