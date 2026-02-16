@@ -78,11 +78,6 @@ func init() {
 	rootCmd.Version = Version
 	rootCmd.SetVersionTemplate("Flow CLI\nVersion: {{.Version}}\n")
 
-	// Add pre-run hook for initialization
-	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		return initializeServices()
-	}
-
 	// Add subcommands
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(listCmd)
@@ -287,7 +282,7 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 		return newState
 	})
 
-	timer.SetCommandCallbackWithError(func(cmd ports.TimerCommand) error {
+	timer.SetCommandCallback(func(cmd ports.TimerCommand) error {
 		switch cmd {
 		case ports.CmdStart:
 			_, err := pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{
@@ -401,12 +396,4 @@ func getDir(path string) string {
 		return "."
 	}
 	return path[:lastSep]
-}
-
-// printVersion prints version information
-func printVersion() {
-	fmt.Printf("Flow - Pomodoro CLI Timer\n")
-	fmt.Printf("  Version:   %s\n", Version)
-	fmt.Printf("  Build:     %s\n", BuildDate)
-	fmt.Printf("  Commit:    %s\n", GitCommit)
 }

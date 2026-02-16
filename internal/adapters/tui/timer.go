@@ -14,8 +14,7 @@ import (
 type Timer struct {
 	program            *tea.Program
 	fetchState         func() *domain.CurrentState
-	commandCallback    func(ports.TimerCommand)
-	commandCallbackErr func(ports.TimerCommand) error
+	commandCallback    func(ports.TimerCommand) error
 	onSessionComplete  func(domain.SessionType)
 	completionInfo     *domain.CompletionInfo
 	lastError          error
@@ -68,13 +67,8 @@ func (t *Timer) SetFetchState(fetch func() *domain.CurrentState) {
 }
 
 // SetCommandCallback sets a function to call when commands are received.
-func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand)) {
+func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand) error) {
 	t.commandCallback = callback
-}
-
-// SetCommandCallbackWithError sets a function to call when commands are received that can return errors.
-func (t *Timer) SetCommandCallbackWithError(callback func(cmd ports.TimerCommand) error) {
-	t.commandCallbackErr = callback
 }
 
 // SetOnSessionComplete sets a callback fired when a session naturally completes.
@@ -90,7 +84,7 @@ func (t *Timer) SetCompletionInfo(info *domain.CompletionInfo) {
 // SendCommand sends a command to the timer (for testing or automation).
 func (t *Timer) SendCommand(cmd ports.TimerCommand) {
 	if t.commandCallback != nil {
-		t.commandCallback(cmd)
+		_ = t.commandCallback(cmd)
 	}
 }
 
