@@ -30,8 +30,8 @@ func setupTestStorage(t *testing.T) (ports.Storage, func()) {
 	}
 	
 	cleanup := func() {
-		store.Close()
-		os.Remove(dbPath)
+		_ = store.Close()
+		_ = os.Remove(dbPath)
 	}
 	
 	return store, cleanup

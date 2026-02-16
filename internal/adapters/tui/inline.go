@@ -25,8 +25,6 @@ const (
 	phaseTimer
 )
 
-// sessionStartedMsg is sent after a session is started from the setup phase.
-type sessionStartedMsg struct{}
 
 // InlineModel is a compact timer that runs setup + timer in a single bubbletea program.
 type InlineModel struct {

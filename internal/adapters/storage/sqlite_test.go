@@ -13,7 +13,7 @@ func TestNewMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMemory() error = %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	if storage == nil {
 		t.Error("NewMemory() returned nil storage")
@@ -25,7 +25,7 @@ func TestTaskRepository_SaveAndFind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMemory() error = %v", err)
 	}
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -67,7 +67,7 @@ func TestTaskRepository_SaveAndFind(t *testing.T) {
 
 func TestTaskRepository_FindAll(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -106,7 +106,7 @@ func TestTaskRepository_FindAll(t *testing.T) {
 
 func TestTaskRepository_FindPending(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -132,7 +132,7 @@ func TestTaskRepository_FindPending(t *testing.T) {
 
 func TestTaskRepository_FindActive(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -169,7 +169,7 @@ func TestTaskRepository_FindActive(t *testing.T) {
 
 func TestTaskRepository_Update(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -198,7 +198,7 @@ func TestTaskRepository_Update(t *testing.T) {
 
 func TestTaskRepository_Delete(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Tasks()
@@ -221,7 +221,7 @@ func TestTaskRepository_Delete(t *testing.T) {
 
 func TestSessionRepository_SaveAndFind(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
@@ -264,7 +264,7 @@ func TestSessionRepository_SaveAndFind(t *testing.T) {
 
 func TestSessionRepository_FindActive(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
@@ -307,7 +307,7 @@ func TestSessionRepository_FindActive(t *testing.T) {
 
 func TestSessionRepository_Update(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
@@ -335,7 +335,7 @@ func TestSessionRepository_Update(t *testing.T) {
 
 func TestSessionRepository_FindRecent(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
@@ -359,7 +359,7 @@ func TestSessionRepository_FindRecent(t *testing.T) {
 
 func TestSessionRepository_GetDailyStats(t *testing.T) {
 	storage, _ := NewMemory()
-	defer storage.Close()
+	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	repo := storage.Sessions()
