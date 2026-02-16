@@ -113,6 +113,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if !m.completed && m.state.ActiveSession != nil {
 				if m.confirmBreak {
 					if m.commandCallback != nil {
+						// Stop the active session first, then start break
+						m.commandCallback(ports.CmdStop)
 						m.commandCallback(ports.CmdBreak)
 						m.completed = false
 						m.notified = false
