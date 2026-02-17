@@ -72,6 +72,22 @@ func (m *mockStateProvider) AddSessionNotes(ctx context.Context, sessionID strin
 	return nil, nil
 }
 
+func (m *mockStateProvider) LogDistraction(ctx context.Context, sessionID string, text string) error {
+	return nil
+}
+
+func (m *mockStateProvider) SetFocusScore(ctx context.Context, sessionID string, score int) error {
+	return nil
+}
+
+func (m *mockStateProvider) GetTodayHighlight(ctx context.Context) (*domain.Task, error) {
+	return nil, nil
+}
+
+func (m *mockStateProvider) SetHighlight(ctx context.Context, taskID string) (*domain.Task, error) {
+	return nil, nil
+}
+
 func TestNewServer(t *testing.T) {
 	mock := &mockStateProvider{}
 	server := NewServer(mock)

@@ -149,6 +149,61 @@ func (s *Server) registerTools() {
 	)
 	s.server.AddTool(completeTaskTool, s.handleCompleteTask)
 
+	// Tool: log_distraction
+	logDistractionTool := mcp.NewTool(
+		"log_distraction",
+		mcp.WithDescription("Log a distraction during a Deep Work session"),
+		mcp.WithString(
+			"session_id",
+			mcp.Required(),
+			mcp.Description("The ID of the active session"),
+		),
+		mcp.WithString(
+			"text",
+			mcp.Required(),
+			mcp.Description("Description of the distraction"),
+		),
+	)
+	s.server.AddTool(logDistractionTool, s.handleLogDistraction)
+
+	// Tool: set_focus_score
+	setFocusScoreTool := mcp.NewTool(
+		"set_focus_score",
+		mcp.WithDescription("Set the focus score for a Make Time session (1-5)"),
+		mcp.WithString(
+			"session_id",
+			mcp.Required(),
+			mcp.Description("The ID of the session"),
+		),
+		mcp.WithNumber(
+			"score",
+			mcp.Required(),
+			mcp.Description("Focus score from 1 (distracted) to 5 (fully focused)"),
+		),
+	)
+	s.server.AddTool(setFocusScoreTool, s.handleSetFocusScore)
+
+	// Tool: get_today_highlight
+	s.server.AddTool(
+		mcp.NewTool(
+			"get_today_highlight",
+			mcp.WithDescription("Get today's highlight task (Make Time mode)"),
+		),
+		s.handleGetTodayHighlight,
+	)
+
+	// Tool: set_highlight
+	setHighlightTool := mcp.NewTool(
+		"set_highlight",
+		mcp.WithDescription("Mark a task as today's highlight (Make Time mode)"),
+		mcp.WithString(
+			"task_id",
+			mcp.Required(),
+			mcp.Description("The ID of the task to set as today's highlight"),
+		),
+	)
+	s.server.AddTool(setHighlightTool, s.handleSetHighlight)
+
 	// Tool: add_session_notes
 	addNotesTool := mcp.NewTool(
 		"add_session_notes",
@@ -224,19 +279,27 @@ func (s *Server) handleGetCurrentState(ctx context.Context, request mcp.CallTool
 	if state.ActiveSession != nil {
 		session := state.ActiveSession
 		sessionData := map[string]interface{}{
-			"id":             session.ID,
-			"type":           string(session.Type),
-			"status":         string(session.Status),
-			"duration":       session.Duration.String(),
-			"remaining_time": session.RemainingTime().String(),
-			"progress":       session.Progress(),
-			"started_at":     session.StartedAt.Format("2006-01-02T15:04:05"),
-			"git_branch":     session.GitBranch,
-			"git_commit":     session.GitCommit,
-			"notes":          session.Notes,
+			"id":              session.ID,
+			"type":            string(session.Type),
+			"status":          string(session.Status),
+			"duration":        session.Duration.String(),
+			"remaining_time":  session.RemainingTime().String(),
+			"progress":        session.Progress(),
+			"started_at":      session.StartedAt.Format("2006-01-02T15:04:05"),
+			"git_branch":      session.GitBranch,
+			"git_commit":      session.GitCommit,
+			"notes":           session.Notes,
+			"methodology":     string(session.Methodology),
+			"distractions":    session.Distractions,
+			"accomplishment":  session.Accomplishment,
+			"intended_outcome": session.IntendedOutcome,
+			"session_tags":     session.Tags,
 		}
 		if session.TaskID != nil {
 			sessionData["task_id"] = *session.TaskID
+		}
+		if session.FocusScore != nil {
+			sessionData["focus_score"] = *session.FocusScore
 		}
 		result["active_session"] = sessionData
 	}
@@ -324,6 +387,24 @@ func (s *Server) handleGetTaskHistory(ctx context.Context, request mcp.CallToolR
 		}
 		if session.GitCommit != "" {
 			sessionData["git_commit"] = session.GitCommit
+		}
+		if session.Methodology != "" {
+			sessionData["methodology"] = string(session.Methodology)
+		}
+		if session.FocusScore != nil {
+			sessionData["focus_score"] = *session.FocusScore
+		}
+		if len(session.Distractions) > 0 {
+			sessionData["distractions"] = session.Distractions
+		}
+		if session.Accomplishment != "" {
+			sessionData["accomplishment"] = session.Accomplishment
+		}
+		if session.IntendedOutcome != "" {
+			sessionData["intended_outcome"] = session.IntendedOutcome
+		}
+		if len(session.Tags) > 0 {
+			sessionData["session_tags"] = session.Tags
 		}
 
 		sessionList = append(sessionList, sessionData)
@@ -531,6 +612,125 @@ func (s *Server) handleCompleteTask(ctx context.Context, request mcp.CallToolReq
 		"status":      string(task.Status),
 		"tags":        task.Tags,
 		"completed_at": task.CompletedAt.Format("2006-01-02T15:04:05"),
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal task: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleLogDistraction handles the log_distraction tool.
+func (s *Server) handleLogDistraction(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("session_id is required: " + err.Error()), nil
+	}
+
+	text, err := request.RequireString("text")
+	if err != nil {
+		return mcp.NewToolResultError("text is required: " + err.Error()), nil
+	}
+
+	if err := s.stateProvider.LogDistraction(ctx, sessionID, text); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to log distraction: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"session_id": sessionID,
+		"logged":     text,
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleSetFocusScore handles the set_focus_score tool.
+func (s *Server) handleSetFocusScore(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("session_id is required: " + err.Error()), nil
+	}
+
+	score := int(request.GetFloat("score", 0))
+	if score < 1 || score > 5 {
+		return mcp.NewToolResultError("score must be between 1 and 5"), nil
+	}
+
+	if err := s.stateProvider.SetFocusScore(ctx, sessionID, score); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to set focus score: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"session_id": sessionID,
+		"score":      score,
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleGetTodayHighlight handles the get_today_highlight tool.
+func (s *Server) handleGetTodayHighlight(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	task, err := s.stateProvider.GetTodayHighlight(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to get today's highlight: %v", err)), nil
+	}
+
+	if task == nil {
+		result := map[string]interface{}{
+			"highlight": nil,
+			"message":   "No highlight set for today",
+		}
+		jsonData, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(string(jsonData)), nil
+	}
+
+	result := map[string]interface{}{
+		"highlight": map[string]interface{}{
+			"id":          task.ID,
+			"title":       task.Title,
+			"description": task.Description,
+			"status":      string(task.Status),
+			"tags":        task.Tags,
+		},
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal highlight: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// handleSetHighlight handles the set_highlight tool.
+func (s *Server) handleSetHighlight(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	taskID, err := request.RequireString("task_id")
+	if err != nil {
+		return mcp.NewToolResultError("task_id is required: " + err.Error()), nil
+	}
+
+	task, err := s.stateProvider.SetHighlight(ctx, taskID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to set highlight: %v", err)), nil
+	}
+
+	result := map[string]interface{}{
+		"id":             task.ID,
+		"title":          task.Title,
+		"status":         string(task.Status),
+		"highlight_date": task.HighlightDate.Format("2006-01-02"),
 	}
 
 	jsonData, err := json.MarshalIndent(result, "", "  ")

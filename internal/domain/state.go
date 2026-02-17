@@ -27,6 +27,34 @@ type CompletionInfo struct {
 	NextBreakDuration  time.Duration
 	SessionsUntilLong  int
 	SessionsBeforeLong int
+	DeepWorkStreak     int
+}
+
+// MethodologyBreakdown holds session counts and total time per methodology.
+type MethodologyBreakdown struct {
+	Methodology  Methodology
+	SessionCount int
+	TotalTime    time.Duration
+}
+
+// PeriodStats holds aggregated statistics for a time period (week or month).
+type PeriodStats struct {
+	Label            string
+	Start            time.Time
+	End              time.Time
+	TotalSessions    int
+	TotalWorkTime    time.Duration
+	ByMethodology    []MethodologyBreakdown
+	AvgFocusScore    float64
+	FocusScoreCount  int
+	DistractionCount int
+}
+
+// EnergizeStat holds aggregated focus score data for a specific energize activity.
+type EnergizeStat struct {
+	Activity      string
+	SessionCount  int
+	AvgFocusScore float64
 }
 
 // StateSnapshot captures the complete system state at a point in time.

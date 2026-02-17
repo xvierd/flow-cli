@@ -13,6 +13,7 @@ import (
 )
 
 var startTaskID string
+var startTags string
 
 // startCmd represents the start command
 var startCmd = &cobra.Command{
@@ -71,10 +72,22 @@ an active task, that task will be used.`,
 			fmt.Println("⏹️  Previous session stopped.")
 		}
 
+		// Parse tags
+		var tags []string
+		if startTags != "" {
+			for _, t := range strings.Split(startTags, ",") {
+				t = strings.TrimSpace(t)
+				if t != "" {
+					tags = append(tags, t)
+				}
+			}
+		}
+
 		// Start the pomodoro session
 		req := services.StartPomodoroRequest{
 			TaskID:     taskID,
 			WorkingDir: workingDir,
+			Tags:       tags,
 		}
 
 		session, err := pomodoroSvc.StartPomodoro(ctx, req)
@@ -99,6 +112,7 @@ an active task, that task will be used.`,
 
 func init() {
 	startCmd.Flags().StringVarP(&startTaskID, "task", "t", "", "Task ID to associate with this session")
+	startCmd.Flags().StringVar(&startTags, "tags", "", "Comma-separated tags for this session (e.g. coding,backend)")
 }
 
 func formatCmdDuration(d time.Duration) string {

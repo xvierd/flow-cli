@@ -25,8 +25,8 @@ func newTaskRepository(db *sql.DB) ports.TaskRepository {
 // Save persists a task to storage.
 func (r *taskRepository) Save(ctx context.Context, task *domain.Task) error {
 	query := `
-		INSERT INTO tasks (id, title, description, status, tags, created_at, updated_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	tags := strings.Join(task.Tags, ",")
@@ -40,6 +40,7 @@ func (r *taskRepository) Save(ctx context.Context, task *domain.Task) error {
 		task.CreatedAt,
 		task.UpdatedAt,
 		task.CompletedAt,
+		task.HighlightDate,
 	)
 
 	if err != nil {
@@ -52,7 +53,7 @@ func (r *taskRepository) Save(ctx context.Context, task *domain.Task) error {
 // FindByID retrieves a task by its unique identifier.
 func (r *taskRepository) FindByID(ctx context.Context, id string) (*domain.Task, error) {
 	query := `
-		SELECT id, title, description, status, tags, created_at, updated_at, completed_at
+		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
 		FROM tasks
 		WHERE id = ?
 	`
@@ -60,6 +61,7 @@ func (r *taskRepository) FindByID(ctx context.Context, id string) (*domain.Task,
 	var task domain.Task
 	var tagsStr string
 	var completedAt sql.NullTime
+	var highlightDate sql.NullTime
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&task.ID,
@@ -70,6 +72,7 @@ func (r *taskRepository) FindByID(ctx context.Context, id string) (*domain.Task,
 		&task.CreatedAt,
 		&task.UpdatedAt,
 		&completedAt,
+		&highlightDate,
 	)
 
 	if err == sql.ErrNoRows {
@@ -81,6 +84,9 @@ func (r *taskRepository) FindByID(ctx context.Context, id string) (*domain.Task,
 
 	if completedAt.Valid {
 		task.CompletedAt = &completedAt.Time
+	}
+	if highlightDate.Valid {
+		task.HighlightDate = &highlightDate.Time
 	}
 
 	if tagsStr != "" {
@@ -97,7 +103,7 @@ func (r *taskRepository) FindAll(ctx context.Context, status *domain.TaskStatus)
 
 	if status != nil {
 		query = `
-			SELECT id, title, description, status, tags, created_at, updated_at, completed_at
+			SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
 			FROM tasks
 			WHERE status = ?
 			ORDER BY created_at DESC
@@ -105,7 +111,7 @@ func (r *taskRepository) FindAll(ctx context.Context, status *domain.TaskStatus)
 		args = append(args, string(*status))
 	} else {
 		query = `
-			SELECT id, title, description, status, tags, created_at, updated_at, completed_at
+			SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
 			FROM tasks
 			ORDER BY created_at DESC
 		`
@@ -123,7 +129,7 @@ func (r *taskRepository) FindAll(ctx context.Context, status *domain.TaskStatus)
 // FindPending returns all tasks that are not completed or cancelled.
 func (r *taskRepository) FindPending(ctx context.Context) ([]*domain.Task, error) {
 	query := `
-		SELECT id, title, description, status, tags, created_at, updated_at, completed_at
+		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
 		FROM tasks
 		WHERE status NOT IN (?, ?)
 		ORDER BY 
@@ -147,7 +153,7 @@ func (r *taskRepository) FindPending(ctx context.Context) ([]*domain.Task, error
 // FindActive returns the currently active task (in_progress).
 func (r *taskRepository) FindActive(ctx context.Context) (*domain.Task, error) {
 	query := `
-		SELECT id, title, description, status, tags, created_at, updated_at, completed_at
+		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
 		FROM tasks
 		WHERE status = ?
 		ORDER BY updated_at DESC
@@ -157,6 +163,7 @@ func (r *taskRepository) FindActive(ctx context.Context) (*domain.Task, error) {
 	var task domain.Task
 	var tagsStr string
 	var completedAt sql.NullTime
+	var highlightDate sql.NullTime
 
 	err := r.db.QueryRowContext(ctx, query, string(domain.StatusInProgress)).Scan(
 		&task.ID,
@@ -167,6 +174,7 @@ func (r *taskRepository) FindActive(ctx context.Context) (*domain.Task, error) {
 		&task.CreatedAt,
 		&task.UpdatedAt,
 		&completedAt,
+		&highlightDate,
 	)
 
 	if err == sql.ErrNoRows {
@@ -178,6 +186,9 @@ func (r *taskRepository) FindActive(ctx context.Context) (*domain.Task, error) {
 
 	if completedAt.Valid {
 		task.CompletedAt = &completedAt.Time
+	}
+	if highlightDate.Valid {
+		task.HighlightDate = &highlightDate.Time
 	}
 
 	// Initialize tags as empty slice to avoid null in JSON
@@ -238,7 +249,7 @@ func (r *taskRepository) Delete(ctx context.Context, id string) error {
 func (r *taskRepository) Update(ctx context.Context, task *domain.Task) error {
 	query := `
 		UPDATE tasks
-		SET title = ?, description = ?, status = ?, tags = ?, updated_at = ?, completed_at = ?
+		SET title = ?, description = ?, status = ?, tags = ?, updated_at = ?, completed_at = ?, highlight_date = ?
 		WHERE id = ?
 	`
 
@@ -252,6 +263,7 @@ func (r *taskRepository) Update(ctx context.Context, task *domain.Task) error {
 		tags,
 		task.UpdatedAt,
 		task.CompletedAt,
+		task.HighlightDate,
 		task.ID,
 	)
 
@@ -275,6 +287,7 @@ func (r *taskRepository) scanTasks(rows *sql.Rows) ([]*domain.Task, error) {
 		var task domain.Task
 		var tagsStr string
 		var completedAt sql.NullTime
+		var highlightDate sql.NullTime
 
 		err := rows.Scan(
 			&task.ID,
@@ -285,6 +298,7 @@ func (r *taskRepository) scanTasks(rows *sql.Rows) ([]*domain.Task, error) {
 			&task.CreatedAt,
 			&task.UpdatedAt,
 			&completedAt,
+			&highlightDate,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
@@ -292,6 +306,9 @@ func (r *taskRepository) scanTasks(rows *sql.Rows) ([]*domain.Task, error) {
 
 		if completedAt.Valid {
 			task.CompletedAt = &completedAt.Time
+		}
+		if highlightDate.Valid {
+			task.HighlightDate = &highlightDate.Time
 		}
 
 		// Initialize tags as empty slice to avoid null in JSON
@@ -304,4 +321,134 @@ func (r *taskRepository) scanTasks(rows *sql.Rows) ([]*domain.Task, error) {
 	}
 
 	return tasks, rows.Err()
+}
+
+// FindRecentTasks returns the last N distinct tasks that had sessions,
+// ordered by most recent session start time.
+func (r *taskRepository) FindRecentTasks(ctx context.Context, limit int) ([]*domain.Task, error) {
+	query := `
+		SELECT t.id, t.title, t.description, t.status, t.tags, t.created_at, t.updated_at, t.completed_at, t.highlight_date
+		FROM tasks t
+		INNER JOIN (
+			SELECT task_id, MAX(started_at) AS last_session
+			FROM sessions
+			WHERE task_id IS NOT NULL
+			GROUP BY task_id
+		) s ON t.id = s.task_id
+		ORDER BY s.last_session DESC
+		LIMIT ?
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recent tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return r.scanTasks(rows)
+}
+
+// FindTodayHighlight returns the task marked as today's highlight, if any.
+func (r *taskRepository) FindTodayHighlight(ctx context.Context, date time.Time) (*domain.Task, error) {
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	query := `
+		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
+		FROM tasks
+		WHERE highlight_date >= ? AND highlight_date < ?
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`
+
+	var task domain.Task
+	var tagsStr string
+	var completedAt sql.NullTime
+	var highlightDate sql.NullTime
+
+	err := r.db.QueryRowContext(ctx, query, startOfDay, endOfDay).Scan(
+		&task.ID,
+		&task.Title,
+		&task.Description,
+		&task.Status,
+		&tagsStr,
+		&task.CreatedAt,
+		&task.UpdatedAt,
+		&completedAt,
+		&highlightDate,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find today's highlight: %w", err)
+	}
+
+	if completedAt.Valid {
+		task.CompletedAt = &completedAt.Time
+	}
+	if highlightDate.Valid {
+		task.HighlightDate = &highlightDate.Time
+	}
+
+	task.Tags = []string{}
+	if tagsStr != "" {
+		task.Tags = strings.Split(tagsStr, ",")
+	}
+
+	return &task, nil
+}
+
+// FindYesterdayHighlight returns yesterday's highlight task if it wasn't completed.
+func (r *taskRepository) FindYesterdayHighlight(ctx context.Context, today time.Time) (*domain.Task, error) {
+	yesterday := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location()).Add(-24 * time.Hour)
+	endOfYesterday := yesterday.Add(24 * time.Hour)
+
+	query := `
+		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
+		FROM tasks
+		WHERE highlight_date >= ? AND highlight_date < ?
+		  AND status != ?
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`
+
+	var task domain.Task
+	var tagsStr string
+	var completedAt sql.NullTime
+	var highlightDate sql.NullTime
+
+	err := r.db.QueryRowContext(ctx, query, yesterday, endOfYesterday, string(domain.StatusCompleted)).Scan(
+		&task.ID,
+		&task.Title,
+		&task.Description,
+		&task.Status,
+		&tagsStr,
+		&task.CreatedAt,
+		&task.UpdatedAt,
+		&completedAt,
+		&highlightDate,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find yesterday's highlight: %w", err)
+	}
+
+	if completedAt.Valid {
+		task.CompletedAt = &completedAt.Time
+	}
+	if highlightDate.Valid {
+		task.HighlightDate = &highlightDate.Time
+	}
+
+	task.Tags = []string{}
+	if tagsStr != "" {
+		task.Tags = strings.Split(tagsStr, ",")
+	}
+
+	return &task, nil
 }

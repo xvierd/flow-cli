@@ -12,6 +12,7 @@ import (
 
 // Config holds all configuration for the Flow application.
 type Config struct {
+	Methodology   string              `mapstructure:"methodology"`
 	Pomodoro      PomodoroConfig      `mapstructure:"pomodoro"`
 	Notifications NotificationConfig  `mapstructure:"notifications"`
 	MCP           MCPConfig           `mapstructure:"mcp"`
@@ -69,6 +70,7 @@ type PomodoroConfig struct {
 	ShortBreak         Duration `mapstructure:"short_break"`
 	LongBreak          Duration `mapstructure:"long_break"`
 	SessionsBeforeLong int      `mapstructure:"sessions_before_long"`
+	AutoBreak          bool     `mapstructure:"auto_break"`
 	Preset1Name        string   `mapstructure:"preset1_name"`
 	Preset1Duration    Duration `mapstructure:"preset1_duration"`
 	Preset2Name        string   `mapstructure:"preset2_name"`
@@ -135,6 +137,7 @@ func (d Duration) String() string {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
+		Methodology: "pomodoro",
 		Pomodoro: PomodoroConfig{
 			WorkDuration:       Duration(25 * time.Minute),
 			ShortBreak:         Duration(5 * time.Minute),
@@ -227,10 +230,12 @@ func Save(cfg *Config) error {
 	viper.SetConfigType("toml")
 
 	// Set all values
+	viper.Set("methodology", cfg.Methodology)
 	viper.Set("pomodoro.work_duration", cfg.Pomodoro.WorkDuration.String())
 	viper.Set("pomodoro.short_break", cfg.Pomodoro.ShortBreak.String())
 	viper.Set("pomodoro.long_break", cfg.Pomodoro.LongBreak.String())
 	viper.Set("pomodoro.sessions_before_long", cfg.Pomodoro.SessionsBeforeLong)
+	viper.Set("pomodoro.auto_break", cfg.Pomodoro.AutoBreak)
 	viper.Set("pomodoro.preset1_name", cfg.Pomodoro.Preset1Name)
 	viper.Set("pomodoro.preset1_duration", cfg.Pomodoro.Preset1Duration.String())
 	viper.Set("pomodoro.preset2_name", cfg.Pomodoro.Preset2Name)
@@ -262,10 +267,12 @@ func GetDBPath(cfg *Config) string {
 
 // setDefaults sets default values for viper.
 func setDefaults() {
+	viper.SetDefault("methodology", "pomodoro")
 	viper.SetDefault("pomodoro.work_duration", "25m")
 	viper.SetDefault("pomodoro.short_break", "5m")
 	viper.SetDefault("pomodoro.long_break", "15m")
 	viper.SetDefault("pomodoro.sessions_before_long", 4)
+	viper.SetDefault("pomodoro.auto_break", false)
 	viper.SetDefault("pomodoro.preset1_name", "Focus")
 	viper.SetDefault("pomodoro.preset1_duration", "25m0s")
 	viper.SetDefault("pomodoro.preset2_name", "Short")

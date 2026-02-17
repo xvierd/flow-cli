@@ -30,14 +30,33 @@ const (
 
 // Task represents a unit of work to be tracked.
 type Task struct {
-	ID          string
-	Title       string
-	Description string
-	Status      TaskStatus
-	Tags        []string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
+	ID            string
+	Title         string
+	Description   string
+	Status        TaskStatus
+	Tags          []string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	CompletedAt   *time.Time
+	HighlightDate *time.Time
+}
+
+// SetAsHighlight marks this task as today's highlight.
+func (t *Task) SetAsHighlight() {
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	t.HighlightDate = &today
+	t.UpdatedAt = now
+}
+
+// IsHighlightForDate returns true if this task is the highlight for the given date.
+func (t *Task) IsHighlightForDate(date time.Time) bool {
+	if t.HighlightDate == nil {
+		return false
+	}
+	d := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	h := time.Date(t.HighlightDate.Year(), t.HighlightDate.Month(), t.HighlightDate.Day(), 0, 0, 0, 0, t.HighlightDate.Location())
+	return d.Equal(h)
 }
 
 // NewTask creates a new task with the given title.

@@ -32,11 +32,21 @@ type TaskRepository interface {
 	// FindByTitle does a fuzzy search for tasks by title.
 	FindByTitle(ctx context.Context, query string) ([]*domain.Task, error)
 
+	// FindRecentTasks returns the last N distinct tasks that had sessions,
+	// ordered by most recent session start time.
+	FindRecentTasks(ctx context.Context, limit int) ([]*domain.Task, error)
+
 	// Delete removes a task from storage.
 	Delete(ctx context.Context, id string) error
 
 	// Update modifies an existing task.
 	Update(ctx context.Context, task *domain.Task) error
+
+	// FindTodayHighlight returns the task marked as today's highlight.
+	FindTodayHighlight(ctx context.Context, date time.Time) (*domain.Task, error)
+
+	// FindYesterdayHighlight returns yesterday's highlight task if it wasn't completed.
+	FindYesterdayHighlight(ctx context.Context, today time.Time) (*domain.Task, error)
 }
 
 // SessionRepository defines the interface for pomodoro session persistence.
@@ -62,6 +72,18 @@ type SessionRepository interface {
 
 	// GetDailyStats returns aggregated statistics for a specific date.
 	GetDailyStats(ctx context.Context, date time.Time) (*domain.DailyStats, error)
+
+	// GetPeriodStats returns aggregated statistics for a time range.
+	GetPeriodStats(ctx context.Context, start, end time.Time) (*domain.PeriodStats, error)
+
+	// GetDeepWorkStreak returns consecutive days (ending today) with >= threshold deep work hours.
+	GetDeepWorkStreak(ctx context.Context, threshold time.Duration) (int, error)
+
+	// GetHourlyProductivity returns total work minutes per hour-of-day for the last N days.
+	GetHourlyProductivity(ctx context.Context, days int) (map[int]time.Duration, error)
+
+	// GetEnergizeStats returns avg focus score per energize activity for a time range.
+	GetEnergizeStats(ctx context.Context, start, end time.Time) ([]domain.EnergizeStat, error)
 }
 
 // Storage is the combined repository interface.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
 )
@@ -64,6 +65,22 @@ func (m *mockTaskRepository) Delete(ctx context.Context, id string) error {
 func (m *mockTaskRepository) Update(ctx context.Context, task *domain.Task) error {
 	m.tasks[task.ID] = task
 	return nil
+}
+
+func (m *mockTaskRepository) FindByTitle(ctx context.Context, query string) ([]*domain.Task, error) {
+	return nil, nil
+}
+
+func (m *mockTaskRepository) FindRecentTasks(ctx context.Context, limit int) ([]*domain.Task, error) {
+	return nil, nil
+}
+
+func (m *mockTaskRepository) FindTodayHighlight(ctx context.Context, date time.Time) (*domain.Task, error) {
+	return nil, nil
+}
+
+func (m *mockTaskRepository) FindYesterdayHighlight(ctx context.Context, today time.Time) (*domain.Task, error) {
+	return nil, nil
 }
 
 func TestMockTaskRepository(t *testing.T) {

@@ -152,5 +152,39 @@ func (s *StateService) AddSessionNotes(ctx context.Context, sessionID string, no
 	return s.pomodoroSvc.AddSessionNotes(ctx, sessionID, notes)
 }
 
+// LogDistraction implements ports.MCPStateProvider.
+func (s *StateService) LogDistraction(ctx context.Context, sessionID string, text string) error {
+	if s.pomodoroSvc == nil {
+		return domain.ErrNoActiveSession
+	}
+	return s.pomodoroSvc.LogDistraction(ctx, sessionID, text)
+}
+
+// SetFocusScore implements ports.MCPStateProvider.
+func (s *StateService) SetFocusScore(ctx context.Context, sessionID string, score int) error {
+	if s.pomodoroSvc == nil {
+		return domain.ErrNoActiveSession
+	}
+	return s.pomodoroSvc.SetFocusScore(ctx, sessionID, score)
+}
+
+// GetTodayHighlight implements ports.MCPStateProvider.
+func (s *StateService) GetTodayHighlight(ctx context.Context) (*domain.Task, error) {
+	return s.storage.Tasks().FindTodayHighlight(ctx, time.Now())
+}
+
+// SetHighlight implements ports.MCPStateProvider.
+func (s *StateService) SetHighlight(ctx context.Context, taskID string) (*domain.Task, error) {
+	task, err := s.storage.Tasks().FindByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	task.SetAsHighlight()
+	if err := s.storage.Tasks().Update(ctx, task); err != nil {
+		return nil, err
+	}
+	return task, nil
+}
+
 // Ensure StateService implements MCPStateProvider.
 var _ ports.MCPStateProvider = (*StateService)(nil)

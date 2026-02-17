@@ -32,9 +32,12 @@ func (s *PomodoroService) SetConfig(config domain.PomodoroConfig) {
 
 // StartPomodoroRequest contains data to start a work session.
 type StartPomodoroRequest struct {
-	TaskID     *string
-	WorkingDir string
-	Duration   time.Duration
+	TaskID          *string
+	WorkingDir      string
+	Duration        time.Duration
+	Methodology     domain.Methodology
+	IntendedOutcome string
+	Tags            []string
 }
 
 // StartPomodoro begins a new pomodoro work session.
@@ -67,6 +70,13 @@ func (s *PomodoroService) StartPomodoro(ctx context.Context, req StartPomodoroRe
 	if req.Duration > 0 {
 		session.Duration = req.Duration
 	}
+
+	// Set methodology fields
+	if req.Methodology != "" {
+		session.Methodology = req.Methodology
+	}
+	session.IntendedOutcome = req.IntendedOutcome
+	session.Tags = req.Tags
 
 	// Detect git context if available
 	if s.gitDetector != nil && s.gitDetector.IsAvailable() {
@@ -177,6 +187,58 @@ func (s *PomodoroService) CancelSession(ctx context.Context) error {
 	return s.storage.Sessions().Update(ctx, session)
 }
 
+// LogDistraction appends a distraction entry to the active session.
+func (s *PomodoroService) LogDistraction(ctx context.Context, sessionID string, text string) error {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return domain.ErrNoActiveSession
+	}
+	session.Distractions = append(session.Distractions, text)
+	return s.storage.Sessions().Update(ctx, session)
+}
+
+// SetAccomplishment records the accomplishment text on a session (Deep Work shutdown ritual).
+func (s *PomodoroService) SetAccomplishment(ctx context.Context, sessionID string, text string) error {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return domain.ErrNoActiveSession
+	}
+	session.Accomplishment = text
+	return s.storage.Sessions().Update(ctx, session)
+}
+
+// SetFocusScore records the focus score (1–5) on a session (Make Time).
+func (s *PomodoroService) SetFocusScore(ctx context.Context, sessionID string, score int) error {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return domain.ErrNoActiveSession
+	}
+	session.FocusScore = &score
+	return s.storage.Sessions().Update(ctx, session)
+}
+
+// SetEnergizeActivity records the energize activity on a session (Make Time).
+func (s *PomodoroService) SetEnergizeActivity(ctx context.Context, sessionID string, activity string) error {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return domain.ErrNoActiveSession
+	}
+	session.EnergizeActivity = activity
+	return s.storage.Sessions().Update(ctx, session)
+}
+
 // AddSessionNotes adds notes to a pomodoro session.
 func (s *PomodoroService) AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error) {
 	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
@@ -210,6 +272,14 @@ func (s *PomodoroService) GetCurrentState(ctx context.Context) (*domain.CurrentS
 		ActiveSession: activeSession,
 		TodayStats:    *stats,
 	}, nil
+}
+
+// DeepWorkStreakThreshold is the minimum daily deep work time to count toward a streak.
+const DeepWorkStreakThreshold = 4 * time.Hour
+
+// GetDeepWorkStreak returns the number of consecutive days with >= 4h of deep work.
+func (s *PomodoroService) GetDeepWorkStreak(ctx context.Context) (int, error) {
+	return s.storage.Sessions().GetDeepWorkStreak(ctx, DeepWorkStreakThreshold)
 }
 
 // GetTaskHistory retrieves session history for a specific task.
