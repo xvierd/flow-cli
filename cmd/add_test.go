@@ -11,13 +11,13 @@ import (
 func TestAddCmd(t *testing.T) {
 	// Setup test database
 	dbPath := "/tmp/flow_test_add.db"
-	
+
 	// Create root command for testing
 	cmd := &cobra.Command{}
 	cmd.AddCommand(addCmd)
 	cmd.PersistentFlags().StringVar(&dbPath, "db", dbPath, "")
 	cmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "")
-	
+
 	t.Run("add task with single word title", func(t *testing.T) {
 		// This test would require mocking the services
 		// For now, we verify command structure
@@ -25,14 +25,14 @@ func TestAddCmd(t *testing.T) {
 			t.Errorf("addCmd.Use = %q, want %q", addCmd.Use, "add [title]")
 		}
 	})
-	
+
 	t.Run("add command accepts minimum 1 arg", func(t *testing.T) {
 		// Check args function
 		if addCmd.Args == nil {
 			t.Error("addCmd.Args should be set")
 		}
 	})
-	
+
 	t.Run("add command has tags flag", func(t *testing.T) {
 		flag := addCmd.Flags().Lookup("tags")
 		if flag == nil {
@@ -47,15 +47,15 @@ func TestAddCmd(t *testing.T) {
 // TestAddCmd_ValidateArgs tests argument validation
 func TestAddCmd_ValidateArgs(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		wantErr  bool
+		name    string
+		args    []string
+		wantErr bool
 	}{
 		{"no args", []string{}, true},
 		{"single word", []string{"task"}, false},
 		{"multi word", []string{"my", "task", "name"}, false},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := addCmd.Args(addCmd, tt.args)
@@ -87,12 +87,12 @@ func TestAddCmd_JSONOutput(t *testing.T) {
 		Tags:        []string{"tag1", "tag2"},
 		CreatedAt:   "2024-01-01T12:00:00",
 	}
-	
+
 	data, err := json.MarshalIndent(task, "", "  ")
 	if err != nil {
 		t.Fatalf("failed to marshal task: %v", err)
 	}
-	
+
 	// Verify the JSON contains expected fields
 	output := string(data)
 	if !strings.Contains(output, "test-id-123") {

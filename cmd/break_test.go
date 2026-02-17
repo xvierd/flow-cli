@@ -11,7 +11,7 @@ func TestBreakCmd(t *testing.T) {
 		if breakCmd.Use != "break" {
 			t.Errorf("breakCmd.Use = %q, want %q", breakCmd.Use, "break")
 		}
-		
+
 		if breakCmd.Short != "Start a break session" {
 			t.Errorf("breakCmd.Short = %q, want %q", breakCmd.Short, "Start a break session")
 		}
@@ -29,7 +29,7 @@ func TestGetBreakTypeLabel(t *testing.T) {
 		{domain.SessionTypeWork, "Break"},
 		{domain.SessionType("unknown"), "Break"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(string(tt.sessionType), func(t *testing.T) {
 			got := getBreakTypeLabel(tt.sessionType)

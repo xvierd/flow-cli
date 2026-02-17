@@ -14,32 +14,32 @@ import (
 
 // Timer implements the ports.Timer interface using Bubbletea.
 type Timer struct {
-	program                *tea.Program
-	fetchState             func() *domain.CurrentState
-	commandCallback        func(ports.TimerCommand) error
-	onSessionComplete      func(domain.SessionType)
-	distractionCallback    func(string) error
-	accomplishmentCallback func(string) error
-	focusScoreCallback     func(int) error
-	energizeCallback       func(string) error
-	completionInfo         *domain.CompletionInfo
-	theme                  *config.ThemeConfig
-	inline                 bool
-	presets                []config.SessionPreset
-	breakInfo              string
-	onStartSession         func(presetIndex int, taskName string) error
-	mode                   methodology.Mode
-	modeLocked             bool
-	onModeSelected         func(domain.Methodology)
-	fetchRecentTasks       func(limit int) []*domain.Task
+	program                 *tea.Program
+	fetchState              func() *domain.CurrentState
+	commandCallback         func(ports.TimerCommand) error
+	onSessionComplete       func(domain.SessionType)
+	distractionCallback     func(string) error
+	accomplishmentCallback  func(string) error
+	focusScoreCallback      func(int) error
+	energizeCallback        func(string) error
+	completionInfo          *domain.CompletionInfo
+	theme                   *config.ThemeConfig
+	inline                  bool
+	presets                 []config.SessionPreset
+	breakInfo               string
+	onStartSession          func(presetIndex int, taskName string) error
+	mode                    methodology.Mode
+	modeLocked              bool
+	onModeSelected          func(domain.Methodology)
+	fetchRecentTasks        func(limit int) []*domain.Task
 	fetchYesterdayHighlight func() *domain.Task
-	autoBreak              bool
-	notificationsEnabled   bool
-	notificationToggle     func(bool)
+	autoBreak               bool
+	notificationsEnabled    bool
+	notificationToggle      func(bool)
 	// PostAction holds the action selected from the main menu (stats/reflect).
-	PostAction             MainMenuAction
+	PostAction MainMenuAction
 	// WantsNewSession is set when user wants to chain another session (fullscreen mode).
-	WantsNewSession        bool
+	WantsNewSession bool
 }
 
 // NewTimer creates a new TUI timer adapter.

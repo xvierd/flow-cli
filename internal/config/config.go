@@ -12,12 +12,12 @@ import (
 
 // Config holds all configuration for the Flow application.
 type Config struct {
-	Methodology   string              `mapstructure:"methodology"`
-	Pomodoro      PomodoroConfig      `mapstructure:"pomodoro"`
-	Notifications NotificationConfig  `mapstructure:"notifications"`
-	MCP           MCPConfig           `mapstructure:"mcp"`
-	Storage       StorageConfig       `mapstructure:"storage"`
-	Theme         ThemeConfig         `mapstructure:"theme"`
+	Methodology   string             `mapstructure:"methodology"`
+	Pomodoro      PomodoroConfig     `mapstructure:"pomodoro"`
+	Notifications NotificationConfig `mapstructure:"notifications"`
+	MCP           MCPConfig          `mapstructure:"mcp"`
+	Storage       StorageConfig      `mapstructure:"storage"`
+	Theme         ThemeConfig        `mapstructure:"theme"`
 }
 
 // ThemeConfig holds theme customization settings (colors and icons).

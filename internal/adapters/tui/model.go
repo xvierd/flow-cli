@@ -88,25 +88,25 @@ type stateMsg struct {
 
 // Model represents the TUI state.
 type Model struct {
-	state                *domain.CurrentState
-	progress             progress.Model
-	width                int
-	height               int
-	completed            bool
-	completedSessionType domain.SessionType
-	notified             bool
-	confirmBreak         bool
-	confirmFinish        bool
-	fetchState           func() *domain.CurrentState
-	commandCallback      func(ports.TimerCommand) error
-	onSessionComplete    func(domain.SessionType)
+	state                  *domain.CurrentState
+	progress               progress.Model
+	width                  int
+	height                 int
+	completed              bool
+	completedSessionType   domain.SessionType
+	notified               bool
+	confirmBreak           bool
+	confirmFinish          bool
+	fetchState             func() *domain.CurrentState
+	commandCallback        func(ports.TimerCommand) error
+	onSessionComplete      func(domain.SessionType)
 	distractionCallback    func(string) error
 	accomplishmentCallback func(string) error
 	focusScoreCallback     func(int) error
 	energizeCallback       func(string) error
-	completionInfo       *domain.CompletionInfo
-	theme                config.ThemeConfig
-	mode                 methodology.Mode
+	completionInfo         *domain.CompletionInfo
+	theme                  config.ThemeConfig
+	mode                   methodology.Mode
 
 	// Deep Work: distraction log
 	distractionMode  bool

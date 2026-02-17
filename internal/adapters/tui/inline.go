@@ -98,23 +98,23 @@ type InlineModel struct {
 	taskInput textinput.Model
 
 	// Timer state
-	state             *domain.CurrentState
-	progress          progress.Model
-	width             int
-	completed         bool
-	completedType     domain.SessionType
-	notified          bool
-	confirmBreak      bool
-	confirmFinish     bool
-	fetchState        func() *domain.CurrentState
-	commandCallback   func(ports.TimerCommand) error
-	onSessionComplete func(domain.SessionType)
+	state                  *domain.CurrentState
+	progress               progress.Model
+	width                  int
+	completed              bool
+	completedType          domain.SessionType
+	notified               bool
+	confirmBreak           bool
+	confirmFinish          bool
+	fetchState             func() *domain.CurrentState
+	commandCallback        func(ports.TimerCommand) error
+	onSessionComplete      func(domain.SessionType)
 	distractionCallback    func(string) error
 	accomplishmentCallback func(string) error
 	focusScoreCallback     func(int) error
 	energizeCallback       func(string) error
-	completionInfo    *domain.CompletionInfo
-	theme             config.ThemeConfig
+	completionInfo         *domain.CompletionInfo
+	theme                  config.ThemeConfig
 
 	// Callbacks for session creation (called during setup phase)
 	onStartSession func(presetIndex int, taskName string) error
@@ -940,9 +940,9 @@ func (m InlineModel) viewPickMode() string {
 	for i, opt := range modeOptions {
 		label := opt.label
 		if i == m.modeCursor {
-			b.WriteString(activeStyle.Render(" ▸ "+label+" "))
+			b.WriteString(activeStyle.Render(" ▸ " + label + " "))
 		} else {
-			b.WriteString(dimStyle.Render("   "+label+" "))
+			b.WriteString(dimStyle.Render("   " + label + " "))
 		}
 	}
 	b.WriteString("\n")
@@ -1083,7 +1083,7 @@ func (m InlineModel) viewTaskName() string {
 	if m.mode != nil {
 		taskPrompt = m.mode.TaskPrompt()
 	}
-	b.WriteString(titleStyle.Render("  "+taskPrompt+" "))
+	b.WriteString(titleStyle.Render("  " + taskPrompt + " "))
 	b.WriteString(m.taskInput.View())
 	b.WriteString("\n")
 

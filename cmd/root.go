@@ -34,15 +34,15 @@ var (
 	modeFlag   string
 
 	// Global dependencies
-	storageAdapter      ports.Storage
-	taskService         *services.TaskService
-	pomodoroSvc         *services.PomodoroService
-	stateService        *services.StateService
-	gitDetector         ports.GitDetector
-	notifier            *notification.Notifier
-	appConfig           *config.Config
+	storageAdapter       ports.Storage
+	taskService          *services.TaskService
+	pomodoroSvc          *services.PomodoroService
+	stateService         *services.StateService
+	gitDetector          ports.GitDetector
+	notifier             *notification.Notifier
+	appConfig            *config.Config
 	effectiveMethodology domain.Methodology
-	activeMode          methodology.Mode
+	activeMode           methodology.Mode
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -523,11 +523,11 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 			}
 
 			_, err := pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{
-				TaskID:          taskID,
-				WorkingDir:      workingDir,
-				Duration:        currentPresets[presetIndex].Duration,
-				Methodology:     effectiveMethodology,
-				Tags:            sessionTags,
+				TaskID:      taskID,
+				WorkingDir:  workingDir,
+				Duration:    currentPresets[presetIndex].Duration,
+				Methodology: effectiveMethodology,
+				Tags:        sessionTags,
 			})
 			return err
 		})
@@ -658,7 +658,7 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 		if notifier == nil || !notifier.IsEnabled() {
 			return
 		}
-		
+
 		var err error
 		switch sessionType {
 		case domain.SessionTypeWork:
@@ -668,7 +668,7 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 		case domain.SessionTypeLongBreak:
 			err = notifier.NotifyBreakComplete("Long")
 		}
-		
+
 		if err != nil {
 			// Log notification errors but don't fail
 			fmt.Fprintf(os.Stderr, "Warning: notification failed: %v\n", err)

@@ -6,13 +6,13 @@ import (
 
 // GitInfo holds git repository context information.
 type GitInfo struct {
-	Branch      string
-	Commit      string
-	CommitMsg   string
-	Modified    []string
-	Untracked   []string
-	IsClean     bool
-	Repository  string
+	Branch     string
+	Commit     string
+	CommitMsg  string
+	Modified   []string
+	Untracked  []string
+	IsClean    bool
+	Repository string
 }
 
 // GitDetector defines the interface for git context detection.

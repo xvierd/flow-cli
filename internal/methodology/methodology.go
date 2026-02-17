@@ -59,15 +59,15 @@ func ForMethodology(m domain.Methodology) Mode {
 
 type pomodoroMode struct{}
 
-func (p *pomodoroMode) Name() domain.Methodology     { return domain.MethodologyPomodoro }
-func (p *pomodoroMode) TaskPrompt() string            { return "What are you working on? (Enter to skip):" }
-func (p *pomodoroMode) OutcomePrompt() string         { return "" }
-func (p *pomodoroMode) HasDistractionLog() bool       { return false }
-func (p *pomodoroMode) HasEnergizeReminder() bool     { return false }
-func (p *pomodoroMode) HasFocusScore() bool           { return false }
-func (p *pomodoroMode) HasShutdownRitual() bool       { return false }
-func (p *pomodoroMode) HasHighlight() bool            { return false }
-func (p *pomodoroMode) CompletionTitle() string       { return "Session complete! Great work." }
+func (p *pomodoroMode) Name() domain.Methodology  { return domain.MethodologyPomodoro }
+func (p *pomodoroMode) TaskPrompt() string        { return "What are you working on? (Enter to skip):" }
+func (p *pomodoroMode) OutcomePrompt() string     { return "" }
+func (p *pomodoroMode) HasDistractionLog() bool   { return false }
+func (p *pomodoroMode) HasEnergizeReminder() bool { return false }
+func (p *pomodoroMode) HasFocusScore() bool       { return false }
+func (p *pomodoroMode) HasShutdownRitual() bool   { return false }
+func (p *pomodoroMode) HasHighlight() bool        { return false }
+func (p *pomodoroMode) CompletionTitle() string   { return "Session complete! Great work." }
 
 func (p *pomodoroMode) Presets() []config.SessionPreset {
 	return []config.SessionPreset{
@@ -81,15 +81,15 @@ func (p *pomodoroMode) Presets() []config.SessionPreset {
 
 type deepWorkMode struct{}
 
-func (d *deepWorkMode) Name() domain.Methodology     { return domain.MethodologyDeepWork }
-func (d *deepWorkMode) TaskPrompt() string            { return "What will you focus on deeply?" }
-func (d *deepWorkMode) OutcomePrompt() string         { return "Intended outcome for this session:" }
-func (d *deepWorkMode) HasDistractionLog() bool       { return true }
-func (d *deepWorkMode) HasEnergizeReminder() bool     { return false }
-func (d *deepWorkMode) HasFocusScore() bool           { return false }
-func (d *deepWorkMode) HasShutdownRitual() bool       { return true }
-func (d *deepWorkMode) HasHighlight() bool            { return false }
-func (d *deepWorkMode) CompletionTitle() string       { return "Deep Work Session Complete." }
+func (d *deepWorkMode) Name() domain.Methodology  { return domain.MethodologyDeepWork }
+func (d *deepWorkMode) TaskPrompt() string        { return "What will you focus on deeply?" }
+func (d *deepWorkMode) OutcomePrompt() string     { return "Intended outcome for this session:" }
+func (d *deepWorkMode) HasDistractionLog() bool   { return true }
+func (d *deepWorkMode) HasEnergizeReminder() bool { return false }
+func (d *deepWorkMode) HasFocusScore() bool       { return false }
+func (d *deepWorkMode) HasShutdownRitual() bool   { return true }
+func (d *deepWorkMode) HasHighlight() bool        { return false }
+func (d *deepWorkMode) CompletionTitle() string   { return "Deep Work Session Complete." }
 
 func (d *deepWorkMode) Presets() []config.SessionPreset {
 	return []config.SessionPreset{
@@ -103,15 +103,15 @@ func (d *deepWorkMode) Presets() []config.SessionPreset {
 
 type makeTimeMode struct{}
 
-func (mt *makeTimeMode) Name() domain.Methodology     { return domain.MethodologyMakeTime }
-func (mt *makeTimeMode) TaskPrompt() string            { return "What's your Highlight for today?" }
-func (mt *makeTimeMode) OutcomePrompt() string         { return "" }
-func (mt *makeTimeMode) HasDistractionLog() bool       { return false }
-func (mt *makeTimeMode) HasEnergizeReminder() bool     { return true }
-func (mt *makeTimeMode) HasFocusScore() bool           { return true }
-func (mt *makeTimeMode) HasShutdownRitual() bool       { return false }
-func (mt *makeTimeMode) HasHighlight() bool            { return true }
-func (mt *makeTimeMode) CompletionTitle() string       { return "Session Complete!" }
+func (mt *makeTimeMode) Name() domain.Methodology  { return domain.MethodologyMakeTime }
+func (mt *makeTimeMode) TaskPrompt() string        { return "What's your Highlight for today?" }
+func (mt *makeTimeMode) OutcomePrompt() string     { return "" }
+func (mt *makeTimeMode) HasDistractionLog() bool   { return false }
+func (mt *makeTimeMode) HasEnergizeReminder() bool { return true }
+func (mt *makeTimeMode) HasFocusScore() bool       { return true }
+func (mt *makeTimeMode) HasShutdownRitual() bool   { return false }
+func (mt *makeTimeMode) HasHighlight() bool        { return true }
+func (mt *makeTimeMode) CompletionTitle() string   { return "Session Complete!" }
 
 func (mt *makeTimeMode) Presets() []config.SessionPreset {
 	return []config.SessionPreset{

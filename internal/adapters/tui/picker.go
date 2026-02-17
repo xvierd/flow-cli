@@ -18,18 +18,18 @@ type PickerItem struct {
 
 // PickerResult holds the outcome of a picker interaction.
 type PickerResult struct {
-	Index    int
-	Aborted  bool
+	Index   int
+	Aborted bool
 }
 
 type pickerModel struct {
-	title    string
-	items    []PickerItem
-	footer   string
-	cursor   int
-	chosen   bool
-	aborted  bool
-	theme    config.ThemeConfig
+	title   string
+	items   []PickerItem
+	footer  string
+	cursor  int
+	chosen  bool
+	aborted bool
+	theme   config.ThemeConfig
 }
 
 func (m pickerModel) Init() tea.Cmd { return nil }
@@ -156,9 +156,9 @@ func (m hPickerModel) View() string {
 	for i, item := range m.items {
 		label := fmt.Sprintf("%s %s", item.Label, item.Desc)
 		if i == m.cursor {
-			b.WriteString(activeStyle.Render(" ▸ "+label+" "))
+			b.WriteString(activeStyle.Render(" ▸ " + label + " "))
 		} else {
-			b.WriteString(dimStyle.Render("   "+label+" "))
+			b.WriteString(dimStyle.Render("   " + label + " "))
 		}
 	}
 	b.WriteString("\n")
