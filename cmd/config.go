@@ -37,6 +37,7 @@ var configCmd = &cobra.Command{
 		fmt.Printf("    Short break:          %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.ShortBreak)))
 		fmt.Printf("    Long break:           %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.LongBreak)))
 		fmt.Printf("    Sessions before long:  %d\n", appConfig.Pomodoro.SessionsBeforeLong)
+		fmt.Printf("    Auto-break:            %v\n", appConfig.Pomodoro.AutoBreak)
 		fmt.Println()
 		fmt.Println("  What would you like to change?")
 		fmt.Println("    [1] Edit preset 1")

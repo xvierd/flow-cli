@@ -21,6 +21,7 @@ type Timer struct {
 	distractionCallback    func(string) error
 	accomplishmentCallback func(string) error
 	focusScoreCallback     func(int) error
+	energizeCallback       func(string) error
 	completionInfo         *domain.CompletionInfo
 	theme                  *config.ThemeConfig
 	inline                 bool
@@ -30,6 +31,9 @@ type Timer struct {
 	mode                   methodology.Mode
 	modeLocked             bool
 	onModeSelected         func(domain.Methodology)
+	fetchRecentTasks       func(limit int) []*domain.Task
+	fetchYesterdayHighlight func() *domain.Task
+	autoBreak              bool
 }
 
 // NewTimer creates a new TUI timer adapter.
@@ -70,7 +74,9 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	model.distractionCallback = t.distractionCallback
 	model.accomplishmentCallback = t.accomplishmentCallback
 	model.focusScoreCallback = t.focusScoreCallback
+	model.energizeCallback = t.energizeCallback
 	model.mode = t.mode
+	model.autoBreak = t.autoBreak
 
 	t.program = tea.NewProgram(
 		model,
@@ -102,12 +108,16 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.distractionCallback = t.distractionCallback
 	model.accomplishmentCallback = t.accomplishmentCallback
 	model.focusScoreCallback = t.focusScoreCallback
+	model.energizeCallback = t.energizeCallback
 	model.presets = t.presets
 	model.breakInfo = t.breakInfo
 	model.onStartSession = t.onStartSession
 	model.mode = t.mode
 	model.modeLocked = t.modeLocked
 	model.onModeSelected = t.onModeSelected
+	model.fetchRecentTasks = t.fetchRecentTasks
+	model.fetchYesterdayHighlight = t.fetchYesterdayHighlight
+	model.autoBreak = t.autoBreak
 
 	// If mode is not locked and no active session, start at mode picker
 	if !t.modeLocked && initialState.ActiveSession == nil {
@@ -172,6 +182,26 @@ func (t *Timer) SetAccomplishmentCallback(callback func(text string) error) {
 // SetFocusScoreCallback sets a callback for recording focus scores (Make Time).
 func (t *Timer) SetFocusScoreCallback(callback func(score int) error) {
 	t.focusScoreCallback = callback
+}
+
+// SetAutoBreak enables auto-starting breaks when a work session completes.
+func (t *Timer) SetAutoBreak(enabled bool) {
+	t.autoBreak = enabled
+}
+
+// SetEnergizeCallback sets a callback for recording energize activities (Make Time).
+func (t *Timer) SetEnergizeCallback(callback func(activity string) error) {
+	t.energizeCallback = callback
+}
+
+// SetFetchRecentTasks sets a callback to fetch recent tasks for the task select phase.
+func (t *Timer) SetFetchRecentTasks(fetch func(limit int) []*domain.Task) {
+	t.fetchRecentTasks = fetch
+}
+
+// SetFetchYesterdayHighlight sets a callback to fetch yesterday's unfinished highlight.
+func (t *Timer) SetFetchYesterdayHighlight(fetch func() *domain.Task) {
+	t.fetchYesterdayHighlight = fetch
 }
 
 // SetInlineSetup configures the inline setup phase (presets, break info, start callback).

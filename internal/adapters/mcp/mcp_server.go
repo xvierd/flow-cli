@@ -293,6 +293,7 @@ func (s *Server) handleGetCurrentState(ctx context.Context, request mcp.CallTool
 			"distractions":    session.Distractions,
 			"accomplishment":  session.Accomplishment,
 			"intended_outcome": session.IntendedOutcome,
+			"session_tags":     session.Tags,
 		}
 		if session.TaskID != nil {
 			sessionData["task_id"] = *session.TaskID
@@ -401,6 +402,9 @@ func (s *Server) handleGetTaskHistory(ctx context.Context, request mcp.CallToolR
 		}
 		if session.IntendedOutcome != "" {
 			sessionData["intended_outcome"] = session.IntendedOutcome
+		}
+		if len(session.Tags) > 0 {
+			sessionData["session_tags"] = session.Tags
 		}
 
 		sessionList = append(sessionList, sessionData)

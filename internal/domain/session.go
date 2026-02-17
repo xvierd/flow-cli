@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"strings"
 	"time"
 )
 
@@ -42,6 +43,8 @@ type PomodoroSession struct {
 	Distractions    []string
 	Accomplishment  string
 	IntendedOutcome string
+	Tags              []string
+	EnergizeActivity  string
 }
 
 // PomodoroConfig holds configuration for pomodoro sessions.
@@ -195,4 +198,21 @@ func (s *PomodoroSession) SetGitContext(branch, commit string, modified []string
 // AddNotes adds notes to the session.
 func (s *PomodoroSession) AddNotes(notes string) {
 	s.Notes = notes
+}
+
+// ParseTagsFromInput extracts #tags from input text.
+// Returns the cleaned text (without tags) and the list of tags.
+// For example: "Build API #coding #backend" returns ("Build API", ["coding", "backend"]).
+func ParseTagsFromInput(input string) (string, []string) {
+	words := strings.Fields(input)
+	var clean []string
+	var tags []string
+	for _, w := range words {
+		if strings.HasPrefix(w, "#") && len(w) > 1 {
+			tags = append(tags, strings.TrimPrefix(w, "#"))
+		} else {
+			clean = append(clean, w)
+		}
+	}
+	return strings.Join(clean, " "), tags
 }

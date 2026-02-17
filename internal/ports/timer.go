@@ -92,4 +92,10 @@ type Timer interface {
 
 	// SetFocusScoreCallback sets a callback for recording focus scores (Make Time).
 	SetFocusScoreCallback(callback func(score int) error)
+
+	// SetAutoBreak enables automatically starting a break when a work session completes.
+	SetAutoBreak(enabled bool)
+
+	// SetEnergizeCallback sets a callback for recording energize activities (Make Time).
+	SetEnergizeCallback(callback func(activity string) error)
 }

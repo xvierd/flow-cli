@@ -103,6 +103,7 @@ type Model struct {
 	distractionCallback    func(string) error
 	accomplishmentCallback func(string) error
 	focusScoreCallback     func(int) error
+	energizeCallback       func(string) error
 	completionInfo       *domain.CompletionInfo
 	theme                config.ThemeConfig
 	mode                 methodology.Mode
@@ -124,6 +125,22 @@ type Model struct {
 	// Make Time: energize reminder
 	energizeShown bool
 	energizeTicks int
+
+	// Make Time: energize activity log
+	energizeActivity string
+	energizeSaved    bool
+
+	// Auto-break
+	autoBreak      bool
+	autoBreakTicks int
+
+	// Deep Work: distraction review (shown after accomplishment in shutdown ritual)
+	distractionReviewMode bool
+	distractionReviewDone bool
+
+	// Daily summary on quit
+	showingSummary bool
+	summaryTicks   int
 }
 
 // NewModel creates a new TUI model.
@@ -177,8 +194,36 @@ func (m Model) getTimerColor() lipgloss.Color {
 	return m.getThemeColor()
 }
 
+func (m Model) showDailySummaryOrQuit() (tea.Model, tea.Cmd) {
+	if m.state.TodayStats.WorkSessions > 0 {
+		m.showingSummary = true
+		m.summaryTicks = 3
+		return m, tickCmd()
+	}
+	return m, tea.Quit
+}
+
 // Update handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Daily summary dismiss
+	if m.showingSummary {
+		switch msg.(type) {
+		case tea.KeyMsg:
+			return m, tea.Quit
+		case tickMsg:
+			m.summaryTicks--
+			if m.summaryTicks <= 0 {
+				return m, tea.Quit
+			}
+			return m, tickCmd()
+		case tea.WindowSizeMsg:
+			wsm := msg.(tea.WindowSizeMsg)
+			m.width = wsm.Width
+			m.height = wsm.Height
+		}
+		return m, nil
+	}
+
 	// If in text input mode, handle separately
 	if m.distractionMode {
 		return m.updateDistractionInput(msg)
@@ -186,14 +231,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.accomplishmentMode {
 		return m.updateAccomplishmentInput(msg)
 	}
+	if m.distractionReviewMode {
+		return m.updateDistractionReview(msg)
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Cancel auto-break countdown on any non-quit key
+		if m.autoBreakTicks > 0 {
+			m.autoBreakTicks = 0
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "c":
-			return m, tea.Quit
+			return m.showDailySummaryOrQuit()
 		case "s":
 			if m.completed && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdStart)
@@ -229,6 +282,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.distractionInput.Focus()
 				return m, m.distractionInput.Cursor.BlinkCmd()
 			}
+		case "r":
+			// Deep Work: open distraction review on work completion
+			if m.mode != nil && m.mode.HasShutdownRitual() && m.completed && m.completedSessionType == domain.SessionTypeWork && len(m.distractions) > 0 && !m.distractionReviewDone {
+				m.distractionReviewMode = true
+			}
 		case "a":
 			// Deep Work: open accomplishment input on work completion
 			if m.mode != nil && m.mode.HasShutdownRitual() && m.completed && m.completedSessionType == domain.SessionTypeWork && !m.accomplishmentSaved {
@@ -245,6 +303,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusScoreSaved = true
 				if m.focusScoreCallback != nil {
 					_ = m.focusScoreCallback(score)
+				}
+			}
+		case "w":
+			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedSessionType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
+				m.energizeActivity = "walk"
+				m.energizeSaved = true
+				if m.energizeCallback != nil {
+					_ = m.energizeCallback("walk")
+				}
+			}
+		case "t":
+			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedSessionType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
+				m.energizeActivity = "stretch"
+				m.energizeSaved = true
+				if m.energizeCallback != nil {
+					_ = m.energizeCallback("stretch")
+				}
+			}
+		case "e":
+			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedSessionType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
+				m.energizeActivity = "exercise"
+				m.energizeSaved = true
+				if m.energizeCallback != nil {
+					_ = m.energizeCallback("exercise")
+				}
+			}
+		case "n":
+			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedSessionType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
+				m.energizeActivity = "none"
+				m.energizeSaved = true
+				if m.energizeCallback != nil {
+					_ = m.energizeCallback("none")
 				}
 			}
 		case "b":
@@ -306,6 +396,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.energizeTicks--
 		}
 
+		// Auto-break countdown
+		if m.autoBreakTicks > 0 {
+			m.autoBreakTicks--
+			if m.autoBreakTicks == 0 && m.commandCallback != nil {
+				_ = m.commandCallback(ports.CmdBreak)
+				m.completed = false
+				m.notified = false
+				m.resetCompletionState()
+			}
+		}
+
 		cmds := []tea.Cmd{tickCmd()}
 		if m.fetchState != nil {
 			cmds = append(cmds, fetchStateCmd(m.fetchState))
@@ -323,6 +424,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !m.notified && m.onSessionComplete != nil {
 					m.onSessionComplete(m.completedSessionType)
 					m.notified = true
+				}
+
+				// Start auto-break countdown for work sessions
+				if m.autoBreak && m.completedSessionType == domain.SessionTypeWork {
+					m.autoBreakTicks = 3
 				}
 			}
 
@@ -356,6 +462,10 @@ func (m *Model) resetCompletionState() {
 	m.focusScore = nil
 	m.focusScoreSaved = false
 	m.distractions = nil
+	m.distractionReviewMode = false
+	m.distractionReviewDone = false
+	m.energizeActivity = ""
+	m.energizeSaved = false
 }
 
 // updateDistractionInput handles input while in distraction logging mode.
@@ -403,6 +513,10 @@ func (m Model) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.accomplishmentMode = false
 			m.accomplishmentInput.Blur()
+			// Auto-enter distraction review if there are distractions
+			if len(m.distractions) > 0 && !m.distractionReviewDone {
+				m.distractionReviewMode = true
+			}
 			return m, nil
 		case "esc":
 			m.accomplishmentMode = false
@@ -418,10 +532,30 @@ func (m Model) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateDistractionReview handles the distraction review overlay.
+func (m Model) updateDistractionReview(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter", "esc":
+			m.distractionReviewMode = false
+			m.distractionReviewDone = true
+			return m, nil
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
 // View renders the TUI.
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading..."
+	}
+
+	if m.showingSummary {
+		return m.viewFullscreenSummary()
 	}
 
 	var sections []string
@@ -435,6 +569,19 @@ func (m Model) View() string {
 		taskText := fmt.Sprintf("%s Task: %s", m.theme.IconTask, m.state.ActiveTask.Title)
 		taskStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorTask))
 		sections = append(sections, taskStyle.Render(taskText))
+	}
+
+	// Session tags
+	if m.state.ActiveSession != nil && len(m.state.ActiveSession.Tags) > 0 {
+		tagStr := ""
+		for _, t := range m.state.ActiveSession.Tags {
+			if tagStr != "" {
+				tagStr += "  "
+			}
+			tagStr += "#" + t
+		}
+		tagStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+		sections = append(sections, tagStyle.Render(tagStr))
 	}
 
 	if m.completed {
@@ -452,6 +599,29 @@ func (m Model) View() string {
 		helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 		sections = append(sections, helpStyle.Render("[s]tart  [c]lose"))
 	}
+
+	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+func (m Model) viewFullscreenSummary() string {
+	var sections []string
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle)).MarginBottom(1)
+	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork))
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+
+	sections = append(sections, titleStyle.Render(fmt.Sprintf("%s Today's Summary", m.theme.IconApp)))
+
+	stats := m.state.TodayStats
+	sections = append(sections, statusStyle.Render(fmt.Sprintf("%s %d sessions, %s focused",
+		m.theme.IconStats, stats.WorkSessions, formatDuration(stats.TotalWorkTime))))
+	if stats.BreaksTaken > 0 {
+		sections = append(sections, helpStyle.Render(fmt.Sprintf("%d breaks taken", stats.BreaksTaken)))
+	}
+
+	sections = append(sections, "")
+	sections = append(sections, helpStyle.Render("Press any key to exit"))
 
 	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
@@ -504,7 +674,11 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 	sections = append(sections, helpStyle.Render(statsText))
 
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[b]reak  [s]kip  [c]lose"))
+	if m.autoBreakTicks > 0 {
+		sections = append(sections, statusStyle.Render(fmt.Sprintf("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+	} else {
+		sections = append(sections, helpStyle.Render("[b]reak  [s]kip  [c]lose"))
+	}
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render("Customize in ~/.flow/config.toml"))
 	return sections
@@ -531,13 +705,32 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 	sections = append(sections, statusStyle.Render(fmt.Sprintf("Deep Work Score: %s today", formatDuration(stats.TotalWorkTime))))
 	sections = append(sections, helpStyle.Render(fmt.Sprintf("%.0f%% of 8h target", deepWorkHours/8.0*100)))
 
+	// Deep Work streak
+	if m.completionInfo != nil && m.completionInfo.DeepWorkStreak > 0 {
+		sections = append(sections, "")
+		sections = append(sections, statusStyle.Render(fmt.Sprintf("Deep Work streak: %d days", m.completionInfo.DeepWorkStreak)))
+	}
+
 	// Accomplishment prompt / saved state
 	sections = append(sections, "")
 	if m.accomplishmentMode {
 		sections = append(sections, helpStyle.Render("What did you accomplish? ")+m.accomplishmentInput.View())
 		sections = append(sections, helpStyle.Render("enter save · esc cancel"))
+	} else if m.distractionReviewMode {
+		sections = append(sections, statusStyle.Render("Distraction Review:"))
+		for i, d := range m.distractions {
+			sections = append(sections, helpStyle.Render(fmt.Sprintf("  %d. %s", i+1, d)))
+		}
+		sections = append(sections, "")
+		sections = append(sections, helpStyle.Render("Consider batching these for tomorrow."))
+		sections = append(sections, helpStyle.Render("enter dismiss"))
 	} else if m.accomplishmentSaved {
-		sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
+		if len(m.distractions) > 0 && !m.distractionReviewDone {
+			sections = append(sections, statusStyle.Render("Accomplishment saved."))
+			sections = append(sections, helpStyle.Render(fmt.Sprintf("[r]eview %d distractions", len(m.distractions))))
+		} else {
+			sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
+		}
 	} else {
 		sections = append(sections, helpStyle.Render("[a] Record what you accomplished (shutdown ritual)"))
 	}
@@ -554,6 +747,8 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 	helpText := "[b]reak  [s]kip  [c]lose"
 	if !m.accomplishmentSaved {
 		helpText = "[a]ccomplishment  [b]reak  [s]kip  [c]lose"
+	} else if len(m.distractions) > 0 && !m.distractionReviewDone {
+		helpText = "[r]eview distractions  [b]reak  [s]kip  [c]lose"
 	}
 	sections = append(sections, helpStyle.Render(helpText))
 	return sections
@@ -579,6 +774,16 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 		sections = append(sections, statusStyle.Render(fmt.Sprintf("Focus score: %d/5", *m.focusScore)))
 	} else {
 		sections = append(sections, helpStyle.Render("How focused were you? [1] [2] [3] [4] [5]"))
+	}
+
+	// Energize activity (shown after focus score is saved)
+	if m.focusScoreSaved {
+		sections = append(sections, "")
+		if m.energizeSaved {
+			sections = append(sections, statusStyle.Render(fmt.Sprintf("Energize: %s", m.energizeActivity)))
+		} else {
+			sections = append(sections, helpStyle.Render("Energize? [w]alk [t]stretch [e]xercise [n]one"))
+		}
 	}
 
 	// Daily stats

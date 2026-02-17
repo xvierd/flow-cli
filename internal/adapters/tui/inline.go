@@ -23,6 +23,7 @@ type inlinePhase int
 const (
 	phasePickMode inlinePhase = iota
 	phasePickDuration
+	phaseTaskSelect
 	phaseTaskName
 	phaseTimer
 )
@@ -55,6 +56,15 @@ type InlineModel struct {
 	presetCursor int
 	breakInfo    string
 
+	// Setup: task select (recent tasks)
+	recentTasks      []*domain.Task
+	taskSelectCursor int
+	fetchRecentTasks func(limit int) []*domain.Task
+
+	// Make Time: highlight carry-over
+	yesterdayHighlight      *domain.Task
+	fetchYesterdayHighlight func() *domain.Task
+
 	// Setup: task name
 	taskInput textinput.Model
 
@@ -73,6 +83,7 @@ type InlineModel struct {
 	distractionCallback    func(string) error
 	accomplishmentCallback func(string) error
 	focusScoreCallback     func(int) error
+	energizeCallback       func(string) error
 	completionInfo    *domain.CompletionInfo
 	theme             config.ThemeConfig
 
@@ -92,6 +103,10 @@ type InlineModel struct {
 	accomplishmentInput textinput.Model
 	accomplishmentSaved bool
 
+	// Deep Work: distraction review (shown after accomplishment in shutdown ritual)
+	distractionReviewMode bool
+	distractionReviewDone bool
+
 	// Make Time: focus score
 	focusScore      *int
 	focusScoreSaved bool
@@ -99,6 +114,18 @@ type InlineModel struct {
 	// Make Time: energize reminder
 	energizeShown bool
 	energizeTicks int
+
+	// Make Time: energize activity log
+	energizeActivity string
+	energizeSaved    bool
+
+	// Auto-break
+	autoBreak      bool
+	autoBreakTicks int
+
+	// Daily summary on quit
+	showingSummary bool
+	summaryTicks   int
 }
 
 // getTerminalWidth returns the current terminal width, defaulting to 80.
@@ -164,6 +191,8 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updatePickMode(msg)
 	case phasePickDuration:
 		return m.updatePickDuration(msg)
+	case phaseTaskSelect:
+		return m.updateTaskSelect(msg)
 	case phaseTaskName:
 		return m.updateTaskName(msg)
 	case phaseTimer:
@@ -172,6 +201,9 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.accomplishmentMode {
 			return m.updateAccomplishmentInput(msg)
+		}
+		if m.distractionReviewMode {
+			return m.updateDistractionReview(msg)
 		}
 		return m.updateTimer(msg)
 	}
@@ -226,6 +258,26 @@ func (m InlineModel) selectMode() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m InlineModel) advanceToTaskPhase() (tea.Model, tea.Cmd) {
+	// Fetch recent tasks if callback is available
+	if m.fetchRecentTasks != nil {
+		m.recentTasks = m.fetchRecentTasks(3)
+	}
+	// Check for yesterday's highlight carry-over (Make Time mode)
+	if m.mode != nil && m.mode.HasHighlight() && m.fetchYesterdayHighlight != nil {
+		m.yesterdayHighlight = m.fetchYesterdayHighlight()
+	}
+	if len(m.recentTasks) > 0 || m.yesterdayHighlight != nil {
+		m.phase = phaseTaskSelect
+		m.taskSelectCursor = 0
+		return m, nil
+	}
+	// No recent tasks, skip to task name input
+	m.phase = phaseTaskName
+	m.taskInput.Focus()
+	return m, m.taskInput.Cursor.BlinkCmd()
+}
+
 func (m InlineModel) updatePickDuration(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -240,27 +292,19 @@ func (m InlineModel) updatePickDuration(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "1":
 			m.presetCursor = 0
-			m.phase = phaseTaskName
-			m.taskInput.Focus()
-			return m, m.taskInput.Cursor.BlinkCmd()
+			return m.advanceToTaskPhase()
 		case "2":
 			if len(m.presets) > 1 {
 				m.presetCursor = 1
-				m.phase = phaseTaskName
-				m.taskInput.Focus()
-				return m, m.taskInput.Cursor.BlinkCmd()
+				return m.advanceToTaskPhase()
 			}
 		case "3":
 			if len(m.presets) > 2 {
 				m.presetCursor = 2
-				m.phase = phaseTaskName
-				m.taskInput.Focus()
-				return m, m.taskInput.Cursor.BlinkCmd()
+				return m.advanceToTaskPhase()
 			}
 		case "enter":
-			m.phase = phaseTaskName
-			m.taskInput.Focus()
-			return m, m.taskInput.Cursor.BlinkCmd()
+			return m.advanceToTaskPhase()
 		case "esc":
 			if !m.modeLocked {
 				m.phase = phasePickMode
@@ -271,6 +315,88 @@ func (m InlineModel) updatePickDuration(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m InlineModel) updateTaskSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
+	optionCount := m.taskSelectOptionCount()
+	recentBase := m.taskSelectRecentBaseIdx()
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.taskSelectCursor > 0 {
+				m.taskSelectCursor--
+			}
+		case "down", "j":
+			if m.taskSelectCursor < optionCount-1 {
+				m.taskSelectCursor++
+			}
+		case "1":
+			if len(m.recentTasks) >= 1 {
+				m.taskSelectCursor = recentBase
+				return m.selectRecentTask()
+			}
+		case "2":
+			if len(m.recentTasks) >= 2 {
+				m.taskSelectCursor = recentBase + 1
+				return m.selectRecentTask()
+			}
+		case "3":
+			if len(m.recentTasks) >= 3 {
+				m.taskSelectCursor = recentBase + 2
+				return m.selectRecentTask()
+			}
+		case "enter":
+			// Carry-over option
+			if m.taskSelectCursor == m.taskSelectCarryOverIdx() {
+				return m.selectCarryOverTask()
+			}
+			// Recent task
+			if m.taskSelectCursor >= recentBase && m.taskSelectCursor < recentBase+len(m.recentTasks) {
+				return m.selectRecentTask()
+			}
+			// "New task" selected
+			m.phase = phaseTaskName
+			m.taskInput.Focus()
+			return m, m.taskInput.Cursor.BlinkCmd()
+		case "esc":
+			m.phase = phasePickDuration
+			return m, nil
+		case "c", "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m InlineModel) selectCarryOverTask() (tea.Model, tea.Cmd) {
+	task := m.yesterdayHighlight
+	task.SetAsHighlight() // updates to today
+	if m.onStartSession != nil {
+		if err := m.onStartSession(m.presetCursor, task.Title); err != nil {
+			m.phase = phaseTimer
+			return m, tickCmd()
+		}
+	}
+	m.phase = phaseTimer
+	return m, tickCmd()
+}
+
+func (m InlineModel) selectRecentTask() (tea.Model, tea.Cmd) {
+	recentIdx := m.taskSelectCursor - m.taskSelectRecentBaseIdx()
+	task := m.recentTasks[recentIdx]
+	// Pre-fill the task input with the selected task title
+	m.taskInput.SetValue(task.Title)
+	// Start the session immediately with the selected task name
+	if m.onStartSession != nil {
+		if err := m.onStartSession(m.presetCursor, task.Title); err != nil {
+			m.phase = phaseTimer
+			return m, tickCmd()
+		}
+	}
+	m.phase = phaseTimer
+	return m, tickCmd()
 }
 
 func (m InlineModel) updateTaskName(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -290,8 +416,12 @@ func (m InlineModel) updateTaskName(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
-			m.phase = phasePickDuration
 			m.taskInput.Blur()
+			if len(m.recentTasks) > 0 {
+				m.phase = phaseTaskSelect
+			} else {
+				m.phase = phasePickDuration
+			}
 			return m, nil
 		}
 	}
@@ -344,6 +474,10 @@ func (m InlineModel) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd)
 			}
 			m.accomplishmentMode = false
 			m.accomplishmentInput.Blur()
+			// Auto-enter distraction review if there are distractions
+			if len(m.distractions) > 0 && !m.distractionReviewDone {
+				m.distractionReviewMode = true
+			}
 			return m, nil
 		case "esc":
 			m.accomplishmentMode = false
@@ -359,14 +493,58 @@ func (m InlineModel) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd)
 	return m, cmd
 }
 
-func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m InlineModel) updateDistractionReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter", "esc":
+			m.distractionReviewMode = false
+			m.distractionReviewDone = true
+			return m, nil
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m InlineModel) showDailySummaryOrQuit() (tea.Model, tea.Cmd) {
+	if m.state.TodayStats.WorkSessions > 0 {
+		m.showingSummary = true
+		m.summaryTicks = 3
+		return m, tickCmd()
+	}
+	return m, tea.Quit
+}
+
+func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Daily summary dismiss
+	if m.showingSummary {
+		switch msg.(type) {
+		case tea.KeyMsg:
+			return m, tea.Quit
+		case tickMsg:
+			m.summaryTicks--
+			if m.summaryTicks <= 0 {
+				return m, tea.Quit
+			}
+			return m, tickCmd()
+		}
+		return m, nil
+	}
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// Cancel auto-break countdown on any non-quit key
+		if m.autoBreakTicks > 0 {
+			m.autoBreakTicks = 0
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "c":
-			return m, tea.Quit
+			return m.showDailySummaryOrQuit()
 		case "s":
 			if m.completed && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdStart)
@@ -401,6 +579,10 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.distractionInput.Focus()
 				return m, m.distractionInput.Cursor.BlinkCmd()
 			}
+		case "r":
+			if m.mode != nil && m.mode.HasShutdownRitual() && m.completed && m.completedType == domain.SessionTypeWork && len(m.distractions) > 0 && !m.distractionReviewDone {
+				m.distractionReviewMode = true
+			}
 		case "a":
 			if m.mode != nil && m.mode.HasShutdownRitual() && m.completed && m.completedType == domain.SessionTypeWork && !m.accomplishmentSaved {
 				m.accomplishmentMode = true
@@ -415,6 +597,38 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusScoreSaved = true
 				if m.focusScoreCallback != nil {
 					_ = m.focusScoreCallback(score)
+				}
+			}
+		case "w":
+			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
+				m.energizeActivity = "walk"
+				m.energizeSaved = true
+				if m.energizeCallback != nil {
+					_ = m.energizeCallback("walk")
+				}
+			}
+		case "t":
+			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
+				m.energizeActivity = "stretch"
+				m.energizeSaved = true
+				if m.energizeCallback != nil {
+					_ = m.energizeCallback("stretch")
+				}
+			}
+		case "e":
+			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
+				m.energizeActivity = "exercise"
+				m.energizeSaved = true
+				if m.energizeCallback != nil {
+					_ = m.energizeCallback("exercise")
+				}
+			}
+		case "n":
+			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
+				m.energizeActivity = "none"
+				m.energizeSaved = true
+				if m.energizeCallback != nil {
+					_ = m.energizeCallback("none")
 				}
 			}
 		case "b":
@@ -470,6 +684,17 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.energizeTicks--
 		}
 
+		// Auto-break countdown
+		if m.autoBreakTicks > 0 {
+			m.autoBreakTicks--
+			if m.autoBreakTicks == 0 && m.commandCallback != nil {
+				_ = m.commandCallback(ports.CmdBreak)
+				m.completed = false
+				m.notified = false
+				m.resetCompletionState()
+			}
+		}
+
 		cmds := []tea.Cmd{tickCmd()}
 		if m.fetchState != nil {
 			cmds = append(cmds, fetchStateCmd(m.fetchState))
@@ -484,6 +709,11 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !m.notified && m.onSessionComplete != nil {
 					m.onSessionComplete(m.completedType)
 					m.notified = true
+				}
+
+				// Start auto-break countdown for work sessions
+				if m.autoBreak && m.completedType == domain.SessionTypeWork {
+					m.autoBreakTicks = 3
 				}
 			}
 			if m.completed && msg.state.ActiveSession != nil {
@@ -508,6 +738,10 @@ func (m *InlineModel) resetCompletionState() {
 	m.focusScore = nil
 	m.focusScoreSaved = false
 	m.distractions = nil
+	m.distractionReviewMode = false
+	m.distractionReviewDone = false
+	m.energizeActivity = ""
+	m.energizeSaved = false
 }
 
 // --- View ---
@@ -518,6 +752,8 @@ func (m InlineModel) View() string {
 		return m.viewPickMode()
 	case phasePickDuration:
 		return m.viewPickDuration()
+	case phaseTaskSelect:
+		return m.viewTaskSelect()
 	case phaseTaskName:
 		return m.viewTaskName()
 	case phaseTimer:
@@ -591,6 +827,81 @@ func (m InlineModel) viewPickDuration() string {
 	return b.String()
 }
 
+// taskSelectOptionCount returns the total number of options in the task select list.
+func (m InlineModel) taskSelectOptionCount() int {
+	count := len(m.recentTasks) + 1 // recent tasks + "New task"
+	if m.yesterdayHighlight != nil {
+		count++ // carry-over option
+	}
+	return count
+}
+
+// taskSelectCarryOverIdx returns the index of the carry-over option, or -1 if none.
+func (m InlineModel) taskSelectCarryOverIdx() int {
+	if m.yesterdayHighlight != nil {
+		return 0
+	}
+	return -1
+}
+
+// taskSelectRecentBaseIdx returns the starting index for recent tasks in the list.
+func (m InlineModel) taskSelectRecentBaseIdx() int {
+	if m.yesterdayHighlight != nil {
+		return 1
+	}
+	return 0
+}
+
+func (m InlineModel) viewTaskSelect() string {
+	var b strings.Builder
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
+	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+
+	p := m.presets[m.presetCursor]
+	b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ %s %s", p.Name, formatMinutesCompact(p.Duration))))
+	b.WriteString("\n")
+
+	b.WriteString(titleStyle.Render("  Task:") + "\n")
+
+	idx := 0
+
+	// Carry-over option
+	if m.yesterdayHighlight != nil {
+		label := fmt.Sprintf("Carry forward: %s", m.yesterdayHighlight.Title)
+		if idx == m.taskSelectCursor {
+			b.WriteString(activeStyle.Render("  ▸ "+label) + "\n")
+		} else {
+			b.WriteString(dimStyle.Render("    "+label) + "\n")
+		}
+		idx++
+	}
+
+	// Recent tasks
+	for i, task := range m.recentTasks {
+		label := fmt.Sprintf("[%d] %s", i+1, task.Title)
+		if idx == m.taskSelectCursor {
+			b.WriteString(activeStyle.Render("  ▸ "+label) + "\n")
+		} else {
+			b.WriteString(dimStyle.Render("    "+label) + "\n")
+		}
+		idx++
+	}
+
+	// "New task" option
+	newLabel := "New task..."
+	if idx == m.taskSelectCursor {
+		b.WriteString(activeStyle.Render("  ▸ "+newLabel) + "\n")
+	} else {
+		b.WriteString(dimStyle.Render("    "+newLabel) + "\n")
+	}
+
+	b.WriteString(dimStyle.Render("  ↑/↓ select · enter confirm · esc back") + "\n")
+
+	return b.String()
+}
+
 func (m InlineModel) viewTaskName() string {
 	var b strings.Builder
 
@@ -620,6 +931,10 @@ func (m InlineModel) viewTimer() string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 	pausedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused)).Bold(true)
 
+	if m.showingSummary {
+		return m.viewDailySummary(accent, dim)
+	}
+
 	if m.completed {
 		return m.viewInlineComplete(accent, dim)
 	}
@@ -630,6 +945,25 @@ func (m InlineModel) viewTimer() string {
 	}
 
 	return m.viewInlineActive(accent, dim, pausedStyle)
+}
+
+func (m InlineModel) viewDailySummary(accent, dim lipgloss.Style) string {
+	var b strings.Builder
+	stats := m.state.TodayStats
+
+	b.WriteString(accent.Render(fmt.Sprintf("  %s Today's Summary", m.theme.IconApp)))
+	b.WriteString("\n")
+	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s focused",
+		m.theme.IconStats, stats.WorkSessions, formatMinutesCompact(stats.TotalWorkTime))))
+	if stats.BreaksTaken > 0 {
+		b.WriteString(dim.Render(fmt.Sprintf(", %d breaks", stats.BreaksTaken)))
+	}
+	b.WriteString("\n")
+
+	b.WriteString(dim.Render("  Press any key to exit"))
+	b.WriteString("\n")
+
+	return b.String()
 }
 
 func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) string {
@@ -650,6 +984,13 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 
 	if m.state.ActiveTask != nil {
 		b.WriteString(dim.Render(fmt.Sprintf("  %s %s", m.theme.IconTask, m.state.ActiveTask.Title)))
+	}
+	if len(session.Tags) > 0 {
+		tagStr := ""
+		for _, t := range session.Tags {
+			tagStr += " #" + t
+		}
+		b.WriteString(dim.Render(tagStr))
 	}
 	b.WriteString("\n")
 
@@ -754,7 +1095,11 @@ func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) strin
 		m.theme.IconStats, stats.WorkSessions, formatMinutesCompact(stats.TotalWorkTime))))
 	b.WriteString("\n")
 
-	b.WriteString(dim.Render("  [b]reak [s]kip [c]lose"))
+	if m.autoBreakTicks > 0 {
+		b.WriteString(accent.Render(fmt.Sprintf("  Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+	} else {
+		b.WriteString(dim.Render("  [b]reak [s]kip [c]lose"))
+	}
 	b.WriteString("\n")
 	return b.String()
 }
@@ -779,17 +1124,35 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 		b.WriteString(dim.Render("  Accomplishment: ") + m.accomplishmentInput.View())
 		b.WriteString("\n")
 		b.WriteString(dim.Render("  enter save · esc cancel"))
+	} else if m.distractionReviewMode {
+		b.WriteString(accent.Render("  Distraction Review:"))
+		b.WriteString("\n")
+		for i, d := range m.distractions {
+			b.WriteString(dim.Render(fmt.Sprintf("    %d. %s", i+1, d)))
+			b.WriteString("\n")
+		}
+		b.WriteString(dim.Render("  Consider batching these for tomorrow."))
+		b.WriteString("\n")
+		b.WriteString(dim.Render("  enter dismiss"))
 	} else if m.accomplishmentSaved {
-		b.WriteString(accent.Render("  Shutdown ritual complete."))
+		if len(m.distractions) > 0 && !m.distractionReviewDone {
+			b.WriteString(accent.Render("  Accomplishment saved."))
+			b.WriteString("\n")
+			b.WriteString(dim.Render(fmt.Sprintf("  [r]eview %d distractions", len(m.distractions))))
+		} else {
+			b.WriteString(accent.Render("  Shutdown ritual complete."))
+		}
 	} else {
 		b.WriteString(dim.Render("  [a]ccomplishment [b]reak [s]kip [c]lose"))
 	}
 	b.WriteString("\n")
 
-	if !m.accomplishmentMode {
+	if !m.accomplishmentMode && !m.distractionReviewMode {
 		helpText := "  [b]reak [s]kip [c]lose"
 		if !m.accomplishmentSaved {
 			helpText = "  [a]ccomplishment [b]reak [s]kip [c]lose"
+		} else if len(m.distractions) > 0 && !m.distractionReviewDone {
+			helpText = "  [r]eview distractions [b]reak [s]kip [c]lose"
 		}
 		b.WriteString(dim.Render(helpText))
 		b.WriteString("\n")
@@ -813,6 +1176,16 @@ func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) stri
 		b.WriteString(dim.Render("  How focused? [1] [2] [3] [4] [5]"))
 	}
 	b.WriteString("\n")
+
+	// Energize activity (shown after focus score is saved)
+	if m.focusScoreSaved {
+		if m.energizeSaved {
+			b.WriteString(dim.Render(fmt.Sprintf("  Energize: %s", m.energizeActivity)))
+		} else {
+			b.WriteString(dim.Render("  Energize? [w]alk [t]stretch [e]xercise [n]one"))
+		}
+		b.WriteString("\n")
+	}
 
 	stats := m.state.TodayStats
 	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s worked today",

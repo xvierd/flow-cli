@@ -37,6 +37,7 @@ type StartPomodoroRequest struct {
 	Duration        time.Duration
 	Methodology     domain.Methodology
 	IntendedOutcome string
+	Tags            []string
 }
 
 // StartPomodoro begins a new pomodoro work session.
@@ -75,6 +76,7 @@ func (s *PomodoroService) StartPomodoro(ctx context.Context, req StartPomodoroRe
 		session.Methodology = req.Methodology
 	}
 	session.IntendedOutcome = req.IntendedOutcome
+	session.Tags = req.Tags
 
 	// Detect git context if available
 	if s.gitDetector != nil && s.gitDetector.IsAvailable() {
@@ -224,6 +226,19 @@ func (s *PomodoroService) SetFocusScore(ctx context.Context, sessionID string, s
 	return s.storage.Sessions().Update(ctx, session)
 }
 
+// SetEnergizeActivity records the energize activity on a session (Make Time).
+func (s *PomodoroService) SetEnergizeActivity(ctx context.Context, sessionID string, activity string) error {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return domain.ErrNoActiveSession
+	}
+	session.EnergizeActivity = activity
+	return s.storage.Sessions().Update(ctx, session)
+}
+
 // AddSessionNotes adds notes to a pomodoro session.
 func (s *PomodoroService) AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error) {
 	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
@@ -257,6 +272,14 @@ func (s *PomodoroService) GetCurrentState(ctx context.Context) (*domain.CurrentS
 		ActiveSession: activeSession,
 		TodayStats:    *stats,
 	}, nil
+}
+
+// DeepWorkStreakThreshold is the minimum daily deep work time to count toward a streak.
+const DeepWorkStreakThreshold = 4 * time.Hour
+
+// GetDeepWorkStreak returns the number of consecutive days with >= 4h of deep work.
+func (s *PomodoroService) GetDeepWorkStreak(ctx context.Context) (int, error) {
+	return s.storage.Sessions().GetDeepWorkStreak(ctx, DeepWorkStreakThreshold)
 }
 
 // GetTaskHistory retrieves session history for a specific task.
