@@ -34,7 +34,14 @@ var stopCmd = &cobra.Command{
 
 		// Send notification if enabled
 		if notifier != nil && notifier.IsEnabled() {
-			_ = notifier.NotifyPomodoroComplete(session.Duration.String())
+			switch session.Type {
+			case domain.SessionTypeWork:
+				_ = notifier.NotifyPomodoroComplete(session.Duration.String())
+			case domain.SessionTypeShortBreak:
+				_ = notifier.NotifyBreakComplete("Short")
+			case domain.SessionTypeLongBreak:
+				_ = notifier.NotifyBreakComplete("Long")
+			}
 		}
 
 		if jsonOutput {

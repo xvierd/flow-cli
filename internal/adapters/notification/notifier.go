@@ -24,7 +24,15 @@ func (n *Notifier) Notify(title, message string) error {
 		return nil
 	}
 
-	return beeep.Notify(title, message, "")
+	if err := beeep.Notify(title, message, ""); err != nil {
+		return err
+	}
+
+	if n.cfg.Sound {
+		_ = beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
+	}
+
+	return nil
 }
 
 // NotifyPomodoroComplete displays a notification when a pomodoro session completes.
