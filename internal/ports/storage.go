@@ -37,6 +37,9 @@ type TaskRepository interface {
 
 	// Update modifies an existing task.
 	Update(ctx context.Context, task *domain.Task) error
+
+	// FindTodayHighlight returns the task marked as today's highlight.
+	FindTodayHighlight(ctx context.Context, date time.Time) (*domain.Task, error)
 }
 
 // SessionRepository defines the interface for pomodoro session persistence.

@@ -8,21 +8,28 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/methodology"
 	"github.com/xvierd/flow-cli/internal/ports"
 )
 
 // Timer implements the ports.Timer interface using Bubbletea.
 type Timer struct {
-	program            *tea.Program
-	fetchState         func() *domain.CurrentState
-	commandCallback    func(ports.TimerCommand) error
-	onSessionComplete  func(domain.SessionType)
-	completionInfo     *domain.CompletionInfo
-	theme              *config.ThemeConfig
-	inline             bool
-	presets            []config.SessionPreset
-	breakInfo          string
-	onStartSession     func(presetIndex int, taskName string) error
+	program                *tea.Program
+	fetchState             func() *domain.CurrentState
+	commandCallback        func(ports.TimerCommand) error
+	onSessionComplete      func(domain.SessionType)
+	distractionCallback    func(string) error
+	accomplishmentCallback func(string) error
+	focusScoreCallback     func(int) error
+	completionInfo         *domain.CompletionInfo
+	theme                  *config.ThemeConfig
+	inline                 bool
+	presets                []config.SessionPreset
+	breakInfo              string
+	onStartSession         func(presetIndex int, taskName string) error
+	mode                   methodology.Mode
+	modeLocked             bool
+	onModeSelected         func(domain.Methodology)
 }
 
 // NewTimer creates a new TUI timer adapter.
@@ -35,6 +42,21 @@ func NewInlineTimer(theme *config.ThemeConfig) *Timer {
 	return &Timer{theme: theme, inline: true}
 }
 
+// SetMode sets the methodology mode for mode-aware UI behavior.
+func (t *Timer) SetMode(mode methodology.Mode) {
+	t.mode = mode
+}
+
+// SetModeLocked prevents the mode selection menu from appearing.
+func (t *Timer) SetModeLocked(locked bool) {
+	t.modeLocked = locked
+}
+
+// SetOnModeSelected sets a callback for when the user picks a methodology.
+func (t *Timer) SetOnModeSelected(callback func(domain.Methodology)) {
+	t.onModeSelected = callback
+}
+
 // Run starts the timer interface and blocks until completion.
 func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) error {
 	if t.inline {
@@ -45,6 +67,10 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	model.fetchState = t.fetchState
 	model.commandCallback = t.commandCallback
 	model.onSessionComplete = t.onSessionComplete
+	model.distractionCallback = t.distractionCallback
+	model.accomplishmentCallback = t.accomplishmentCallback
+	model.focusScoreCallback = t.focusScoreCallback
+	model.mode = t.mode
 
 	t.program = tea.NewProgram(
 		model,
@@ -73,9 +99,27 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.fetchState = t.fetchState
 	model.commandCallback = t.commandCallback
 	model.onSessionComplete = t.onSessionComplete
+	model.distractionCallback = t.distractionCallback
+	model.accomplishmentCallback = t.accomplishmentCallback
+	model.focusScoreCallback = t.focusScoreCallback
 	model.presets = t.presets
 	model.breakInfo = t.breakInfo
 	model.onStartSession = t.onStartSession
+	model.mode = t.mode
+	model.modeLocked = t.modeLocked
+	model.onModeSelected = t.onModeSelected
+
+	// If mode is not locked and no active session, start at mode picker
+	if !t.modeLocked && initialState.ActiveSession == nil {
+		model.phase = phasePickMode
+		// Pre-select current mode
+		for i, m := range domain.ValidMethodologies {
+			if t.mode != nil && m == t.mode.Name() {
+				model.modeCursor = i
+				break
+			}
+		}
+	}
 
 	t.program = tea.NewProgram(model)
 
@@ -113,6 +157,21 @@ func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand) error) 
 // SetOnSessionComplete sets a callback fired when a session naturally completes.
 func (t *Timer) SetOnSessionComplete(callback func(domain.SessionType)) {
 	t.onSessionComplete = callback
+}
+
+// SetDistractionCallback sets a callback for logging distractions (Deep Work mode).
+func (t *Timer) SetDistractionCallback(callback func(text string) error) {
+	t.distractionCallback = callback
+}
+
+// SetAccomplishmentCallback sets a callback for recording accomplishments (Deep Work shutdown ritual).
+func (t *Timer) SetAccomplishmentCallback(callback func(text string) error) {
+	t.accomplishmentCallback = callback
+}
+
+// SetFocusScoreCallback sets a callback for recording focus scores (Make Time).
+func (t *Timer) SetFocusScoreCallback(callback func(score int) error) {
+	t.focusScoreCallback = callback
 }
 
 // SetInlineSetup configures the inline setup phase (presets, break info, start callback).

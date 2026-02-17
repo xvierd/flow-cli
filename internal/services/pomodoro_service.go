@@ -32,9 +32,11 @@ func (s *PomodoroService) SetConfig(config domain.PomodoroConfig) {
 
 // StartPomodoroRequest contains data to start a work session.
 type StartPomodoroRequest struct {
-	TaskID     *string
-	WorkingDir string
-	Duration   time.Duration
+	TaskID          *string
+	WorkingDir      string
+	Duration        time.Duration
+	Methodology     domain.Methodology
+	IntendedOutcome string
 }
 
 // StartPomodoro begins a new pomodoro work session.
@@ -67,6 +69,12 @@ func (s *PomodoroService) StartPomodoro(ctx context.Context, req StartPomodoroRe
 	if req.Duration > 0 {
 		session.Duration = req.Duration
 	}
+
+	// Set methodology fields
+	if req.Methodology != "" {
+		session.Methodology = req.Methodology
+	}
+	session.IntendedOutcome = req.IntendedOutcome
 
 	// Detect git context if available
 	if s.gitDetector != nil && s.gitDetector.IsAvailable() {
@@ -174,6 +182,45 @@ func (s *PomodoroService) CancelSession(ctx context.Context) error {
 	}
 
 	session.Cancel()
+	return s.storage.Sessions().Update(ctx, session)
+}
+
+// LogDistraction appends a distraction entry to the active session.
+func (s *PomodoroService) LogDistraction(ctx context.Context, sessionID string, text string) error {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return domain.ErrNoActiveSession
+	}
+	session.Distractions = append(session.Distractions, text)
+	return s.storage.Sessions().Update(ctx, session)
+}
+
+// SetAccomplishment records the accomplishment text on a session (Deep Work shutdown ritual).
+func (s *PomodoroService) SetAccomplishment(ctx context.Context, sessionID string, text string) error {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return domain.ErrNoActiveSession
+	}
+	session.Accomplishment = text
+	return s.storage.Sessions().Update(ctx, session)
+}
+
+// SetFocusScore records the focus score (1–5) on a session (Make Time).
+func (s *PomodoroService) SetFocusScore(ctx context.Context, sessionID string, score int) error {
+	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return domain.ErrNoActiveSession
+	}
+	session.FocusScore = &score
 	return s.storage.Sessions().Update(ctx, session)
 }
 

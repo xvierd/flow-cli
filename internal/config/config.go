@@ -12,6 +12,7 @@ import (
 
 // Config holds all configuration for the Flow application.
 type Config struct {
+	Methodology   string              `mapstructure:"methodology"`
 	Pomodoro      PomodoroConfig      `mapstructure:"pomodoro"`
 	Notifications NotificationConfig  `mapstructure:"notifications"`
 	MCP           MCPConfig           `mapstructure:"mcp"`
@@ -135,6 +136,7 @@ func (d Duration) String() string {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
+		Methodology: "pomodoro",
 		Pomodoro: PomodoroConfig{
 			WorkDuration:       Duration(25 * time.Minute),
 			ShortBreak:         Duration(5 * time.Minute),
@@ -227,6 +229,7 @@ func Save(cfg *Config) error {
 	viper.SetConfigType("toml")
 
 	// Set all values
+	viper.Set("methodology", cfg.Methodology)
 	viper.Set("pomodoro.work_duration", cfg.Pomodoro.WorkDuration.String())
 	viper.Set("pomodoro.short_break", cfg.Pomodoro.ShortBreak.String())
 	viper.Set("pomodoro.long_break", cfg.Pomodoro.LongBreak.String())
@@ -262,6 +265,7 @@ func GetDBPath(cfg *Config) string {
 
 // setDefaults sets default values for viper.
 func setDefaults() {
+	viper.SetDefault("methodology", "pomodoro")
 	viper.SetDefault("pomodoro.work_duration", "25m")
 	viper.SetDefault("pomodoro.short_break", "5m")
 	viper.SetDefault("pomodoro.long_break", "15m")

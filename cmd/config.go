@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/config"
+	"github.com/xvierd/flow-cli/internal/domain"
 )
 
 var configCmd = &cobra.Command{
@@ -21,6 +22,12 @@ var configCmd = &cobra.Command{
 
 		fmt.Println()
 		fmt.Println("  Current configuration:")
+		fmt.Println()
+		methodology := appConfig.Methodology
+		if methodology == "" {
+			methodology = "pomodoro"
+		}
+		fmt.Printf("  Methodology:  %s\n", domain.Methodology(methodology).Label())
 		fmt.Println()
 		fmt.Println("  Session presets:")
 		for i, p := range presets {
@@ -36,6 +43,7 @@ var configCmd = &cobra.Command{
 		fmt.Println("    [2] Edit preset 2")
 		fmt.Println("    [3] Edit preset 3")
 		fmt.Println("    [b] Edit break durations")
+		fmt.Println("    [m] Change methodology")
 		fmt.Println("    [q] Quit without saving")
 		fmt.Print("  Choose: ")
 
@@ -51,6 +59,8 @@ var configCmd = &cobra.Command{
 			return editPreset(reader, appConfig, 3)
 		case "b":
 			return editBreaks(reader, appConfig)
+		case "m":
+			return editMethodology(reader, appConfig)
 		case "q", "":
 			fmt.Println("  No changes made.")
 			return nil
@@ -165,5 +175,42 @@ func editBreaks(reader *bufio.Reader, cfg *config.Config) error {
 	fmt.Println()
 	fmt.Printf("  Saved: short break %s, long break %s, long every %d sessions\n",
 		formatMinutes(shortBreak), formatMinutes(longBreak), sessionsBeforeLong)
+	return nil
+}
+
+func editMethodology(reader *bufio.Reader, cfg *config.Config) error {
+	current := cfg.Methodology
+	if current == "" {
+		current = "pomodoro"
+	}
+
+	fmt.Printf("\n  Current methodology: %s\n\n", domain.Methodology(current).Label())
+	fmt.Println("    [1] Simple Pomodoro — classic 25/5 timer, quick and frictionless")
+	fmt.Println("    [2] Deep Work       — longer sessions, distraction tracking, shutdown ritual")
+	fmt.Println("    [3] Make Time       — daily Highlight, focus scoring, energize reminders")
+	fmt.Print("  Choose: ")
+
+	choice, _ := reader.ReadString('\n')
+	choice = strings.TrimSpace(choice)
+
+	var m string
+	switch choice {
+	case "1":
+		m = "pomodoro"
+	case "2":
+		m = "deepwork"
+	case "3":
+		m = "maketime"
+	default:
+		fmt.Println("  No changes made.")
+		return nil
+	}
+
+	cfg.Methodology = m
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("\n  Saved: methodology set to %s\n", domain.Methodology(m).Label())
 	return nil
 }

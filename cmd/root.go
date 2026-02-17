@@ -18,6 +18,7 @@ import (
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/methodology"
 	"github.com/xvierd/flow-cli/internal/ports"
 	"github.com/xvierd/flow-cli/internal/services"
 )
@@ -32,15 +33,18 @@ var (
 	dbPath     string
 	jsonOutput bool
 	inlineMode bool
+	modeFlag   string
 
 	// Global dependencies
-	storageAdapter ports.Storage
-	taskService    *services.TaskService
-	pomodoroSvc    *services.PomodoroService
-	stateService   *services.StateService
-	gitDetector    ports.GitDetector
-	notifier       *notification.Notifier
-	appConfig      *config.Config
+	storageAdapter      ports.Storage
+	taskService         *services.TaskService
+	pomodoroSvc         *services.PomodoroService
+	stateService        *services.StateService
+	gitDetector         ports.GitDetector
+	notifier            *notification.Notifier
+	appConfig           *config.Config
+	effectiveMethodology domain.Methodology
+	activeMode          methodology.Mode
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -75,6 +79,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to the database file (default: ~/.flow/flow.db)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
 	rootCmd.PersistentFlags().BoolVarP(&inlineMode, "inline", "i", false, "Compact inline timer (no fullscreen)")
+	rootCmd.PersistentFlags().StringVar(&modeFlag, "mode", "", "Productivity methodology: pomodoro, deepwork, maketime")
 
 	// Set version - cobra handles --version automatically
 	rootCmd.Version = Version
@@ -143,6 +148,21 @@ func initializeServices() error {
 	// Wire up services for state service
 	stateService.SetTaskService(taskService)
 	stateService.SetPomodoroService(pomodoroSvc)
+
+	// Resolve effective methodology: --mode flag > config > default
+	modeStr := appConfig.Methodology
+	if modeFlag != "" {
+		modeStr = modeFlag
+	}
+	if modeStr == "" {
+		modeStr = "pomodoro"
+	}
+	m, err := domain.ValidateMethodology(modeStr)
+	if err != nil {
+		return fmt.Errorf("invalid mode: %w", err)
+	}
+	effectiveMethodology = m
+	activeMode = methodology.ForMethodology(effectiveMethodology)
 
 	return nil
 }
@@ -218,8 +238,35 @@ func runWizard(cmd *cobra.Command, args []string) error {
 	// --- Wizard prompts ---
 	fmt.Println()
 
-	// 1. Ask for task name
-	fmt.Print("  What are you working on? (Enter to skip): ")
+	// Mode picker (skip if --mode was explicitly passed)
+	if modeFlag == "" {
+		modeItems := []tui.PickerItem{
+			{Label: "Pomodoro", Desc: "Classic 25/5 timer"},
+			{Label: "Deep Work", Desc: "Longer sessions, distraction tracking"},
+			{Label: "Make Time", Desc: "Daily Highlight, focus scoring"},
+		}
+		modeResult := tui.RunPicker("Mode:", modeItems, "", &appConfig.Theme)
+		if modeResult.Aborted {
+			return nil
+		}
+		methodologies := []domain.Methodology{domain.MethodologyPomodoro, domain.MethodologyDeepWork, domain.MethodologyMakeTime}
+		effectiveMethodology = methodologies[modeResult.Index]
+		activeMode = methodology.ForMethodology(effectiveMethodology)
+		fmt.Println()
+	}
+
+	mode := activeMode
+
+	// Make Time: check for existing highlight
+	if mode.HasHighlight() {
+		highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
+		if highlight != nil {
+			fmt.Printf("  Today's Highlight: \"%s\"\n\n", highlight.Title)
+		}
+	}
+
+	// 1. Ask for task name (mode-specific prompt)
+	fmt.Printf("  %s ", mode.TaskPrompt())
 	taskName, _ := reader.ReadString('\n')
 	taskName = strings.TrimSpace(taskName)
 
@@ -232,10 +279,24 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to create task: %w", err)
 		}
 		taskID = &task.ID
+
+		// Make Time: set as today's highlight
+		if mode.HasHighlight() {
+			task.SetAsHighlight()
+			_ = storageAdapter.Tasks().Update(ctx, task)
+		}
 	}
 
-	// 2. Pick session type with arrow-key picker
-	presets := appConfig.Pomodoro.GetPresets()
+	// Deep Work: ask for intended outcome
+	var intendedOutcome string
+	if mode.OutcomePrompt() != "" {
+		fmt.Printf("  %s ", mode.OutcomePrompt())
+		intendedOutcome, _ = reader.ReadString('\n')
+		intendedOutcome = strings.TrimSpace(intendedOutcome)
+	}
+
+	// 2. Pick session type with arrow-key picker (mode-specific presets)
+	presets := mode.Presets()
 	shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
 	longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
 
@@ -259,9 +320,11 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 	// Start the session
 	req := services.StartPomodoroRequest{
-		TaskID:     taskID,
-		WorkingDir: workingDir,
-		Duration:   customDuration,
+		TaskID:          taskID,
+		WorkingDir:      workingDir,
+		Duration:        customDuration,
+		Methodology:     effectiveMethodology,
+		IntendedOutcome: intendedOutcome,
 	}
 
 	session, err := pomodoroSvc.StartPomodoro(ctx, req)
@@ -287,14 +350,26 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 	if inlineMode {
 		inlineTimer := tui.NewInlineTimer(&appConfig.Theme)
 
-		// Configure the setup phase (preset picker + task input)
-		presets := appConfig.Pomodoro.GetPresets()
+		// Configure the setup phase with mode-specific presets
+		presets := activeMode.Presets()
 		shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
 		longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
 		breakInfo := fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
 			formatMinutes(shortBreak), formatMinutes(longBreak), appConfig.Pomodoro.SessionsBeforeLong)
 
+		inlineTimer.SetMode(activeMode)
+		inlineTimer.SetModeLocked(modeFlag != "")
+		inlineTimer.SetOnModeSelected(func(m domain.Methodology) {
+			effectiveMethodology = m
+			activeMode = methodology.ForMethodology(m)
+			presets = activeMode.Presets()
+			inlineTimer.SetMode(activeMode)
+		})
+
 		inlineTimer.SetInlineSetup(presets, breakInfo, func(presetIndex int, taskName string) error {
+			currentMode := activeMode
+			currentPresets := currentMode.Presets()
+
 			var taskID *string
 			if taskName != "" {
 				task, err := taskService.AddTask(ctx, services.AddTaskRequest{
@@ -304,12 +379,19 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 					return err
 				}
 				taskID = &task.ID
+
+				// Make Time: set as today's highlight
+				if currentMode.HasHighlight() {
+					task.SetAsHighlight()
+					_ = storageAdapter.Tasks().Update(ctx, task)
+				}
 			}
 
 			_, err := pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{
-				TaskID:     taskID,
-				WorkingDir: workingDir,
-				Duration:   presets[presetIndex].Duration,
+				TaskID:          taskID,
+				WorkingDir:      workingDir,
+				Duration:        currentPresets[presetIndex].Duration,
+				Methodology:     effectiveMethodology,
 			})
 			return err
 		})
@@ -353,6 +435,32 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 		default:
 			return fmt.Errorf("unknown command: %v", cmd)
 		}
+	})
+
+	// Wire methodology callbacks
+	timer.SetDistractionCallback(func(text string) error {
+		activeState, err := pomodoroSvc.GetCurrentState(ctx)
+		if err != nil || activeState.ActiveSession == nil {
+			return nil
+		}
+		return pomodoroSvc.LogDistraction(ctx, activeState.ActiveSession.ID, text)
+	})
+
+	timer.SetAccomplishmentCallback(func(text string) error {
+		// Find the most recently completed session
+		recent, err := pomodoroSvc.GetRecentSessions(ctx, 1)
+		if err != nil || len(recent) == 0 {
+			return nil
+		}
+		return pomodoroSvc.SetAccomplishment(ctx, recent[0].ID, text)
+	})
+
+	timer.SetFocusScoreCallback(func(score int) error {
+		recent, err := pomodoroSvc.GetRecentSessions(ctx, 1)
+		if err != nil || len(recent) == 0 {
+			return nil
+		}
+		return pomodoroSvc.SetFocusScore(ctx, recent[0].ID, score)
 	})
 
 	// Compute break info from config

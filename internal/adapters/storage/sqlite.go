@@ -110,5 +110,20 @@ func (s *sqliteStorage) Migrate() error {
 		return fmt.Errorf("failed to execute schema: %w", err)
 	}
 
+	// Run ALTER TABLE migrations for methodology fields
+	migrations := []string{
+		"ALTER TABLE sessions ADD COLUMN methodology TEXT DEFAULT 'pomodoro'",
+		"ALTER TABLE sessions ADD COLUMN focus_score INTEGER",
+		"ALTER TABLE sessions ADD COLUMN distractions TEXT",
+		"ALTER TABLE sessions ADD COLUMN accomplishment TEXT",
+		"ALTER TABLE sessions ADD COLUMN intended_outcome TEXT",
+		"ALTER TABLE tasks ADD COLUMN highlight_date DATETIME",
+	}
+
+	for _, m := range migrations {
+		// Ignore errors — column may already exist
+		_, _ = s.db.Exec(m)
+	}
+
 	return nil
 }

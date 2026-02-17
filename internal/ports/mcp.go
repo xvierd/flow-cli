@@ -54,4 +54,16 @@ type MCPStateProvider interface {
 
 	// AddSessionNotes adds notes to a pomodoro session.
 	AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error)
+
+	// LogDistraction logs a distraction for a session (Deep Work mode).
+	LogDistraction(ctx context.Context, sessionID string, text string) error
+
+	// SetFocusScore sets the focus score for a session (Make Time mode).
+	SetFocusScore(ctx context.Context, sessionID string, score int) error
+
+	// GetTodayHighlight returns today's highlight task (Make Time mode).
+	GetTodayHighlight(ctx context.Context) (*domain.Task, error)
+
+	// SetHighlight marks a task as today's highlight (Make Time mode).
+	SetHighlight(ctx context.Context, taskID string) (*domain.Task, error)
 }
