@@ -47,6 +47,15 @@ git clone https://github.com/xvierd/flow-cli.git
 cd flow-cli && go build -o flow ./cmd/flow
 ```
 
+## Uninstall
+
+```bash
+curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/uninstall.sh | sh
+
+# Or if installed via Homebrew
+brew uninstall flow
+```
+
 ## Quick Start
 
 ```bash
