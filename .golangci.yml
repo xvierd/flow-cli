@@ -1,0 +1,21 @@
+linters:
+  enable:
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - errcheck
+    - gosec
+    - unconvert
+    - misspell
+
+linters-settings:
+  gosimple:
+    checks: ["all"]
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

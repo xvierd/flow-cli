@@ -214,7 +214,7 @@ func (m Model) showDailySummaryOrQuit() (tea.Model, tea.Cmd) {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Daily summary dismiss
 	if m.showingSummary {
-		switch msg.(type) {
+		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			return m, tea.Quit
 		case tickMsg:
@@ -224,9 +224,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tickCmd()
 		case tea.WindowSizeMsg:
-			wsm := msg.(tea.WindowSizeMsg)
-			m.width = wsm.Width
-			m.height = wsm.Height
+			m.width = msg.Width
+			m.height = msg.Height
 		}
 		return m, nil
 	}

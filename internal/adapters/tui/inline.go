@@ -938,7 +938,7 @@ func (m InlineModel) viewPickMode() string {
 	b.WriteString(titleStyle.Render("  Mode:") + "  ")
 
 	for i, opt := range modeOptions {
-		label := fmt.Sprintf("%s", opt.label)
+		label := opt.label
 		if i == m.modeCursor {
 			b.WriteString(activeStyle.Render(" ▸ "+label+" "))
 		} else {
