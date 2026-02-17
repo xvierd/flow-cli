@@ -2,12 +2,10 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -207,8 +205,6 @@ func runWizard(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fullscreen mode: wizard prompts then TUI
-	reader := bufio.NewReader(os.Stdin)
-
 	if state.ActiveSession != nil {
 		active := state.ActiveSession
 		remaining := active.RemainingTime()
@@ -219,13 +215,16 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			sessionInfo = fmt.Sprintf("%s for \"%s\" (%s remaining)", sessionType, state.ActiveTask.Title, formatWizardDuration(remaining))
 		}
 
-		fmt.Printf("\n  Active session: %s\n", sessionInfo)
-		fmt.Print("  Resume it? [Y/n] ")
+		resumeItems := []tui.PickerItem{
+			{Label: "Resume", Desc: sessionInfo},
+			{Label: "Stop", Desc: "End current session and start fresh"},
+		}
+		resumeResult := tui.RunPicker("Active session:", resumeItems, "", &appConfig.Theme)
+		if resumeResult.Aborted {
+			return nil
+		}
 
-		answer, _ := reader.ReadString('\n')
-		answer = strings.TrimSpace(strings.ToLower(answer))
-
-		if answer == "" || answer == "y" || answer == "yes" {
+		if resumeResult.Index == 0 {
 			return launchTUI(ctx, state, workingDir)
 		}
 
@@ -286,54 +285,63 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			if highlight != nil {
 				fmt.Printf("  Today's Highlight: \"%s\"\n\n", highlight.Title)
 			} else {
-				// Check yesterday's unfinished highlight
 				yesterdayHighlight, _ := storageAdapter.Tasks().FindYesterdayHighlight(ctx, time.Now())
 				if yesterdayHighlight != nil {
-					fmt.Printf("  Yesterday's Highlight \"%s\" wasn't completed.\n", yesterdayHighlight.Title)
-					fmt.Print("  Carry forward as today's Highlight? [Y/n] ")
-					answer, _ := reader.ReadString('\n')
-					answer = strings.TrimSpace(strings.ToLower(answer))
-					if answer == "" || answer == "y" || answer == "yes" {
+					carryItems := []tui.PickerItem{
+						{Label: "Yes", Desc: fmt.Sprintf("Continue with \"%s\"", yesterdayHighlight.Title)},
+						{Label: "No", Desc: "Pick a new Highlight"},
+					}
+					carryResult := tui.RunPicker("Carry forward yesterday's Highlight?", carryItems, "", &appConfig.Theme)
+					if !carryResult.Aborted && carryResult.Index == 0 {
 						yesterdayHighlight.SetAsHighlight()
 						_ = storageAdapter.Tasks().Update(ctx, yesterdayHighlight)
-						fmt.Printf("  Today's Highlight: \"%s\"\n\n", yesterdayHighlight.Title)
 					}
+					fmt.Println()
 				}
 			}
 		}
 
-		// 1. Show recent tasks for quick re-selection, then ask for task name
+		// 1. Task selection via styled picker
 		var taskName string
 		var sessionTags []string
 		var taskID *string
 
 		recentTasks, _ := storageAdapter.Tasks().FindRecentTasks(ctx, 3)
 		if len(recentTasks) > 0 {
-			fmt.Println("  Recent tasks:")
-			for i, t := range recentTasks {
-				fmt.Printf("    [%d] %s\n", i+1, t.Title)
+			var taskItems []tui.PickerItem
+			for _, t := range recentTasks {
+				taskItems = append(taskItems, tui.PickerItem{
+					Label: t.Title,
+					Desc:  "",
+				})
 			}
-			fmt.Printf("  Pick [1-%d] or type a new name: ", len(recentTasks))
+			taskItems = append(taskItems, tui.PickerItem{
+				Label: "New task...",
+				Desc:  "Type a name",
+			})
 
-			input, _ := reader.ReadString('\n')
-			input = strings.TrimSpace(input)
+			taskResult := tui.RunPicker(mode.TaskPrompt(), taskItems, "", &appConfig.Theme)
+			if taskResult.Aborted {
+				return nil
+			}
 
-			picked := false
-			if len(input) == 1 && input[0] >= '1' && input[0] <= '9' {
-				idx := int(input[0]-'0') - 1
-				if idx < len(recentTasks) {
-					taskName = recentTasks[idx].Title
-					taskID = &recentTasks[idx].ID
-					picked = true
+			if taskResult.Index < len(recentTasks) {
+				taskName = recentTasks[taskResult.Index].Title
+				taskID = &recentTasks[taskResult.Index].ID
+			} else {
+				// "New task" selected — prompt for name
+				textResult := tui.RunTextPrompt(mode.TaskPrompt(), "Enter to skip", &appConfig.Theme)
+				if textResult.Aborted {
+					return nil
 				}
-			}
-			if !picked {
-				taskName = input
+				taskName = textResult.Value
 			}
 		} else {
-			fmt.Printf("  %s ", mode.TaskPrompt())
-			taskName, _ = reader.ReadString('\n')
-			taskName = strings.TrimSpace(taskName)
+			textResult := tui.RunTextPrompt(mode.TaskPrompt(), "Enter to skip", &appConfig.Theme)
+			if textResult.Aborted {
+				return nil
+			}
+			taskName = textResult.Value
 		}
 
 		// Parse #tags from task name input
@@ -360,12 +368,14 @@ func runWizard(cmd *cobra.Command, args []string) error {
 		// Deep Work: ask for intended outcome
 		var intendedOutcome string
 		if mode.OutcomePrompt() != "" {
-			fmt.Printf("  %s ", mode.OutcomePrompt())
-			intendedOutcome, _ = reader.ReadString('\n')
-			intendedOutcome = strings.TrimSpace(intendedOutcome)
+			outcomeResult := tui.RunTextPrompt(mode.OutcomePrompt(), "Enter to skip", &appConfig.Theme)
+			if outcomeResult.Aborted {
+				return nil
+			}
+			intendedOutcome = outcomeResult.Value
 		}
 
-		// 2. Pick session type with arrow-key picker (mode-specific presets)
+		// 2. Pick duration with arrow-key picker (mode-specific presets)
 		presets := mode.Presets()
 		shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
 		longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
@@ -398,12 +408,10 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			Tags:            sessionTags,
 		}
 
-		session, err := pomodoroSvc.StartPomodoro(ctx, req)
+		_, err = pomodoroSvc.StartPomodoro(ctx, req)
 		if err != nil {
 			return fmt.Errorf("failed to start pomodoro: %w", err)
 		}
-
-		fmt.Printf("\n  Starting %s session...\n\n", formatMinutes(session.Duration))
 
 		// Refresh state and launch TUI
 		state, err = stateService.GetCurrentState(ctx)
@@ -421,8 +429,6 @@ func runWizard(cmd *cobra.Command, args []string) error {
 		}
 		// Reset for next iteration
 		lastFullscreenTimer.WantsNewSession = false
-		fmt.Println("\n  Starting new session...")
-		fmt.Println()
 	}
 
 	return nil
@@ -535,6 +541,17 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 	}
 
 	timer.SetAutoBreak(appConfig.Pomodoro.AutoBreak)
+
+	// Wire notification toggle: tab key in timer toggles on/off and persists to config
+	if t, ok := timer.(*tui.Timer); ok {
+		t.SetNotifications(appConfig.Notifications.Enabled, func(enabled bool) {
+			appConfig.Notifications.Enabled = enabled
+			if notifier != nil {
+				notifier.SetEnabled(enabled)
+			}
+			_ = config.Save(appConfig)
+		})
+	}
 
 	timer.SetFetchState(func() *domain.CurrentState {
 		newState, err := stateService.GetCurrentState(ctx)

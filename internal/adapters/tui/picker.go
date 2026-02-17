@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/xvierd/flow-cli/internal/config"
@@ -48,7 +49,7 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.chosen = true
 			return m, tea.Quit
-		case "c", "ctrl+c", "esc":
+		case "ctrl+c", "esc":
 			m.aborted = true
 			return m, tea.Quit
 		}
@@ -85,7 +86,7 @@ func (m pickerModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("  ↑/↓ navigate · enter select · c close") + "\n")
+	b.WriteString(dimStyle.Render("  ↑/↓ navigate · enter select · esc back") + "\n")
 
 	return b.String()
 }
@@ -135,7 +136,7 @@ func (m hPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.chosen = true
 			return m, tea.Quit
-		case "c", "ctrl+c", "esc":
+		case "ctrl+c", "esc":
 			m.aborted = true
 			return m, tea.Quit
 		}
@@ -166,7 +167,7 @@ func (m hPickerModel) View() string {
 		b.WriteString(dimStyle.Render("  "+m.footer) + "\n")
 	}
 
-	b.WriteString(dimStyle.Render("  ←/→ navigate · enter select · c close") + "\n")
+	b.WriteString(dimStyle.Render("  ←/→ navigate · enter select · esc back") + "\n")
 
 	return b.String()
 }
@@ -198,10 +199,10 @@ func RunHorizontalPicker(title string, items []PickerItem, footer string, theme 
 func RunPicker(title string, items []PickerItem, footer string, theme *config.ThemeConfig) PickerResult {
 	resolved := resolveTheme(theme)
 	m := pickerModel{
-		title: title,
-		items: items,
+		title:  title,
+		items:  items,
 		footer: footer,
-		theme: resolved,
+		theme:  resolved,
 	}
 
 	p := tea.NewProgram(m)
@@ -215,4 +216,86 @@ func RunPicker(title string, items []PickerItem, footer string, theme *config.Th
 		return PickerResult{Aborted: true}
 	}
 	return PickerResult{Index: final.cursor}
+}
+
+// --- Styled text prompt ---
+
+// TextPromptResult holds the outcome of a text prompt.
+type TextPromptResult struct {
+	Value   string
+	Aborted bool
+}
+
+type textPromptModel struct {
+	title       string
+	placeholder string
+	input       textinput.Model
+	aborted     bool
+	theme       config.ThemeConfig
+}
+
+func (m textPromptModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m textPromptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			return m, tea.Quit
+		case "ctrl+c", "esc":
+			m.aborted = true
+			return m, tea.Quit
+		}
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m textPromptModel) View() string {
+	var b strings.Builder
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+
+	b.WriteString("\n")
+	b.WriteString(titleStyle.Render("  "+m.title) + " ")
+	b.WriteString(m.input.View())
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("  enter confirm · esc back") + "\n")
+
+	return b.String()
+}
+
+// RunTextPrompt launches a styled text input prompt.
+func RunTextPrompt(title string, placeholder string, theme *config.ThemeConfig) TextPromptResult {
+	resolved := resolveTheme(theme)
+
+	ti := textinput.New()
+	ti.Placeholder = placeholder
+	ti.CharLimit = 120
+	ti.Width = 50
+	ti.Focus()
+
+	m := textPromptModel{
+		title:       title,
+		placeholder: placeholder,
+		input:       ti,
+		theme:       resolved,
+	}
+
+	p := tea.NewProgram(m)
+	result, err := p.Run()
+	if err != nil {
+		return TextPromptResult{Aborted: true}
+	}
+
+	final := result.(textPromptModel)
+	if final.aborted {
+		return TextPromptResult{Aborted: true}
+	}
+	return TextPromptResult{Value: strings.TrimSpace(final.input.Value())}
 }

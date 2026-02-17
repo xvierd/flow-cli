@@ -138,6 +138,10 @@ type Model struct {
 	distractionReviewMode bool
 	distractionReviewDone bool
 
+	// Notifications
+	notificationsEnabled bool
+	notificationToggle   func(bool)
+
 	// Daily summary on quit
 	showingSummary bool
 	summaryTicks   int
@@ -248,6 +252,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "tab":
+			m.notificationsEnabled = !m.notificationsEnabled
+			if m.notificationToggle != nil {
+				m.notificationToggle(m.notificationsEnabled)
+			}
 		case "q":
 			if m.completed {
 				return m.showDailySummaryOrQuit()
@@ -943,13 +952,17 @@ func (m Model) viewActiveSession(sections []string) []string {
 	}
 
 	// Help
+	notifLabel := "off"
+	if m.notificationsEnabled {
+		notifLabel = "on"
+	}
 	sections = append(sections, "")
 	if m.confirmFinish {
 		sections = append(sections, helpStyle.Render("Stop session? Press [f] again to confirm"))
 	} else if m.confirmBreak {
 		sections = append(sections, helpStyle.Render("End session and start break? Press [b] again to confirm"))
 	} else if session.IsBreakSession() {
-		sections = append(sections, helpStyle.Render("[s]kip  [p]ause  [f]inish  [c]lose"))
+		sections = append(sections, helpStyle.Render(fmt.Sprintf("[s]kip  [p]ause  [f]inish  [c]lose  tab:notify %s", notifLabel)))
 	} else {
 		helpText := "[p]ause  [f]inish  [b]reak  [c]lose"
 		if m.mode != nil && m.mode.HasDistractionLog() {
@@ -959,6 +972,7 @@ func (m Model) viewActiveSession(sections []string) []string {
 				helpText = "[p]ause  [d]istraction  [f]inish  [b]reak  [c]lose"
 			}
 		}
+		helpText += fmt.Sprintf("  tab:notify %s", notifLabel)
 		sections = append(sections, helpStyle.Render(helpText))
 	}
 	return sections

@@ -152,6 +152,10 @@ type InlineModel struct {
 	autoBreak      bool
 	autoBreakTicks int
 
+	// Notifications
+	notificationsEnabled bool
+	notificationToggle   func(bool)
+
 	// Daily summary on quit
 	showingSummary bool
 	summaryTicks   int
@@ -657,6 +661,11 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "tab":
+			m.notificationsEnabled = !m.notificationsEnabled
+			if m.notificationToggle != nil {
+				m.notificationToggle(m.notificationsEnabled)
+			}
 		case "q":
 			if m.completed {
 				return m.showDailySummaryOrQuit()
@@ -1192,13 +1201,19 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	b.WriteString(dim.Render(fmt.Sprintf("  %d%%", int(prog*100))))
 	b.WriteString("\n")
 
+	// Notification indicator
+	notifLabel := "off"
+	if m.notificationsEnabled {
+		notifLabel = "on"
+	}
+
 	// Help
 	if m.confirmFinish {
 		b.WriteString(dim.Render("  Stop session? Press [f] again to confirm"))
 	} else if m.confirmBreak {
 		b.WriteString(dim.Render("  Press [b] again to confirm break"))
 	} else if session.IsBreakSession() {
-		b.WriteString(dim.Render("  [s]kip [p]ause [f]inish [c]lose"))
+		b.WriteString(dim.Render(fmt.Sprintf("  [s]kip [p]ause [f]inish [c]lose  tab:notify %s", notifLabel)))
 	} else {
 		helpText := "  [p]ause [f]inish [b]reak [c]lose"
 		if m.mode != nil && m.mode.HasDistractionLog() {
@@ -1208,6 +1223,7 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 				helpText = "  [p]ause [d]istraction [f]inish [b]reak [c]lose"
 			}
 		}
+		helpText += fmt.Sprintf("  tab:notify %s", notifLabel)
 		b.WriteString(dim.Render(helpText))
 	}
 	b.WriteString("\n")

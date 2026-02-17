@@ -53,3 +53,10 @@ func (n *Notifier) NotifyBreakComplete(breakType string) error {
 func (n *Notifier) IsEnabled() bool {
 	return n.cfg != nil && n.cfg.Enabled
 }
+
+// SetEnabled toggles notifications on or off at runtime.
+func (n *Notifier) SetEnabled(enabled bool) {
+	if n.cfg != nil {
+		n.cfg.Enabled = enabled
+	}
+}
