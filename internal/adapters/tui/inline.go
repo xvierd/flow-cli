@@ -657,8 +657,14 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "q":
+			if m.completed {
+				return m.showDailySummaryOrQuit()
+			}
 		case "c":
-			return m.showDailySummaryOrQuit()
+			if !m.completed {
+				return m.showDailySummaryOrQuit()
+			}
 		case "s":
 			if m.completed && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdStart)
@@ -738,12 +744,23 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "n":
+			// Make Time: energize "none" option
 			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
 				m.energizeActivity = "none"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
 					_ = m.energizeCallback("none")
 				}
+				return m, nil
+			}
+			// Session chaining: start new session
+			if m.completed && m.completionPromptsComplete() {
+				m.phase = phasePickDuration
+				m.presetCursor = 0
+				m.completed = false
+				m.notified = false
+				m.resetCompletionState()
+				return m, nil
 			}
 		case "b":
 			if m.completed && m.completedType == domain.SessionTypeWork {
@@ -777,7 +794,8 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.confirmFinish = false
 				m.confirmBreak = false
-				return m, tea.Quit
+				// Don't quit - let completion screen show with "What next?" menu
+				return m, nil
 			}
 			m.confirmFinish = true
 			m.confirmBreak = false
@@ -856,6 +874,29 @@ func (m *InlineModel) resetCompletionState() {
 	m.distractionReviewDone = false
 	m.energizeActivity = ""
 	m.energizeSaved = false
+}
+
+// completionPromptsComplete returns true when all mode-specific completion prompts are done.
+func (m InlineModel) completionPromptsComplete() bool {
+	if m.mode == nil {
+		return true
+	}
+	// Deep Work: need accomplishment saved (or skipped) and distraction review done (or no distractions)
+	if m.mode.HasShutdownRitual() && m.completedType == domain.SessionTypeWork {
+		if !m.accomplishmentSaved {
+			return false
+		}
+		if len(m.distractions) > 0 && !m.distractionReviewDone {
+			return false
+		}
+		return true
+	}
+	// Make Time: need focus score and energize activity
+	if m.mode.HasFocusScore() && m.completedType == domain.SessionTypeWork {
+		return m.focusScoreSaved && m.energizeSaved
+	}
+	// Pomodoro or break: always ready
+	return true
 }
 
 // --- View ---
@@ -1190,7 +1231,7 @@ func (m InlineModel) viewInlineComplete(accent, dim lipgloss.Style) string {
 	var b strings.Builder
 	b.WriteString(accent.Render(fmt.Sprintf("  %s Break over! ", m.theme.IconApp)))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  [s]tart new session [c]lose"))
+	b.WriteString(dim.Render("  [n]ew session [q]uit"))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -1214,7 +1255,7 @@ func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) strin
 	if m.autoBreakTicks > 0 {
 		b.WriteString(accent.Render(fmt.Sprintf("  Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
 	} else {
-		b.WriteString(dim.Render("  [b]reak [s]kip [c]lose"))
+		b.WriteString(dim.Render("  [n]ew session [b]reak [q]uit"))
 	}
 	b.WriteString("\n")
 	return b.String()
@@ -1264,13 +1305,15 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 	b.WriteString("\n")
 
 	if !m.accomplishmentMode && !m.distractionReviewMode {
-		helpText := "  [b]reak [s]kip [c]lose"
-		if !m.accomplishmentSaved {
-			helpText = "  [a]ccomplishment [b]reak [s]kip [c]lose"
+		if m.completionPromptsComplete() {
+			b.WriteString(dim.Render("  [n]ew session [b]reak [q]uit"))
+		} else if !m.accomplishmentSaved {
+			b.WriteString(dim.Render("  [a]ccomplishment [b]reak [q]uit"))
 		} else if len(m.distractions) > 0 && !m.distractionReviewDone {
-			helpText = "  [r]eview distractions [b]reak [s]kip [c]lose"
+			b.WriteString(dim.Render("  [r]eview distractions [b]reak [q]uit"))
+		} else {
+			b.WriteString(dim.Render("  [b]reak [q]uit"))
 		}
-		b.WriteString(dim.Render(helpText))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -1308,7 +1351,11 @@ func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) stri
 		m.theme.IconStats, stats.WorkSessions, formatMinutesCompact(stats.TotalWorkTime))))
 	b.WriteString("\n")
 
-	b.WriteString(dim.Render("  [b]reak [s]kip [c]lose"))
+	if m.completionPromptsComplete() {
+		b.WriteString(dim.Render("  [n]ew session [b]reak [q]uit"))
+	} else {
+		b.WriteString(dim.Render("  [b]reak [q]uit"))
+	}
 	b.WriteString("\n")
 	return b.String()
 }

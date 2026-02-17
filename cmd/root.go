@@ -278,142 +278,161 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 	mode := activeMode
 
-	// Make Time: check for existing highlight or carry-over from yesterday
-	if mode.HasHighlight() {
-		highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
-		if highlight != nil {
-			fmt.Printf("  Today's Highlight: \"%s\"\n\n", highlight.Title)
-		} else {
-			// Check yesterday's unfinished highlight
-			yesterdayHighlight, _ := storageAdapter.Tasks().FindYesterdayHighlight(ctx, time.Now())
-			if yesterdayHighlight != nil {
-				fmt.Printf("  Yesterday's Highlight \"%s\" wasn't completed.\n", yesterdayHighlight.Title)
-				fmt.Print("  Carry forward as today's Highlight? [Y/n] ")
-				answer, _ := reader.ReadString('\n')
-				answer = strings.TrimSpace(strings.ToLower(answer))
-				if answer == "" || answer == "y" || answer == "yes" {
-					yesterdayHighlight.SetAsHighlight()
-					_ = storageAdapter.Tasks().Update(ctx, yesterdayHighlight)
-					fmt.Printf("  Today's Highlight: \"%s\"\n\n", yesterdayHighlight.Title)
+	// Session chaining loop: runs once normally, then repeats if user selects "new session"
+	for {
+		// Make Time: check for existing highlight or carry-over from yesterday
+		if mode.HasHighlight() {
+			highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
+			if highlight != nil {
+				fmt.Printf("  Today's Highlight: \"%s\"\n\n", highlight.Title)
+			} else {
+				// Check yesterday's unfinished highlight
+				yesterdayHighlight, _ := storageAdapter.Tasks().FindYesterdayHighlight(ctx, time.Now())
+				if yesterdayHighlight != nil {
+					fmt.Printf("  Yesterday's Highlight \"%s\" wasn't completed.\n", yesterdayHighlight.Title)
+					fmt.Print("  Carry forward as today's Highlight? [Y/n] ")
+					answer, _ := reader.ReadString('\n')
+					answer = strings.TrimSpace(strings.ToLower(answer))
+					if answer == "" || answer == "y" || answer == "yes" {
+						yesterdayHighlight.SetAsHighlight()
+						_ = storageAdapter.Tasks().Update(ctx, yesterdayHighlight)
+						fmt.Printf("  Today's Highlight: \"%s\"\n\n", yesterdayHighlight.Title)
+					}
 				}
 			}
 		}
-	}
 
-	// 1. Show recent tasks for quick re-selection, then ask for task name
-	var taskName string
-	var sessionTags []string
-	var taskID *string
+		// 1. Show recent tasks for quick re-selection, then ask for task name
+		var taskName string
+		var sessionTags []string
+		var taskID *string
 
-	recentTasks, _ := storageAdapter.Tasks().FindRecentTasks(ctx, 3)
-	if len(recentTasks) > 0 {
-		fmt.Println("  Recent tasks:")
-		for i, t := range recentTasks {
-			fmt.Printf("    [%d] %s\n", i+1, t.Title)
+		recentTasks, _ := storageAdapter.Tasks().FindRecentTasks(ctx, 3)
+		if len(recentTasks) > 0 {
+			fmt.Println("  Recent tasks:")
+			for i, t := range recentTasks {
+				fmt.Printf("    [%d] %s\n", i+1, t.Title)
+			}
+			fmt.Printf("  Pick [1-%d] or type a new name: ", len(recentTasks))
+
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(input)
+
+			picked := false
+			if len(input) == 1 && input[0] >= '1' && input[0] <= '9' {
+				idx := int(input[0]-'0') - 1
+				if idx < len(recentTasks) {
+					taskName = recentTasks[idx].Title
+					taskID = &recentTasks[idx].ID
+					picked = true
+				}
+			}
+			if !picked {
+				taskName = input
+			}
+		} else {
+			fmt.Printf("  %s ", mode.TaskPrompt())
+			taskName, _ = reader.ReadString('\n')
+			taskName = strings.TrimSpace(taskName)
 		}
-		fmt.Printf("  Pick [1-%d] or type a new name: ", len(recentTasks))
 
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		// Parse #tags from task name input
+		if taskName != "" {
+			taskName, sessionTags = domain.ParseTagsFromInput(taskName)
+		}
 
-		picked := false
-		if len(input) == 1 && input[0] >= '1' && input[0] <= '9' {
-			idx := int(input[0]-'0') - 1
-			if idx < len(recentTasks) {
-				taskName = recentTasks[idx].Title
-				taskID = &recentTasks[idx].ID
-				picked = true
+		if taskName != "" && taskID == nil {
+			task, err := taskService.AddTask(ctx, services.AddTaskRequest{
+				Title: taskName,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create task: %w", err)
+			}
+			taskID = &task.ID
+
+			// Make Time: set as today's highlight
+			if mode.HasHighlight() {
+				task.SetAsHighlight()
+				_ = storageAdapter.Tasks().Update(ctx, task)
 			}
 		}
-		if !picked {
-			taskName = input
+
+		// Deep Work: ask for intended outcome
+		var intendedOutcome string
+		if mode.OutcomePrompt() != "" {
+			fmt.Printf("  %s ", mode.OutcomePrompt())
+			intendedOutcome, _ = reader.ReadString('\n')
+			intendedOutcome = strings.TrimSpace(intendedOutcome)
 		}
-	} else {
-		fmt.Printf("  %s ", mode.TaskPrompt())
-		taskName, _ = reader.ReadString('\n')
-		taskName = strings.TrimSpace(taskName)
-	}
 
-	// Parse #tags from task name input
-	if taskName != "" {
-		taskName, sessionTags = domain.ParseTagsFromInput(taskName)
-	}
+		// 2. Pick session type with arrow-key picker (mode-specific presets)
+		presets := mode.Presets()
+		shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
+		longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
 
-	if taskName != "" && taskID == nil {
-		task, err := taskService.AddTask(ctx, services.AddTaskRequest{
-			Title: taskName,
-		})
+		var items []tui.PickerItem
+		for _, p := range presets {
+			items = append(items, tui.PickerItem{
+				Label: p.Name,
+				Desc:  formatMinutes(p.Duration),
+			})
+		}
+
+		footer := fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
+			formatMinutes(shortBreak), formatMinutes(longBreak), appConfig.Pomodoro.SessionsBeforeLong)
+
+		result := tui.RunPicker("Duration:", items, footer, &appConfig.Theme)
+		if result.Aborted {
+			return nil
+		}
+
+		customDuration := presets[result.Index].Duration
+
+		// Start the session
+		req := services.StartPomodoroRequest{
+			TaskID:          taskID,
+			WorkingDir:      workingDir,
+			Duration:        customDuration,
+			Methodology:     effectiveMethodology,
+			IntendedOutcome: intendedOutcome,
+			Tags:            sessionTags,
+		}
+
+		session, err := pomodoroSvc.StartPomodoro(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to create task: %w", err)
+			return fmt.Errorf("failed to start pomodoro: %w", err)
 		}
-		taskID = &task.ID
 
-		// Make Time: set as today's highlight
-		if mode.HasHighlight() {
-			task.SetAsHighlight()
-			_ = storageAdapter.Tasks().Update(ctx, task)
+		fmt.Printf("\n  Starting %s session...\n\n", formatMinutes(session.Duration))
+
+		// Refresh state and launch TUI
+		state, err = stateService.GetCurrentState(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get current state: %w", err)
 		}
+
+		if err := launchTUI(ctx, state, workingDir); err != nil {
+			return err
+		}
+
+		// Check if user wants to chain another session (fullscreen only)
+		if lastFullscreenTimer == nil || !lastFullscreenTimer.WantsNewSession {
+			break
+		}
+		// Reset for next iteration
+		lastFullscreenTimer.WantsNewSession = false
+		fmt.Println("\n  Starting new session...")
+		fmt.Println()
 	}
 
-	// Deep Work: ask for intended outcome
-	var intendedOutcome string
-	if mode.OutcomePrompt() != "" {
-		fmt.Printf("  %s ", mode.OutcomePrompt())
-		intendedOutcome, _ = reader.ReadString('\n')
-		intendedOutcome = strings.TrimSpace(intendedOutcome)
-	}
-
-	// 2. Pick session type with arrow-key picker (mode-specific presets)
-	presets := mode.Presets()
-	shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
-	longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
-
-	var items []tui.PickerItem
-	for _, p := range presets {
-		items = append(items, tui.PickerItem{
-			Label: p.Name,
-			Desc:  formatMinutes(p.Duration),
-		})
-	}
-
-	footer := fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
-		formatMinutes(shortBreak), formatMinutes(longBreak), appConfig.Pomodoro.SessionsBeforeLong)
-
-	result := tui.RunPicker("Duration:", items, footer, &appConfig.Theme)
-	if result.Aborted {
-		return nil
-	}
-
-	customDuration := presets[result.Index].Duration
-
-	// Start the session
-	req := services.StartPomodoroRequest{
-		TaskID:          taskID,
-		WorkingDir:      workingDir,
-		Duration:        customDuration,
-		Methodology:     effectiveMethodology,
-		IntendedOutcome: intendedOutcome,
-		Tags:            sessionTags,
-	}
-
-	session, err := pomodoroSvc.StartPomodoro(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to start pomodoro: %w", err)
-	}
-
-	fmt.Printf("\n  Starting %s session...\n\n", formatMinutes(session.Duration))
-
-	// Refresh state and launch TUI
-	state, err = stateService.GetCurrentState(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get current state: %w", err)
-	}
-
-	return launchTUI(ctx, state, workingDir)
+	return nil
 }
 
 // lastInlineTimer holds a reference to the inline timer for post-exit action handling.
 var lastInlineTimer *tui.Timer
+
+// lastFullscreenTimer holds a reference to the fullscreen timer for session chaining.
+var lastFullscreenTimer *tui.Timer
 
 // launchInlineTUI launches the inline TUI and handles post-exit actions (stats/reflect).
 func launchInlineTUI(cmd *cobra.Command, ctx context.Context, state *domain.CurrentState, workingDir string) error {
@@ -509,7 +528,10 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 
 		timer = inlineTimer
 	} else {
-		timer = tui.NewTimer(&appConfig.Theme)
+		fsTimer := tui.NewFullscreenTimer(&appConfig.Theme)
+		fsTimer.SetMode(activeMode)
+		lastFullscreenTimer = fsTimer
+		timer = fsTimer
 	}
 
 	timer.SetAutoBreak(appConfig.Pomodoro.AutoBreak)

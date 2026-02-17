@@ -36,10 +36,18 @@ type Timer struct {
 	autoBreak              bool
 	// PostAction holds the action selected from the main menu (stats/reflect).
 	PostAction             MainMenuAction
+	// WantsNewSession is set when user wants to chain another session (fullscreen mode).
+	WantsNewSession        bool
 }
 
 // NewTimer creates a new TUI timer adapter.
 func NewTimer(theme *config.ThemeConfig) ports.Timer {
+	return &Timer{theme: theme}
+}
+
+// NewFullscreenTimer creates a TUI timer that renders in alt screen (fullscreen).
+// Returns a concrete *Timer so callers can access WantsNewSession after Run().
+func NewFullscreenTimer(theme *config.ThemeConfig) *Timer {
 	return &Timer{theme: theme}
 }
 
@@ -94,9 +102,13 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 		}
 	}()
 
-	_, err := t.program.Run()
+	result, err := t.program.Run()
 	if err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+
+	if final, ok := result.(Model); ok {
+		t.WantsNewSession = final.WantsNewSession
 	}
 
 	return nil
