@@ -2,12 +2,10 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -36,15 +34,15 @@ var (
 	modeFlag   string
 
 	// Global dependencies
-	storageAdapter      ports.Storage
-	taskService         *services.TaskService
-	pomodoroSvc         *services.PomodoroService
-	stateService        *services.StateService
-	gitDetector         ports.GitDetector
-	notifier            *notification.Notifier
-	appConfig           *config.Config
+	storageAdapter       ports.Storage
+	taskService          *services.TaskService
+	pomodoroSvc          *services.PomodoroService
+	stateService         *services.StateService
+	gitDetector          ports.GitDetector
+	notifier             *notification.Notifier
+	appConfig            *config.Config
 	effectiveMethodology domain.Methodology
-	activeMode          methodology.Mode
+	activeMode           methodology.Mode
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -207,8 +205,6 @@ func runWizard(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fullscreen mode: wizard prompts then TUI
-	reader := bufio.NewReader(os.Stdin)
-
 	if state.ActiveSession != nil {
 		active := state.ActiveSession
 		remaining := active.RemainingTime()
@@ -219,13 +215,16 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			sessionInfo = fmt.Sprintf("%s for \"%s\" (%s remaining)", sessionType, state.ActiveTask.Title, formatWizardDuration(remaining))
 		}
 
-		fmt.Printf("\n  Active session: %s\n", sessionInfo)
-		fmt.Print("  Resume it? [Y/n] ")
+		resumeItems := []tui.PickerItem{
+			{Label: "Resume", Desc: sessionInfo},
+			{Label: "Stop", Desc: "End current session and start fresh"},
+		}
+		resumeResult := tui.RunPicker("Active session:", resumeItems, "", &appConfig.Theme)
+		if resumeResult.Aborted {
+			return nil
+		}
 
-		answer, _ := reader.ReadString('\n')
-		answer = strings.TrimSpace(strings.ToLower(answer))
-
-		if answer == "" || answer == "y" || answer == "yes" {
+		if resumeResult.Index == 0 {
 			return launchTUI(ctx, state, workingDir)
 		}
 
@@ -278,142 +277,168 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 	mode := activeMode
 
-	// Make Time: check for existing highlight or carry-over from yesterday
-	if mode.HasHighlight() {
-		highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
-		if highlight != nil {
-			fmt.Printf("  Today's Highlight: \"%s\"\n\n", highlight.Title)
-		} else {
-			// Check yesterday's unfinished highlight
-			yesterdayHighlight, _ := storageAdapter.Tasks().FindYesterdayHighlight(ctx, time.Now())
-			if yesterdayHighlight != nil {
-				fmt.Printf("  Yesterday's Highlight \"%s\" wasn't completed.\n", yesterdayHighlight.Title)
-				fmt.Print("  Carry forward as today's Highlight? [Y/n] ")
-				answer, _ := reader.ReadString('\n')
-				answer = strings.TrimSpace(strings.ToLower(answer))
-				if answer == "" || answer == "y" || answer == "yes" {
-					yesterdayHighlight.SetAsHighlight()
-					_ = storageAdapter.Tasks().Update(ctx, yesterdayHighlight)
-					fmt.Printf("  Today's Highlight: \"%s\"\n\n", yesterdayHighlight.Title)
+	// Session chaining loop: runs once normally, then repeats if user selects "new session"
+	for {
+		// Make Time: check for existing highlight or carry-over from yesterday
+		if mode.HasHighlight() {
+			highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
+			if highlight != nil {
+				fmt.Printf("  Today's Highlight: \"%s\"\n\n", highlight.Title)
+			} else {
+				yesterdayHighlight, _ := storageAdapter.Tasks().FindYesterdayHighlight(ctx, time.Now())
+				if yesterdayHighlight != nil {
+					carryItems := []tui.PickerItem{
+						{Label: "Yes", Desc: fmt.Sprintf("Continue with \"%s\"", yesterdayHighlight.Title)},
+						{Label: "No", Desc: "Pick a new Highlight"},
+					}
+					carryResult := tui.RunPicker("Carry forward yesterday's Highlight?", carryItems, "", &appConfig.Theme)
+					if !carryResult.Aborted && carryResult.Index == 0 {
+						yesterdayHighlight.SetAsHighlight()
+						_ = storageAdapter.Tasks().Update(ctx, yesterdayHighlight)
+					}
+					fmt.Println()
 				}
 			}
 		}
-	}
 
-	// 1. Show recent tasks for quick re-selection, then ask for task name
-	var taskName string
-	var sessionTags []string
-	var taskID *string
+		// 1. Task selection via styled picker
+		var taskName string
+		var sessionTags []string
+		var taskID *string
 
-	recentTasks, _ := storageAdapter.Tasks().FindRecentTasks(ctx, 3)
-	if len(recentTasks) > 0 {
-		fmt.Println("  Recent tasks:")
-		for i, t := range recentTasks {
-			fmt.Printf("    [%d] %s\n", i+1, t.Title)
+		recentTasks, _ := storageAdapter.Tasks().FindRecentTasks(ctx, 3)
+		if len(recentTasks) > 0 {
+			var taskItems []tui.PickerItem
+			for _, t := range recentTasks {
+				taskItems = append(taskItems, tui.PickerItem{
+					Label: t.Title,
+					Desc:  "",
+				})
+			}
+			taskItems = append(taskItems, tui.PickerItem{
+				Label: "New task...",
+				Desc:  "Type a name",
+			})
+
+			taskResult := tui.RunPicker(mode.TaskPrompt(), taskItems, "", &appConfig.Theme)
+			if taskResult.Aborted {
+				return nil
+			}
+
+			if taskResult.Index < len(recentTasks) {
+				taskName = recentTasks[taskResult.Index].Title
+				taskID = &recentTasks[taskResult.Index].ID
+			} else {
+				// "New task" selected — prompt for name
+				textResult := tui.RunTextPrompt(mode.TaskPrompt(), "Enter to skip", &appConfig.Theme)
+				if textResult.Aborted {
+					return nil
+				}
+				taskName = textResult.Value
+			}
+		} else {
+			textResult := tui.RunTextPrompt(mode.TaskPrompt(), "Enter to skip", &appConfig.Theme)
+			if textResult.Aborted {
+				return nil
+			}
+			taskName = textResult.Value
 		}
-		fmt.Printf("  Pick [1-%d] or type a new name: ", len(recentTasks))
 
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		// Parse #tags from task name input
+		if taskName != "" {
+			taskName, sessionTags = domain.ParseTagsFromInput(taskName)
+		}
 
-		picked := false
-		if len(input) == 1 && input[0] >= '1' && input[0] <= '9' {
-			idx := int(input[0]-'0') - 1
-			if idx < len(recentTasks) {
-				taskName = recentTasks[idx].Title
-				taskID = &recentTasks[idx].ID
-				picked = true
+		if taskName != "" && taskID == nil {
+			task, err := taskService.AddTask(ctx, services.AddTaskRequest{
+				Title: taskName,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create task: %w", err)
+			}
+			taskID = &task.ID
+
+			// Make Time: set as today's highlight
+			if mode.HasHighlight() {
+				task.SetAsHighlight()
+				_ = storageAdapter.Tasks().Update(ctx, task)
 			}
 		}
-		if !picked {
-			taskName = input
+
+		// Deep Work: ask for intended outcome
+		var intendedOutcome string
+		if mode.OutcomePrompt() != "" {
+			outcomeResult := tui.RunTextPrompt(mode.OutcomePrompt(), "Enter to skip", &appConfig.Theme)
+			if outcomeResult.Aborted {
+				return nil
+			}
+			intendedOutcome = outcomeResult.Value
 		}
-	} else {
-		fmt.Printf("  %s ", mode.TaskPrompt())
-		taskName, _ = reader.ReadString('\n')
-		taskName = strings.TrimSpace(taskName)
-	}
 
-	// Parse #tags from task name input
-	if taskName != "" {
-		taskName, sessionTags = domain.ParseTagsFromInput(taskName)
-	}
+		// 2. Pick duration with arrow-key picker (mode-specific presets)
+		presets := mode.Presets()
+		shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
+		longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
 
-	if taskName != "" && taskID == nil {
-		task, err := taskService.AddTask(ctx, services.AddTaskRequest{
-			Title: taskName,
-		})
+		var items []tui.PickerItem
+		for _, p := range presets {
+			items = append(items, tui.PickerItem{
+				Label: p.Name,
+				Desc:  formatMinutes(p.Duration),
+			})
+		}
+
+		footer := fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
+			formatMinutes(shortBreak), formatMinutes(longBreak), appConfig.Pomodoro.SessionsBeforeLong)
+
+		result := tui.RunPicker("Duration:", items, footer, &appConfig.Theme)
+		if result.Aborted {
+			return nil
+		}
+
+		customDuration := presets[result.Index].Duration
+
+		// Start the session
+		req := services.StartPomodoroRequest{
+			TaskID:          taskID,
+			WorkingDir:      workingDir,
+			Duration:        customDuration,
+			Methodology:     effectiveMethodology,
+			IntendedOutcome: intendedOutcome,
+			Tags:            sessionTags,
+		}
+
+		_, err = pomodoroSvc.StartPomodoro(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to create task: %w", err)
+			return fmt.Errorf("failed to start pomodoro: %w", err)
 		}
-		taskID = &task.ID
 
-		// Make Time: set as today's highlight
-		if mode.HasHighlight() {
-			task.SetAsHighlight()
-			_ = storageAdapter.Tasks().Update(ctx, task)
+		// Refresh state and launch TUI
+		state, err = stateService.GetCurrentState(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get current state: %w", err)
 		}
+
+		if err := launchTUI(ctx, state, workingDir); err != nil {
+			return err
+		}
+
+		// Check if user wants to chain another session (fullscreen only)
+		if lastFullscreenTimer == nil || !lastFullscreenTimer.WantsNewSession {
+			break
+		}
+		// Reset for next iteration
+		lastFullscreenTimer.WantsNewSession = false
 	}
 
-	// Deep Work: ask for intended outcome
-	var intendedOutcome string
-	if mode.OutcomePrompt() != "" {
-		fmt.Printf("  %s ", mode.OutcomePrompt())
-		intendedOutcome, _ = reader.ReadString('\n')
-		intendedOutcome = strings.TrimSpace(intendedOutcome)
-	}
-
-	// 2. Pick session type with arrow-key picker (mode-specific presets)
-	presets := mode.Presets()
-	shortBreak := time.Duration(appConfig.Pomodoro.ShortBreak)
-	longBreak := time.Duration(appConfig.Pomodoro.LongBreak)
-
-	var items []tui.PickerItem
-	for _, p := range presets {
-		items = append(items, tui.PickerItem{
-			Label: p.Name,
-			Desc:  formatMinutes(p.Duration),
-		})
-	}
-
-	footer := fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
-		formatMinutes(shortBreak), formatMinutes(longBreak), appConfig.Pomodoro.SessionsBeforeLong)
-
-	result := tui.RunPicker("Duration:", items, footer, &appConfig.Theme)
-	if result.Aborted {
-		return nil
-	}
-
-	customDuration := presets[result.Index].Duration
-
-	// Start the session
-	req := services.StartPomodoroRequest{
-		TaskID:          taskID,
-		WorkingDir:      workingDir,
-		Duration:        customDuration,
-		Methodology:     effectiveMethodology,
-		IntendedOutcome: intendedOutcome,
-		Tags:            sessionTags,
-	}
-
-	session, err := pomodoroSvc.StartPomodoro(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to start pomodoro: %w", err)
-	}
-
-	fmt.Printf("\n  Starting %s session...\n\n", formatMinutes(session.Duration))
-
-	// Refresh state and launch TUI
-	state, err = stateService.GetCurrentState(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get current state: %w", err)
-	}
-
-	return launchTUI(ctx, state, workingDir)
+	return nil
 }
 
 // lastInlineTimer holds a reference to the inline timer for post-exit action handling.
 var lastInlineTimer *tui.Timer
+
+// lastFullscreenTimer holds a reference to the fullscreen timer for session chaining.
+var lastFullscreenTimer *tui.Timer
 
 // launchInlineTUI launches the inline TUI and handles post-exit actions (stats/reflect).
 func launchInlineTUI(cmd *cobra.Command, ctx context.Context, state *domain.CurrentState, workingDir string) error {
@@ -498,21 +523,35 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 			}
 
 			_, err := pomodoroSvc.StartPomodoro(ctx, services.StartPomodoroRequest{
-				TaskID:          taskID,
-				WorkingDir:      workingDir,
-				Duration:        currentPresets[presetIndex].Duration,
-				Methodology:     effectiveMethodology,
-				Tags:            sessionTags,
+				TaskID:      taskID,
+				WorkingDir:  workingDir,
+				Duration:    currentPresets[presetIndex].Duration,
+				Methodology: effectiveMethodology,
+				Tags:        sessionTags,
 			})
 			return err
 		})
 
 		timer = inlineTimer
 	} else {
-		timer = tui.NewTimer(&appConfig.Theme)
+		fsTimer := tui.NewFullscreenTimer(&appConfig.Theme)
+		fsTimer.SetMode(activeMode)
+		lastFullscreenTimer = fsTimer
+		timer = fsTimer
 	}
 
 	timer.SetAutoBreak(appConfig.Pomodoro.AutoBreak)
+
+	// Wire notification toggle: tab key in timer toggles on/off and persists to config
+	if t, ok := timer.(*tui.Timer); ok {
+		t.SetNotifications(appConfig.Notifications.Enabled, func(enabled bool) {
+			appConfig.Notifications.Enabled = enabled
+			if notifier != nil {
+				notifier.SetEnabled(enabled)
+			}
+			_ = config.Save(appConfig)
+		})
+	}
 
 	timer.SetFetchState(func() *domain.CurrentState {
 		newState, err := stateService.GetCurrentState(ctx)
@@ -619,7 +658,7 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 		if notifier == nil || !notifier.IsEnabled() {
 			return
 		}
-		
+
 		var err error
 		switch sessionType {
 		case domain.SessionTypeWork:
@@ -629,7 +668,7 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 		case domain.SessionTypeLongBreak:
 			err = notifier.NotifyBreakComplete("Long")
 		}
-		
+
 		if err != nil {
 			// Log notification errors but don't fail
 			fmt.Fprintf(os.Stderr, "Warning: notification failed: %v\n", err)

@@ -12,11 +12,11 @@ import (
 func executeCmd(cmd *cobra.Command, args ...string) (stdout string, stderr string, err error) {
 	bufOut := new(bytes.Buffer)
 	bufErr := new(bytes.Buffer)
-	
+
 	cmd.SetOut(bufOut)
 	cmd.SetErr(bufErr)
 	cmd.SetArgs(args)
-	
+
 	err = cmd.Execute()
 	return bufOut.String(), bufErr.String(), err
 }
@@ -27,7 +27,7 @@ func TestRootCmd_BareExecution(t *testing.T) {
 	if rootCmd == nil {
 		t.Fatal("rootCmd should not be nil")
 	}
-	
+
 	if rootCmd.Use != "flow" {
 		t.Errorf("rootCmd.Use = %q, want %q", rootCmd.Use, "flow")
 	}
@@ -39,7 +39,7 @@ func TestRootCmd_Help(t *testing.T) {
 	if err != nil {
 		t.Fatalf("help command failed: %v", err)
 	}
-	
+
 	// Check for flow or Flow in output
 	if !bytes.Contains([]byte(stdout), []byte("flow")) && !bytes.Contains([]byte(stdout), []byte("Flow")) {
 		t.Error("help output should contain 'flow' or 'Flow'")
@@ -53,7 +53,7 @@ func TestRootCmd_Flags(t *testing.T) {
 	if dbFlag == nil {
 		t.Error("--db flag should be registered")
 	}
-	
+
 	// Test json flag
 	jsonFlag := rootCmd.PersistentFlags().Lookup("json")
 	if jsonFlag == nil {
@@ -73,7 +73,7 @@ func TestFormatMinutes(t *testing.T) {
 		{"90 minutes", 90, "1h30m"},
 		{"120 minutes", 120, "2h"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := time.Duration(tt.duration) * time.Minute
@@ -97,7 +97,7 @@ func TestFormatWizardDuration(t *testing.T) {
 		{0, 45, "00:45"},
 		{100, 5, "100:05"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
 			d := time.Duration(tt.minutes)*time.Minute + time.Duration(tt.seconds)*time.Second
@@ -121,7 +121,7 @@ func TestGetDir(t *testing.T) {
 		{"/file.txt", "."}, // Root case returns "."
 		{"C:\\Users\\file.txt", "C:\\Users"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			got := getDir(tt.path)

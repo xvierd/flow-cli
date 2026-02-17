@@ -130,6 +130,23 @@ flow complete abc123           # mark task done
 | `--json` | Output results in JSON format |
 | `--db <path>` | Custom database path |
 
+## Session Chaining
+
+When a session completes, Flow shows a "What next?" menu instead of exiting. Chain sessions without leaving the terminal:
+
+```
+  Session complete!
+  Today: 4 work sessions, 2 breaks, 2h10m worked
+
+  [n]ew session  [b]reak  [q]uit
+```
+
+- **`n`** -- start a new session (re-runs the full wizard: mode, task, duration)
+- **`b`** -- start a break (only after work sessions)
+- **`q`** -- quit the timer
+
+The `[n]` option appears after all mode-specific prompts are done: immediately in Pomodoro, after the shutdown ritual in Deep Work, and after focus score + energize log in Make Time.
+
 ## Session Tagging
 
 Add `#tags` inline when entering a task name. Tags are stored with the session for filtering and stats.
@@ -147,11 +164,13 @@ What are you working on? Fix login bug #backend #urgent
 | `b` | Start break | All |
 | `c` | Cancel session | All |
 | `x` | Stop session | All |
-| `q` | Quit TUI (session keeps running) | All |
+| `q` | Quit | All |
+| `n` | New session (on completion screen) | All |
 | `d` | Log a distraction | Deep Work |
 | `a` | Record accomplishment (shutdown ritual) | Deep Work |
+| `r` | Review distractions (after accomplishment) | Deep Work |
 | `1`-`5` | Rate focus score | Make Time |
-| `e` | Log energize activity | Make Time |
+| `w/t/e/n` | Log energize activity (walk/stretch/exercise/none) | Make Time |
 
 ## Claude Code Integration
 

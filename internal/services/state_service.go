@@ -10,9 +10,9 @@ import (
 
 // StateService implements the MCPStateProvider interface.
 type StateService struct {
-	storage       ports.Storage
-	taskService   *TaskService
-	pomodoroSvc   *PomodoroService
+	storage     ports.Storage
+	taskService *TaskService
+	pomodoroSvc *PomodoroService
 }
 
 // NewStateService creates a new state service.

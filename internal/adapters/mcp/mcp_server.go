@@ -279,19 +279,19 @@ func (s *Server) handleGetCurrentState(ctx context.Context, request mcp.CallTool
 	if state.ActiveSession != nil {
 		session := state.ActiveSession
 		sessionData := map[string]interface{}{
-			"id":              session.ID,
-			"type":            string(session.Type),
-			"status":          string(session.Status),
-			"duration":        session.Duration.String(),
-			"remaining_time":  session.RemainingTime().String(),
-			"progress":        session.Progress(),
-			"started_at":      session.StartedAt.Format("2006-01-02T15:04:05"),
-			"git_branch":      session.GitBranch,
-			"git_commit":      session.GitCommit,
-			"notes":           session.Notes,
-			"methodology":     string(session.Methodology),
-			"distractions":    session.Distractions,
-			"accomplishment":  session.Accomplishment,
+			"id":               session.ID,
+			"type":             string(session.Type),
+			"status":           string(session.Status),
+			"duration":         session.Duration.String(),
+			"remaining_time":   session.RemainingTime().String(),
+			"progress":         session.Progress(),
+			"started_at":       session.StartedAt.Format("2006-01-02T15:04:05"),
+			"git_branch":       session.GitBranch,
+			"git_commit":       session.GitCommit,
+			"notes":            session.Notes,
+			"methodology":      string(session.Methodology),
+			"distractions":     session.Distractions,
+			"accomplishment":   session.Accomplishment,
 			"intended_outcome": session.IntendedOutcome,
 			"session_tags":     session.Tags,
 		}
@@ -606,11 +606,11 @@ func (s *Server) handleCompleteTask(ctx context.Context, request mcp.CallToolReq
 	}
 
 	result := map[string]interface{}{
-		"id":          task.ID,
-		"title":       task.Title,
-		"description": task.Description,
-		"status":      string(task.Status),
-		"tags":        task.Tags,
+		"id":           task.ID,
+		"title":        task.Title,
+		"description":  task.Description,
+		"status":       string(task.Status),
+		"tags":         task.Tags,
 		"completed_at": task.CompletedAt.Format("2006-01-02T15:04:05"),
 	}
 

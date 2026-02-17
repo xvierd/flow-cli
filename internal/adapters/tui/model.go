@@ -88,25 +88,25 @@ type stateMsg struct {
 
 // Model represents the TUI state.
 type Model struct {
-	state                *domain.CurrentState
-	progress             progress.Model
-	width                int
-	height               int
-	completed            bool
-	completedSessionType domain.SessionType
-	notified             bool
-	confirmBreak         bool
-	confirmFinish        bool
-	fetchState           func() *domain.CurrentState
-	commandCallback      func(ports.TimerCommand) error
-	onSessionComplete    func(domain.SessionType)
+	state                  *domain.CurrentState
+	progress               progress.Model
+	width                  int
+	height                 int
+	completed              bool
+	completedSessionType   domain.SessionType
+	notified               bool
+	confirmBreak           bool
+	confirmFinish          bool
+	fetchState             func() *domain.CurrentState
+	commandCallback        func(ports.TimerCommand) error
+	onSessionComplete      func(domain.SessionType)
 	distractionCallback    func(string) error
 	accomplishmentCallback func(string) error
 	focusScoreCallback     func(int) error
 	energizeCallback       func(string) error
-	completionInfo       *domain.CompletionInfo
-	theme                config.ThemeConfig
-	mode                 methodology.Mode
+	completionInfo         *domain.CompletionInfo
+	theme                  config.ThemeConfig
+	mode                   methodology.Mode
 
 	// Deep Work: distraction log
 	distractionMode  bool
@@ -138,9 +138,16 @@ type Model struct {
 	distractionReviewMode bool
 	distractionReviewDone bool
 
+	// Notifications
+	notificationsEnabled bool
+	notificationToggle   func(bool)
+
 	// Daily summary on quit
 	showingSummary bool
 	summaryTicks   int
+
+	// Session chaining: signals that user wants to start a new session
+	WantsNewSession bool
 }
 
 // NewModel creates a new TUI model.
@@ -207,7 +214,7 @@ func (m Model) showDailySummaryOrQuit() (tea.Model, tea.Cmd) {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Daily summary dismiss
 	if m.showingSummary {
-		switch msg.(type) {
+		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			return m, tea.Quit
 		case tickMsg:
@@ -217,9 +224,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tickCmd()
 		case tea.WindowSizeMsg:
-			wsm := msg.(tea.WindowSizeMsg)
-			m.width = wsm.Width
-			m.height = wsm.Height
+			m.width = msg.Width
+			m.height = msg.Height
 		}
 		return m, nil
 	}
@@ -245,8 +251,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "tab":
+			m.notificationsEnabled = !m.notificationsEnabled
+			if m.notificationToggle != nil {
+				m.notificationToggle(m.notificationsEnabled)
+			}
+		case "q":
+			if m.completed {
+				return m.showDailySummaryOrQuit()
+			}
 		case "c":
-			return m.showDailySummaryOrQuit()
+			if !m.completed {
+				return m.showDailySummaryOrQuit()
+			}
 		case "s":
 			if m.completed && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdStart)
@@ -330,12 +347,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "n":
+			// Make Time: energize "none" option
 			if m.mode != nil && m.mode.HasEnergizeReminder() && m.completed && m.completedSessionType == domain.SessionTypeWork && m.focusScoreSaved && !m.energizeSaved {
 				m.energizeActivity = "none"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
 					_ = m.energizeCallback("none")
 				}
+				return m, nil
+			}
+			// Session chaining: signal new session and quit TUI
+			if m.completed && m.completionPromptsComplete() {
+				m.WantsNewSession = true
+				return m, tea.Quit
 			}
 		case "b":
 			if m.completed && m.completedSessionType == domain.SessionTypeWork {
@@ -369,7 +393,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.confirmFinish = false
 				m.confirmBreak = false
-				return m, tea.Quit
+				// Don't quit - let completion screen show with "What next?" menu
+				return m, nil
 			}
 			m.confirmFinish = true
 			m.confirmBreak = false
@@ -466,6 +491,29 @@ func (m *Model) resetCompletionState() {
 	m.distractionReviewDone = false
 	m.energizeActivity = ""
 	m.energizeSaved = false
+}
+
+// completionPromptsComplete returns true when all mode-specific completion prompts are done.
+func (m Model) completionPromptsComplete() bool {
+	if m.mode == nil {
+		return true
+	}
+	// Deep Work: need accomplishment saved (or skipped) and distraction review done (or no distractions)
+	if m.mode.HasShutdownRitual() && m.completedSessionType == domain.SessionTypeWork {
+		if !m.accomplishmentSaved {
+			return false
+		}
+		if len(m.distractions) > 0 && !m.distractionReviewDone {
+			return false
+		}
+		return true
+	}
+	// Make Time: need focus score and energize activity
+	if m.mode.HasFocusScore() && m.completedSessionType == domain.SessionTypeWork {
+		return m.focusScoreSaved && m.energizeSaved
+	}
+	// Pomodoro or break: always ready
+	return true
 }
 
 // updateDistractionInput handles input while in distraction logging mode.
@@ -677,7 +725,7 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 	if m.autoBreakTicks > 0 {
 		sections = append(sections, statusStyle.Render(fmt.Sprintf("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
 	} else {
-		sections = append(sections, helpStyle.Render("[b]reak  [s]kip  [c]lose"))
+		sections = append(sections, helpStyle.Render("[n]ew session  [b]reak  [q]uit"))
 	}
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render("Customize in ~/.flow/config.toml"))
@@ -744,11 +792,15 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 	}
 
 	sections = append(sections, "")
-	helpText := "[b]reak  [s]kip  [c]lose"
-	if !m.accomplishmentSaved {
-		helpText = "[a]ccomplishment  [b]reak  [s]kip  [c]lose"
+	var helpText string
+	if m.completionPromptsComplete() {
+		helpText = "[n]ew session  [b]reak  [q]uit"
+	} else if !m.accomplishmentSaved {
+		helpText = "[a]ccomplishment  [b]reak  [q]uit"
 	} else if len(m.distractions) > 0 && !m.distractionReviewDone {
-		helpText = "[r]eview distractions  [b]reak  [s]kip  [c]lose"
+		helpText = "[r]eview distractions  [b]reak  [q]uit"
+	} else {
+		helpText = "[b]reak  [q]uit"
 	}
 	sections = append(sections, helpStyle.Render(helpText))
 	return sections
@@ -802,7 +854,11 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 	}
 
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[b]reak  [s]kip  [c]lose"))
+	if m.completionPromptsComplete() {
+		sections = append(sections, helpStyle.Render("[n]ew session  [b]reak  [q]uit"))
+	} else {
+		sections = append(sections, helpStyle.Render("[b]reak  [q]uit"))
+	}
 	return sections
 }
 
@@ -822,7 +878,7 @@ func (m Model) viewBreakComplete(sections []string) []string {
 	sections = append(sections, helpStyle.Render(statsText))
 
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[s]tart new session  [c]lose"))
+	sections = append(sections, helpStyle.Render("[n]ew session  [q]uit"))
 	return sections
 }
 
@@ -895,13 +951,17 @@ func (m Model) viewActiveSession(sections []string) []string {
 	}
 
 	// Help
+	notifLabel := "off"
+	if m.notificationsEnabled {
+		notifLabel = "on"
+	}
 	sections = append(sections, "")
 	if m.confirmFinish {
 		sections = append(sections, helpStyle.Render("Stop session? Press [f] again to confirm"))
 	} else if m.confirmBreak {
 		sections = append(sections, helpStyle.Render("End session and start break? Press [b] again to confirm"))
 	} else if session.IsBreakSession() {
-		sections = append(sections, helpStyle.Render("[s]kip  [p]ause  [f]inish  [c]lose"))
+		sections = append(sections, helpStyle.Render(fmt.Sprintf("[s]kip  [p]ause  [f]inish  [c]lose  tab:notify %s", notifLabel)))
 	} else {
 		helpText := "[p]ause  [f]inish  [b]reak  [c]lose"
 		if m.mode != nil && m.mode.HasDistractionLog() {
@@ -911,6 +971,7 @@ func (m Model) viewActiveSession(sections []string) []string {
 				helpText = "[p]ause  [d]istraction  [f]inish  [b]reak  [c]lose"
 			}
 		}
+		helpText += fmt.Sprintf("  tab:notify %s", notifLabel)
 		sections = append(sections, helpStyle.Render(helpText))
 	}
 	return sections

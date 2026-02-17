@@ -244,10 +244,10 @@ func TestPomodoroSession_SetGitContext(t *testing.T) {
 
 func TestParseTagsFromInput(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		wantText  string
-		wantTags  []string
+		name     string
+		input    string
+		wantText string
+		wantTags []string
 	}{
 		{
 			name:     "no tags",

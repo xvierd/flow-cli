@@ -14,7 +14,7 @@ func TestStopCmd(t *testing.T) {
 		if stopCmd.Use != "stop" {
 			t.Errorf("stopCmd.Use = %q, want %q", stopCmd.Use, "stop")
 		}
-		
+
 		if stopCmd.Short != "Stop the current pomodoro session" {
 			t.Errorf("stopCmd.Short = %q, want %q", stopCmd.Short, "Stop the current pomodoro session")
 		}
@@ -25,7 +25,7 @@ func TestStopCmd(t *testing.T) {
 func TestOutputJSON(t *testing.T) {
 	completedAt := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
 	taskID := "test-task-123"
-	
+
 	session := &domain.PomodoroSession{
 		ID:          "test-session-456",
 		TaskID:      &taskID,
@@ -36,7 +36,7 @@ func TestOutputJSON(t *testing.T) {
 		CompletedAt: &completedAt,
 		Notes:       "Test notes",
 	}
-	
+
 	// Test the data structure that would be marshaled
 	data := map[string]interface{}{
 		"id":         session.ID,
@@ -52,14 +52,14 @@ func TestOutputJSON(t *testing.T) {
 	if session.CompletedAt != nil {
 		data["completed_at"] = session.CompletedAt.Format("2006-01-02T15:04:05")
 	}
-	
+
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		t.Fatalf("failed to marshal session: %v", err)
 	}
-	
+
 	output := string(jsonData)
-	
+
 	// Verify all expected fields are present
 	expectedFields := []string{
 		"test-session-456",
@@ -71,7 +71,7 @@ func TestOutputJSON(t *testing.T) {
 		"test-task-123",
 		"2024-01-15T10:30:00",
 	}
-	
+
 	for _, field := range expectedFields {
 		if !json.Valid(jsonData) {
 			t.Error("output should be valid JSON")

@@ -14,7 +14,7 @@ func TestStatusCmd(t *testing.T) {
 		if statusCmd.Use != "status" {
 			t.Errorf("statusCmd.Use = %q, want %q", statusCmd.Use, "status")
 		}
-		
+
 		if statusCmd.Short != "Show current status" {
 			t.Errorf("statusCmd.Short = %q, want %q", statusCmd.Short, "Show current status")
 		}
@@ -50,7 +50,7 @@ func TestOutputStatusJSON(t *testing.T) {
 			TotalWorkTime: 2*time.Hour + 5*time.Minute,
 		},
 	}
-	
+
 	// Simulate the JSON output structure
 	result := map[string]interface{}{
 		"active_task":    nil,
@@ -61,7 +61,7 @@ func TestOutputStatusJSON(t *testing.T) {
 			"total_work_time": state.TodayStats.TotalWorkTime.String(),
 		},
 	}
-	
+
 	if state.ActiveTask != nil {
 		result["active_task"] = map[string]interface{}{
 			"id":          state.ActiveTask.ID,
@@ -71,7 +71,7 @@ func TestOutputStatusJSON(t *testing.T) {
 			"tags":        state.ActiveTask.Tags,
 		}
 	}
-	
+
 	if state.ActiveSession != nil {
 		session := state.ActiveSession
 		sessionData := map[string]interface{}{
@@ -91,19 +91,19 @@ func TestOutputStatusJSON(t *testing.T) {
 		}
 		result["active_session"] = sessionData
 	}
-	
+
 	jsonData, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		t.Fatalf("failed to marshal status: %v", err)
 	}
-	
+
 	output := string(jsonData)
-	
+
 	// Verify structure
 	if output == "" {
 		t.Error("JSON output should not be empty")
 	}
-	
+
 	// Verify all expected fields
 	expectedFields := []string{
 		"task-123",
@@ -117,7 +117,7 @@ func TestOutputStatusJSON(t *testing.T) {
 		"breaks_taken",
 		"total_work_time",
 	}
-	
+
 	for _, field := range expectedFields {
 		if len(field) > 3 && !containsStr(output, field) {
 			t.Errorf("output should contain %q", field)
@@ -146,10 +146,10 @@ func TestPrintStatusText(t *testing.T) {
 			TotalWorkTime: 2 * time.Hour,
 		},
 	}
-	
+
 	// Just verify the function doesn't panic
 	printStatusText(state)
-	
+
 	// Test with nil session
 	stateNoSession := &domain.CurrentState{
 		ActiveSession: nil,

@@ -4,8 +4,8 @@ package notification
 import (
 	"fmt"
 
-	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/gen2brain/beeep"
+	"github.com/xvierd/flow-cli/internal/config"
 )
 
 // Notifier handles desktop notifications.
@@ -52,4 +52,11 @@ func (n *Notifier) NotifyBreakComplete(breakType string) error {
 // IsEnabled returns true if notifications are enabled.
 func (n *Notifier) IsEnabled() bool {
 	return n.cfg != nil && n.cfg.Enabled
+}
+
+// SetEnabled toggles notifications on or off at runtime.
+func (n *Notifier) SetEnabled(enabled bool) {
+	if n.cfg != nil {
+		n.cfg.Enabled = enabled
+	}
 }

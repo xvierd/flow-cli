@@ -12,7 +12,7 @@ func TestListCmd(t *testing.T) {
 			t.Errorf("listCmd.Use = %q, want %q", listCmd.Use, "list")
 		}
 	})
-	
+
 	t.Run("list command has status flag", func(t *testing.T) {
 		flag := listCmd.Flags().Lookup("status")
 		if flag == nil {
@@ -22,7 +22,7 @@ func TestListCmd(t *testing.T) {
 			t.Errorf("status flag shorthand = %q, want %q", flag.Shorthand, "s")
 		}
 	})
-	
+
 	t.Run("list command has all flag", func(t *testing.T) {
 		flag := listCmd.Flags().Lookup("all")
 		if flag == nil {
@@ -46,7 +46,7 @@ func TestGetStatusIcon(t *testing.T) {
 		{domain.StatusCancelled, "❌"},
 		{domain.TaskStatus("unknown"), "❓"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(string(tt.status), func(t *testing.T) {
 			got := getStatusIcon(tt.status)

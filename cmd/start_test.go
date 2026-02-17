@@ -10,12 +10,12 @@ func TestStartCmd(t *testing.T) {
 		if startCmd.Use != "start [task-id]" {
 			t.Errorf("startCmd.Use = %q, want %q", startCmd.Use, "start [task-id]")
 		}
-		
+
 		if startCmd.Short != "Start a pomodoro session" {
 			t.Errorf("startCmd.Short = %q, want %q", startCmd.Short, "Start a pomodoro session")
 		}
 	})
-	
+
 	t.Run("start command has task flag", func(t *testing.T) {
 		flag := startCmd.Flags().Lookup("task")
 		if flag == nil {
@@ -40,7 +40,7 @@ func TestFormatCmdDuration(t *testing.T) {
 		{"0 seconds", 0, 0, "00:00"},
 		{"59 seconds", 0, 59, "00:59"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := time.Duration(tt.minutes)*time.Minute + time.Duration(tt.seconds)*time.Second

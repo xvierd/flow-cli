@@ -41,7 +41,7 @@ func TestDetector_Detect(t *testing.T) {
 
 	// Create a test file
 	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test content"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestDetector_Detect_WithModifiedFiles(t *testing.T) {
 
 	// Create and commit a test file
 	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test content"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -137,13 +137,13 @@ func TestDetector_Detect_WithModifiedFiles(t *testing.T) {
 	}
 
 	// Modify the file
-	if err := os.WriteFile(testFile, []byte("modified content"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("modified content"), 0600); err != nil {
 		t.Fatalf("Failed to modify test file: %v", err)
 	}
 
 	// Create a new untracked file
 	untrackedFile := filepath.Join(tmpDir, "untracked.txt")
-	if err := os.WriteFile(untrackedFile, []byte("untracked"), 0644); err != nil {
+	if err := os.WriteFile(untrackedFile, []byte("untracked"), 0600); err != nil {
 		t.Fatalf("Failed to create untracked file: %v", err)
 	}
 

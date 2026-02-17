@@ -38,6 +38,14 @@ var configCmd = &cobra.Command{
 		fmt.Printf("    Long break:           %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.LongBreak)))
 		fmt.Printf("    Sessions before long:  %d\n", appConfig.Pomodoro.SessionsBeforeLong)
 		fmt.Printf("    Auto-break:            %v\n", appConfig.Pomodoro.AutoBreak)
+		notifStatus := "off"
+		if appConfig.Notifications.Enabled {
+			notifStatus = "on"
+			if appConfig.Notifications.Sound {
+				notifStatus = "on (with sound)"
+			}
+		}
+		fmt.Printf("    Notifications:         %s\n", notifStatus)
 		fmt.Println()
 		fmt.Println("  What would you like to change?")
 		fmt.Println("    [1] Edit preset 1")
@@ -45,6 +53,7 @@ var configCmd = &cobra.Command{
 		fmt.Println("    [3] Edit preset 3")
 		fmt.Println("    [b] Edit break durations")
 		fmt.Println("    [m] Change methodology")
+		fmt.Println("    [n] Toggle notifications")
 		fmt.Println("    [q] Quit without saving")
 		fmt.Print("  Choose: ")
 
@@ -62,6 +71,8 @@ var configCmd = &cobra.Command{
 			return editBreaks(reader, appConfig)
 		case "m":
 			return editMethodology(reader, appConfig)
+		case "n":
+			return editNotifications(reader, appConfig)
 		case "q", "":
 			fmt.Println("  No changes made.")
 			return nil
@@ -213,5 +224,53 @@ func editMethodology(reader *bufio.Reader, cfg *config.Config) error {
 	}
 
 	fmt.Printf("\n  Saved: methodology set to %s\n", domain.Methodology(m).Label())
+	return nil
+}
+
+func editNotifications(reader *bufio.Reader, cfg *config.Config) error {
+	current := "off"
+	if cfg.Notifications.Enabled {
+		current = "on"
+		if cfg.Notifications.Sound {
+			current = "on (with sound)"
+		}
+	}
+
+	fmt.Printf("\n  Current notifications: %s\n\n", current)
+	fmt.Println("    [1] Off")
+	fmt.Println("    [2] On (visual only)")
+	fmt.Println("    [3] On (with sound)")
+	fmt.Print("  Choose: ")
+
+	choice, _ := reader.ReadString('\n')
+	choice = strings.TrimSpace(choice)
+
+	switch choice {
+	case "1":
+		cfg.Notifications.Enabled = false
+		cfg.Notifications.Sound = false
+	case "2":
+		cfg.Notifications.Enabled = true
+		cfg.Notifications.Sound = false
+	case "3":
+		cfg.Notifications.Enabled = true
+		cfg.Notifications.Sound = true
+	default:
+		fmt.Println("  No changes made.")
+		return nil
+	}
+
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	status := "off"
+	if cfg.Notifications.Enabled {
+		status = "on"
+		if cfg.Notifications.Sound {
+			status = "on (with sound)"
+		}
+	}
+	fmt.Printf("\n  Saved: notifications %s\n", status)
 	return nil
 }

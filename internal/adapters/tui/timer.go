@@ -14,32 +14,42 @@ import (
 
 // Timer implements the ports.Timer interface using Bubbletea.
 type Timer struct {
-	program                *tea.Program
-	fetchState             func() *domain.CurrentState
-	commandCallback        func(ports.TimerCommand) error
-	onSessionComplete      func(domain.SessionType)
-	distractionCallback    func(string) error
-	accomplishmentCallback func(string) error
-	focusScoreCallback     func(int) error
-	energizeCallback       func(string) error
-	completionInfo         *domain.CompletionInfo
-	theme                  *config.ThemeConfig
-	inline                 bool
-	presets                []config.SessionPreset
-	breakInfo              string
-	onStartSession         func(presetIndex int, taskName string) error
-	mode                   methodology.Mode
-	modeLocked             bool
-	onModeSelected         func(domain.Methodology)
-	fetchRecentTasks       func(limit int) []*domain.Task
+	program                 *tea.Program
+	fetchState              func() *domain.CurrentState
+	commandCallback         func(ports.TimerCommand) error
+	onSessionComplete       func(domain.SessionType)
+	distractionCallback     func(string) error
+	accomplishmentCallback  func(string) error
+	focusScoreCallback      func(int) error
+	energizeCallback        func(string) error
+	completionInfo          *domain.CompletionInfo
+	theme                   *config.ThemeConfig
+	inline                  bool
+	presets                 []config.SessionPreset
+	breakInfo               string
+	onStartSession          func(presetIndex int, taskName string) error
+	mode                    methodology.Mode
+	modeLocked              bool
+	onModeSelected          func(domain.Methodology)
+	fetchRecentTasks        func(limit int) []*domain.Task
 	fetchYesterdayHighlight func() *domain.Task
-	autoBreak              bool
+	autoBreak               bool
+	notificationsEnabled    bool
+	notificationToggle      func(bool)
 	// PostAction holds the action selected from the main menu (stats/reflect).
-	PostAction             MainMenuAction
+	PostAction MainMenuAction
+	// WantsNewSession is set when user wants to chain another session (fullscreen mode).
+	WantsNewSession bool
 }
 
 // NewTimer creates a new TUI timer adapter.
 func NewTimer(theme *config.ThemeConfig) ports.Timer {
+	return &Timer{theme: theme}
+}
+
+// NewFullscreenTimer creates a TUI timer that renders in alt screen (fullscreen).
+// Returns a concrete *Timer so callers can access WantsNewSession after Run().
+func NewFullscreenTimer(theme *config.ThemeConfig) *Timer {
 	return &Timer{theme: theme}
 }
 
@@ -79,6 +89,8 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	model.energizeCallback = t.energizeCallback
 	model.mode = t.mode
 	model.autoBreak = t.autoBreak
+	model.notificationsEnabled = t.notificationsEnabled
+	model.notificationToggle = t.notificationToggle
 
 	t.program = tea.NewProgram(
 		model,
@@ -94,9 +106,13 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 		}
 	}()
 
-	_, err := t.program.Run()
+	result, err := t.program.Run()
 	if err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+
+	if final, ok := result.(Model); ok {
+		t.WantsNewSession = final.WantsNewSession
 	}
 
 	return nil
@@ -120,6 +136,8 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.fetchRecentTasks = t.fetchRecentTasks
 	model.fetchYesterdayHighlight = t.fetchYesterdayHighlight
 	model.autoBreak = t.autoBreak
+	model.notificationsEnabled = t.notificationsEnabled
+	model.notificationToggle = t.notificationToggle
 
 	// If no active session, start at main menu or mode picker
 	if initialState.ActiveSession == nil {
@@ -202,6 +220,12 @@ func (t *Timer) SetAutoBreak(enabled bool) {
 // SetEnergizeCallback sets a callback for recording energize activities (Make Time).
 func (t *Timer) SetEnergizeCallback(callback func(activity string) error) {
 	t.energizeCallback = callback
+}
+
+// SetNotifications configures the initial notification state and toggle callback.
+func (t *Timer) SetNotifications(enabled bool, toggle func(bool)) {
+	t.notificationsEnabled = enabled
+	t.notificationToggle = toggle
 }
 
 // SetFetchRecentTasks sets a callback to fetch recent tasks for the task select phase.
