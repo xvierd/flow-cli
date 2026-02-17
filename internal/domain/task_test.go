@@ -189,3 +189,44 @@ func TestTask_IsActive(t *testing.T) {
 		})
 	}
 }
+
+func TestTask_SetAsHighlight(t *testing.T) {
+	task, _ := NewTask("Highlight Task")
+
+	task.SetAsHighlight()
+
+	if task.HighlightDate == nil {
+		t.Fatal("SetAsHighlight() HighlightDate should not be nil")
+	}
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if !task.HighlightDate.Equal(today) {
+		t.Errorf("SetAsHighlight() HighlightDate = %v, want %v", task.HighlightDate, today)
+	}
+}
+
+func TestTask_IsHighlightForDate(t *testing.T) {
+	task, _ := NewTask("Highlight Task")
+
+	t.Run("no highlight date", func(t *testing.T) {
+		if task.IsHighlightForDate(time.Now()) {
+			t.Error("IsHighlightForDate() should return false when no highlight date set")
+		}
+	})
+
+	t.Run("matching date", func(t *testing.T) {
+		task.SetAsHighlight()
+		if !task.IsHighlightForDate(time.Now()) {
+			t.Error("IsHighlightForDate() should return true for today")
+		}
+	})
+
+	t.Run("different date", func(t *testing.T) {
+		task.SetAsHighlight()
+		yesterday := time.Now().AddDate(0, 0, -1)
+		if task.IsHighlightForDate(yesterday) {
+			t.Error("IsHighlightForDate() should return false for yesterday")
+		}
+	})
+}

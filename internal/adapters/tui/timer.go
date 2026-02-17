@@ -34,6 +34,8 @@ type Timer struct {
 	fetchRecentTasks       func(limit int) []*domain.Task
 	fetchYesterdayHighlight func() *domain.Task
 	autoBreak              bool
+	// PostAction holds the action selected from the main menu (stats/reflect).
+	PostAction             MainMenuAction
 }
 
 // NewTimer creates a new TUI timer adapter.
@@ -119,15 +121,20 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.fetchYesterdayHighlight = t.fetchYesterdayHighlight
 	model.autoBreak = t.autoBreak
 
-	// If mode is not locked and no active session, start at mode picker
-	if !t.modeLocked && initialState.ActiveSession == nil {
-		model.phase = phasePickMode
-		// Pre-select current mode
-		for i, m := range domain.ValidMethodologies {
-			if t.mode != nil && m == t.mode.Name() {
-				model.modeCursor = i
-				break
+	// If no active session, start at main menu or mode picker
+	if initialState.ActiveSession == nil {
+		if !t.modeLocked {
+			model.phase = phaseMainMenu
+			// Pre-select current mode for when they reach mode picker
+			for i, m := range domain.ValidMethodologies {
+				if t.mode != nil && m == t.mode.Name() {
+					model.modeCursor = i
+					break
+				}
 			}
+		} else {
+			// --mode was passed, skip main menu and mode picker
+			model.phase = phasePickDuration
 		}
 	}
 
@@ -140,9 +147,12 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 		}
 	}()
 
-	_, err := t.program.Run()
+	result, err := t.program.Run()
 	if err != nil {
 		return fmt.Errorf("failed to run inline TUI: %w", err)
+	}
+	if final, ok := result.(InlineModel); ok {
+		t.PostAction = final.SelectedAction
 	}
 	return nil
 }

@@ -203,7 +203,7 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 	// Inline mode: entire flow runs inside a single bubbletea program
 	if inlineMode {
-		return launchTUI(ctx, state, workingDir)
+		return launchInlineTUI(cmd, ctx, state, workingDir)
 	}
 
 	// Fullscreen mode: wizard prompts then TUI
@@ -237,6 +237,27 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 	// --- Wizard prompts ---
 	fmt.Println()
+
+	// Main menu (skip if --mode was explicitly passed — user wants to start a session)
+	if modeFlag == "" {
+		menuItems := []tui.PickerItem{
+			{Label: "Start session", Desc: "Begin a new focus session"},
+			{Label: "View stats", Desc: "Show your productivity dashboard"},
+			{Label: "Reflect", Desc: "Weekly reflection on your work"},
+		}
+		menuResult := tui.RunPicker("Flow:", menuItems, "", &appConfig.Theme)
+		if menuResult.Aborted {
+			return nil
+		}
+		switch menuResult.Index {
+		case 1: // View stats
+			return statsCmd.RunE(cmd, args)
+		case 2: // Reflect
+			return reflectCmd.RunE(cmd, args)
+		}
+		// Index 0: Start session — continue to mode picker
+		fmt.Println()
+	}
 
 	// Mode picker (skip if --mode was explicitly passed)
 	if modeFlag == "" {
@@ -391,12 +412,34 @@ func runWizard(cmd *cobra.Command, args []string) error {
 	return launchTUI(ctx, state, workingDir)
 }
 
+// lastInlineTimer holds a reference to the inline timer for post-exit action handling.
+var lastInlineTimer *tui.Timer
+
+// launchInlineTUI launches the inline TUI and handles post-exit actions (stats/reflect).
+func launchInlineTUI(cmd *cobra.Command, ctx context.Context, state *domain.CurrentState, workingDir string) error {
+	if err := launchTUI(ctx, state, workingDir); err != nil {
+		return err
+	}
+
+	// Handle post-TUI actions from the main menu
+	if lastInlineTimer != nil {
+		switch lastInlineTimer.PostAction {
+		case tui.MainMenuViewStats:
+			return statsCmd.RunE(cmd, nil)
+		case tui.MainMenuReflect:
+			return reflectCmd.RunE(cmd, nil)
+		}
+	}
+	return nil
+}
+
 // launchTUI starts the Bubbletea timer interface.
 func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir string) error {
 	ctx = setupSignalHandler()
 	var timer ports.Timer
 	if inlineMode {
 		inlineTimer := tui.NewInlineTimer(&appConfig.Theme)
+		lastInlineTimer = inlineTimer
 
 		// Configure the setup phase with mode-specific presets
 		presets := activeMode.Presets()

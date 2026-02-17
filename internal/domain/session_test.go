@@ -241,3 +241,102 @@ func TestPomodoroSession_SetGitContext(t *testing.T) {
 		t.Errorf("GitModified length = %v, want %v", len(session.GitModified), len(modified))
 	}
 }
+
+func TestParseTagsFromInput(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantText  string
+		wantTags  []string
+	}{
+		{
+			name:     "no tags",
+			input:    "Build the API",
+			wantText: "Build the API",
+			wantTags: nil,
+		},
+		{
+			name:     "with tags",
+			input:    "Build API #coding #backend",
+			wantText: "Build API",
+			wantTags: []string{"coding", "backend"},
+		},
+		{
+			name:     "only tags",
+			input:    "#coding #backend",
+			wantText: "",
+			wantTags: []string{"coding", "backend"},
+		},
+		{
+			name:     "hash alone is not a tag",
+			input:    "Build # something",
+			wantText: "Build # something",
+			wantTags: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, tags := ParseTagsFromInput(tt.input)
+			if text != tt.wantText {
+				t.Errorf("text = %q, want %q", text, tt.wantText)
+			}
+			if len(tags) != len(tt.wantTags) {
+				t.Errorf("tags = %v, want %v", tags, tt.wantTags)
+				return
+			}
+			for i, tag := range tags {
+				if tag != tt.wantTags[i] {
+					t.Errorf("tag[%d] = %q, want %q", i, tag, tt.wantTags[i])
+				}
+			}
+		})
+	}
+}
+
+func TestValidateMethodology(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    Methodology
+		wantErr bool
+	}{
+		{"pomodoro", MethodologyPomodoro, false},
+		{"deepwork", MethodologyDeepWork, false},
+		{"maketime", MethodologyMakeTime, false},
+		{"invalid", "", true},
+		{"", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := ValidateMethodology(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateMethodology(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ValidateMethodology(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMethodology_Label(t *testing.T) {
+	tests := []struct {
+		m    Methodology
+		want string
+	}{
+		{MethodologyPomodoro, "Pomodoro"},
+		{MethodologyDeepWork, "Deep Work"},
+		{MethodologyMakeTime, "Make Time"},
+		{Methodology("unknown"), "Unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.m), func(t *testing.T) {
+			if got := tt.m.Label(); got != tt.want {
+				t.Errorf("Label() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

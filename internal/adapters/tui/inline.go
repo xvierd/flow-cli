@@ -21,12 +21,37 @@ import (
 type inlinePhase int
 
 const (
-	phasePickMode inlinePhase = iota
+	phaseMainMenu inlinePhase = iota
+	phasePickMode
 	phasePickDuration
 	phaseTaskSelect
 	phaseTaskName
 	phaseTimer
 )
+
+// MainMenuAction represents what the user selected from the main menu.
+type MainMenuAction int
+
+const (
+	// MainMenuStartSession means continue to mode picker / session start.
+	MainMenuStartSession MainMenuAction = iota
+	// MainMenuViewStats means quit TUI and show stats dashboard.
+	MainMenuViewStats
+	// MainMenuReflect means quit TUI and show weekly reflection.
+	MainMenuReflect
+)
+
+type mainMenuOption struct {
+	action MainMenuAction
+	label  string
+	desc   string
+}
+
+var mainMenuOptions = []mainMenuOption{
+	{MainMenuStartSession, "Start session", "Begin a new focus session"},
+	{MainMenuViewStats, "View stats", "Show your productivity dashboard"},
+	{MainMenuReflect, "Reflect", "Weekly reflection on your work"},
+}
 
 // modeOption describes a methodology choice in the mode picker.
 type modeOption struct {
@@ -45,6 +70,10 @@ var modeOptions = []modeOption{
 type InlineModel struct {
 	// Phase
 	phase inlinePhase
+
+	// Main menu
+	menuCursor     int
+	SelectedAction MainMenuAction
 
 	// Mode picker
 	modeCursor     int
@@ -187,6 +216,8 @@ func (m InlineModel) Init() tea.Cmd {
 
 func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.phase {
+	case phaseMainMenu:
+		return m.updateMainMenu(msg)
 	case phasePickMode:
 		return m.updatePickMode(msg)
 	case phasePickDuration:
@@ -208,6 +239,82 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateTimer(msg)
 	}
 	return m, nil
+}
+
+func (m InlineModel) updateMainMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k", "left", "h":
+			if m.menuCursor > 0 {
+				m.menuCursor--
+			}
+		case "down", "j", "right", "l":
+			if m.menuCursor < len(mainMenuOptions)-1 {
+				m.menuCursor++
+			}
+		case "1":
+			m.menuCursor = 0
+			return m.selectMainMenu()
+		case "2":
+			if len(mainMenuOptions) > 1 {
+				m.menuCursor = 1
+				return m.selectMainMenu()
+			}
+		case "3":
+			if len(mainMenuOptions) > 2 {
+				m.menuCursor = 2
+				return m.selectMainMenu()
+			}
+		case "enter":
+			return m.selectMainMenu()
+		case "c", "ctrl+c", "esc":
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m InlineModel) selectMainMenu() (tea.Model, tea.Cmd) {
+	selected := mainMenuOptions[m.menuCursor]
+	m.SelectedAction = selected.action
+	switch selected.action {
+	case MainMenuViewStats, MainMenuReflect:
+		return m, tea.Quit
+	default:
+		// Start session → advance to mode picker
+		if m.modeLocked {
+			m.phase = phasePickDuration
+		} else {
+			m.phase = phasePickMode
+		}
+		return m, nil
+	}
+}
+
+func (m InlineModel) viewMainMenu() string {
+	var b strings.Builder
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
+	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+
+	b.WriteString(titleStyle.Render("  Flow:") + "\n")
+
+	for i, opt := range mainMenuOptions {
+		if i == m.menuCursor {
+			b.WriteString(activeStyle.Render("  ▸ "+opt.label) + "\n")
+		} else {
+			b.WriteString(dimStyle.Render("    "+opt.label) + "\n")
+		}
+	}
+
+	desc := mainMenuOptions[m.menuCursor].desc
+	b.WriteString(dimStyle.Render("  "+desc) + "\n")
+
+	b.WriteString(dimStyle.Render("  ↑/↓ select · enter confirm · c close") + "\n")
+
+	return b.String()
 }
 
 func (m InlineModel) updatePickMode(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -237,7 +344,14 @@ func (m InlineModel) updatePickMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			return m.selectMode()
-		case "c", "ctrl+c", "esc":
+		case "esc":
+			// Go back to main menu if we came from there
+			if !m.modeLocked {
+				m.phase = phaseMainMenu
+				return m, nil
+			}
+			return m, tea.Quit
+		case "c", "ctrl+c":
 			return m, tea.Quit
 		}
 	}
@@ -748,6 +862,8 @@ func (m *InlineModel) resetCompletionState() {
 
 func (m InlineModel) View() string {
 	switch m.phase {
+	case phaseMainMenu:
+		return m.viewMainMenu()
 	case phasePickMode:
 		return m.viewPickMode()
 	case phasePickDuration:
@@ -785,7 +901,7 @@ func (m InlineModel) viewPickMode() string {
 	desc := modeOptions[m.modeCursor].desc
 	b.WriteString(dimStyle.Render("  "+desc) + "\n")
 
-	b.WriteString(dimStyle.Render("  ←/→ select · enter confirm · c close") + "\n")
+	b.WriteString(dimStyle.Render("  ←/→ select · enter confirm · esc back · c close") + "\n")
 
 	return b.String()
 }

@@ -1,12 +1,21 @@
 # Flow
 
-A Pomodoro CLI that gets out of your way. Built in Go with an interactive TUI, git awareness, and AI assistant integration.
+A productivity CLI that gets out of your way. Built in Go with an interactive TUI, git awareness, and AI assistant integration. Supports three focus methodologies: Pomodoro, Deep Work, and Make Time.
 
 ```
 $ flow
 
-  What are you working on? (Enter to skip): Write API docs
-  Duration? [25m]:
+  Flow:
+  > Start session
+    View stats
+    Reflect
+
+  Mode:
+  > Pomodoro    Classic 25/5 timer
+    Deep Work   Longer sessions, distraction tracking
+    Make Time   Daily Highlight, focus scoring
+
+  What are you working on? (Enter to skip): Write API docs #coding
 
   Starting 25m session...
 ```
@@ -56,16 +65,40 @@ curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/uninstall.sh | 
 brew uninstall flow
 ```
 
+## Methodology Modes
+
+Flow supports three productivity methodologies. Pick one from the main menu or set a default with `--mode`.
+
+| Mode | Description | Session Presets |
+|------|-------------|-----------------|
+| **Pomodoro** | Classic 25/5 timer with long break every 4 sessions | Focus (25m), Short (15m), Deep (50m) |
+| **Deep Work** | Longer sessions with distraction logging and shutdown ritual | Deep (90m), Focus (50m), Shallow (25m) |
+| **Make Time** | Daily Highlight, focus scoring, and energize reminders | Highlight (60m), Sprint (25m), Quick (15m) |
+
+Set a default mode in config:
+
+```toml
+methodology = "deepwork"   # pomodoro, deepwork, or maketime
+```
+
+Or pass it per-session:
+
+```bash
+flow --mode deepwork
+```
+
 ## Quick Start
 
 ```bash
-# Just type flow - the wizard handles the rest
+# Just type flow - the interactive wizard handles the rest
 flow
 
 # Or use commands directly
 flow add "Fix auth bug"        # create a task
 flow start abc123              # start a pomodoro for that task
 flow status                    # check current state
+flow stats                     # view productivity dashboard
+flow reflect                   # weekly reflection
 flow break                     # take a break
 flow complete abc123           # mark task done
 ```
@@ -74,11 +107,13 @@ flow complete abc123           # mark task done
 
 | Command | What it does |
 |---------|-------------|
-| `flow` | Interactive wizard - ask task name, duration, start |
+| `flow` | Interactive wizard - main menu, mode picker, task, duration, start |
 | `flow add "title"` | Create a new task |
 | `flow list` | List tasks (`--all`, `--status pending`) |
 | `flow start [task-id]` | Start a pomodoro (`--task` flag also works) |
 | `flow status` | Show current session and daily stats |
+| `flow stats` | Productivity dashboard: sessions by mode, focus scores, hourly heatmap |
+| `flow reflect` | Weekly reflection: day-by-day breakdown, highlights, energize vs focus |
 | `flow break` | Start a short or long break |
 | `flow pause` | Pause the active session |
 | `flow resume` | Resume a paused session |
@@ -86,16 +121,37 @@ flow complete abc123           # mark task done
 | `flow complete <id>` | Mark a task as completed |
 | `flow mcp` | Start the MCP server |
 
-## TUI Shortcuts
+### Global Flags
 
-| Key | Action |
-|-----|--------|
-| `s` | Start session |
-| `p` | Pause / Resume |
-| `b` | Start break |
-| `c` | Cancel session |
-| `x` | Stop session |
-| `q` | Quit TUI (session keeps running) |
+| Flag | Description |
+|------|-------------|
+| `--mode <mode>` | Set methodology for this session: `pomodoro`, `deepwork`, `maketime` |
+| `--inline`, `-i` | Compact inline timer (no fullscreen TUI) |
+| `--json` | Output results in JSON format |
+| `--db <path>` | Custom database path |
+
+## Session Tagging
+
+Add `#tags` inline when entering a task name. Tags are stored with the session for filtering and stats.
+
+```
+What are you working on? Fix login bug #backend #urgent
+```
+
+## TUI Key Bindings
+
+| Key | Action | Modes |
+|-----|--------|-------|
+| `s` | Start session | All |
+| `p` | Pause / Resume | All |
+| `b` | Start break | All |
+| `c` | Cancel session | All |
+| `x` | Stop session | All |
+| `q` | Quit TUI (session keeps running) | All |
+| `d` | Log a distraction | Deep Work |
+| `a` | Record accomplishment (shutdown ritual) | Deep Work |
+| `1`-`5` | Rate focus score | Make Time |
+| `e` | Log energize activity | Make Time |
 
 ## Claude Code Integration
 
@@ -148,11 +204,14 @@ Available tools: `get_current_state`, `list_tasks`, `get_task_history`, `start_p
 Flow stores config at `~/.flow/config.toml` and data at `~/.flow/flow.db`.
 
 ```toml
+methodology = "pomodoro"  # default mode: pomodoro, deepwork, maketime
+
 [pomodoro]
 work_duration = "25m"
 short_break = "5m"
 long_break = "15m"
 sessions_before_long = 4
+auto_break = false        # automatically start break after work session ends
 
 [notifications]
 enabled = true
