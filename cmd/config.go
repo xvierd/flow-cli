@@ -20,7 +20,7 @@ var configCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		reader := bufio.NewReader(os.Stdin)
 
-		methodology := appConfig.Methodology
+		methodology := app.config.Methodology
 		if methodology == "" {
 			methodology = "pomodoro"
 		}
@@ -30,11 +30,11 @@ var configCmd = &cobra.Command{
 		var presets []config.SessionPreset
 		switch meth {
 		case domain.MethodologyDeepWork:
-			presets = appConfig.DeepWork.GetPresets()
+			presets = app.config.DeepWork.GetPresets()
 		case domain.MethodologyMakeTime:
-			presets = appConfig.MakeTime.GetPresets()
+			presets = app.config.MakeTime.GetPresets()
 		default:
-			presets = appConfig.Pomodoro.GetPresets()
+			presets = app.config.Pomodoro.GetPresets()
 		}
 
 		fmt.Println()
@@ -48,15 +48,19 @@ var configCmd = &cobra.Command{
 		}
 		fmt.Println()
 		if meth == domain.MethodologyPomodoro {
-			fmt.Printf("    Short break:          %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.ShortBreak)))
-			fmt.Printf("    Long break:           %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.LongBreak)))
-			fmt.Printf("    Sessions before long:  %d\n", appConfig.Pomodoro.SessionsBeforeLong)
-			fmt.Printf("    Auto-break:            %v\n", appConfig.Pomodoro.AutoBreak)
+			fmt.Printf("    Short break:          %s\n", formatMinutes(time.Duration(app.config.Pomodoro.ShortBreak)))
+			fmt.Printf("    Long break:           %s\n", formatMinutes(time.Duration(app.config.Pomodoro.LongBreak)))
+			fmt.Printf("    Sessions before long:  %d\n", app.config.Pomodoro.SessionsBeforeLong)
+			fmt.Printf("    Auto-break:            %v\n", app.config.Pomodoro.AutoBreak)
+		} else if meth == domain.MethodologyDeepWork {
+			fmt.Printf("    Break duration:        %s\n", formatMinutes(time.Duration(app.config.DeepWork.BreakDuration)))
+		} else if meth == domain.MethodologyMakeTime {
+			fmt.Printf("    Break duration:        %s\n", formatMinutes(time.Duration(app.config.MakeTime.BreakDuration)))
 		}
 		notifStatus := "off"
-		if appConfig.Notifications.Enabled {
+		if app.config.Notifications.Enabled {
 			notifStatus = "on"
-			if appConfig.Notifications.Sound {
+			if app.config.Notifications.Sound {
 				notifStatus = "on (with sound)"
 			}
 		}
@@ -66,9 +70,7 @@ var configCmd = &cobra.Command{
 		fmt.Println("    [1] Edit preset 1")
 		fmt.Println("    [2] Edit preset 2")
 		fmt.Println("    [3] Edit preset 3")
-		if meth == domain.MethodologyPomodoro {
-			fmt.Println("    [b] Edit break durations")
-		}
+		fmt.Println("    [b] Edit break durations")
 		fmt.Println("    [m] Change methodology")
 		fmt.Println("    [n] Toggle notifications")
 		fmt.Println("    [q] Quit without saving")
@@ -79,20 +81,17 @@ var configCmd = &cobra.Command{
 
 		switch choice {
 		case "1":
-			return editPreset(reader, appConfig, 1)
+			return editPreset(reader, app.config, 1)
 		case "2":
-			return editPreset(reader, appConfig, 2)
+			return editPreset(reader, app.config, 2)
 		case "3":
-			return editPreset(reader, appConfig, 3)
+			return editPreset(reader, app.config, 3)
 		case "b":
-			if meth != domain.MethodologyPomodoro {
-				return fmt.Errorf("break duration editing is only available for Pomodoro methodology")
-			}
-			return editBreaks(reader, appConfig)
+			return editBreaks(reader, app.config)
 		case "m":
-			return editMethodology(reader, appConfig)
+			return editMethodology(reader, app.config)
 		case "n":
-			return editNotifications(reader, appConfig)
+			return editNotifications(reader, app.config)
 		case "q", "":
 			fmt.Println("  No changes made.")
 			return nil
@@ -196,6 +195,19 @@ func editPreset(reader *bufio.Reader, cfg *config.Config, num int) error {
 }
 
 func editBreaks(reader *bufio.Reader, cfg *config.Config) error {
+	methodology := cfg.Methodology
+	if methodology == "" {
+		methodology = "pomodoro"
+	}
+	meth := domain.Methodology(methodology)
+
+	if meth == domain.MethodologyPomodoro {
+		return editPomodoroBreaks(reader, cfg)
+	}
+	return editMethodologyBreak(reader, cfg, meth)
+}
+
+func editPomodoroBreaks(reader *bufio.Reader, cfg *config.Config) error {
 	shortBreak := time.Duration(cfg.Pomodoro.ShortBreak)
 	longBreak := time.Duration(cfg.Pomodoro.LongBreak)
 	sessionsBeforeLong := cfg.Pomodoro.SessionsBeforeLong
@@ -249,6 +261,44 @@ func editBreaks(reader *bufio.Reader, cfg *config.Config) error {
 	fmt.Println()
 	fmt.Printf("  Saved: short break %s, long break %s, long every %d sessions\n",
 		formatMinutes(shortBreak), formatMinutes(longBreak), sessionsBeforeLong)
+	return nil
+}
+
+func editMethodologyBreak(reader *bufio.Reader, cfg *config.Config, meth domain.Methodology) error {
+	var current config.Duration
+	switch meth {
+	case domain.MethodologyDeepWork:
+		current = cfg.DeepWork.BreakDuration
+	case domain.MethodologyMakeTime:
+		current = cfg.MakeTime.BreakDuration
+	}
+
+	fmt.Println("\n  Editing break duration")
+	fmt.Printf("  Break duration [%s]: ", formatMinutes(time.Duration(current)))
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	dur := time.Duration(current)
+	if input != "" {
+		parsed, err := time.ParseDuration(input)
+		if err != nil {
+			return fmt.Errorf("invalid duration %q: %w", input, err)
+		}
+		dur = parsed
+	}
+
+	switch meth {
+	case domain.MethodologyDeepWork:
+		cfg.DeepWork.BreakDuration = config.Duration(dur)
+	case domain.MethodologyMakeTime:
+		cfg.MakeTime.BreakDuration = config.Duration(dur)
+	}
+
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("\n  Saved: break duration %s\n", formatMinutes(dur))
 	return nil
 }
 

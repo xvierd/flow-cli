@@ -32,7 +32,7 @@ var listCmd = &cobra.Command{
 			req.Status = &status
 		}
 
-		tasks, err := taskService.ListTasks(ctx, req)
+		tasks, err := app.tasks.ListTasks(ctx, req)
 		if err != nil {
 			return fmt.Errorf("failed to list tasks: %w", err)
 		}

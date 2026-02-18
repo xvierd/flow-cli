@@ -19,7 +19,7 @@ var breakCmd = &cobra.Command{
 		workingDir, _ := os.Getwd()
 
 		// Start a break session
-		session, err := pomodoroSvc.StartBreak(ctx, workingDir)
+		session, err := app.pomodoro.StartBreak(ctx, workingDir)
 		if err != nil {
 			return fmt.Errorf("failed to start break: %w", err)
 		}
@@ -29,7 +29,7 @@ var breakCmd = &cobra.Command{
 			getBreakTypeLabel(session.Type))
 
 		// Get the current state for the TUI
-		state, err := stateService.GetCurrentState(ctx)
+		state, err := app.state.GetCurrentState(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get current state: %w", err)
 		}

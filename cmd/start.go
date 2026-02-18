@@ -37,7 +37,7 @@ an active task, that task will be used.`,
 		}
 
 		// Check for active session and prompt user
-		state, err := stateService.GetCurrentState(ctx)
+		state, err := app.state.GetCurrentState(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get current state: %w", err)
 		}
@@ -65,7 +65,7 @@ an active task, that task will be used.`,
 				return nil
 			}
 
-			_, err := pomodoroSvc.StopSession(ctx)
+			_, err := app.pomodoro.StopSession(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to stop current session: %w", err)
 			}
@@ -90,7 +90,7 @@ an active task, that task will be used.`,
 			Tags:       tags,
 		}
 
-		session, err := pomodoroSvc.StartPomodoro(ctx, req)
+		session, err := app.pomodoro.StartPomodoro(ctx, req)
 		if err != nil {
 			return fmt.Errorf("failed to start pomodoro: %w", err)
 		}
@@ -101,7 +101,7 @@ an active task, that task will be used.`,
 		}
 
 		// Refresh state and launch TUI
-		state, err = stateService.GetCurrentState(ctx)
+		state, err = app.state.GetCurrentState(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get current state: %w", err)
 		}

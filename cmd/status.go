@@ -19,7 +19,7 @@ var statusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
-		state, err := stateService.GetCurrentState(ctx)
+		state, err := app.state.GetCurrentState(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get current state: %w", err)
 		}
@@ -29,11 +29,11 @@ var statusCmd = &cobra.Command{
 		}
 
 		// Use the TUI to display the status
-		tui.ShowStatus(state, &appConfig.Theme)
+		tui.ShowStatus(state, &app.config.Theme)
 
 		// Show today's Highlight for Make Time mode
-		if appConfig.Methodology == "maketime" || appConfig.Methodology == "make_time" {
-			highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
+		if app.config.Methodology == "maketime" || app.config.Methodology == "make_time" {
+			highlight, _ := app.storage.Tasks().FindTodayHighlight(ctx, time.Now())
 			if highlight != nil {
 				fmt.Printf("\nHighlight: %s\n", highlight.Title)
 			} else if state.ActiveTask != nil {
@@ -91,8 +91,8 @@ func outputStatusJSON(state *domain.CurrentState) error {
 	}
 
 	// Include highlight for Make Time mode
-	if appConfig.Methodology == "maketime" || appConfig.Methodology == "make_time" {
-		highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
+	if app.config.Methodology == "maketime" || app.config.Methodology == "make_time" {
+		highlight, _ := app.storage.Tasks().FindTodayHighlight(ctx, time.Now())
 		if highlight != nil {
 			result["highlight"] = map[string]interface{}{
 				"id":     highlight.ID,

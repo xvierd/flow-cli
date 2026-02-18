@@ -23,7 +23,7 @@ var deleteCmd = &cobra.Command{
 		taskID := args[0]
 
 		// Get task info first for confirmation
-		task, err := taskService.GetTask(ctx, taskID)
+		task, err := app.tasks.GetTask(ctx, taskID)
 		if err != nil {
 			if err == domain.ErrTaskNotFound {
 				return fmt.Errorf("task not found: %s", taskID)
@@ -44,7 +44,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		// Delete the task
-		err = taskService.DeleteTask(ctx, taskID)
+		err = app.tasks.DeleteTask(ctx, taskID)
 		if err != nil {
 			if err == domain.ErrTaskNotFound {
 				return fmt.Errorf("task not found: %s", taskID)

@@ -22,7 +22,7 @@ The server provides tools for querying Flow state and task history.`,
 		ctx := context.Background()
 
 		// Create and start the MCP server
-		server := mcp.NewServer(stateService)
+		server := mcp.NewServer(app.state)
 		if err := server.Start(ctx); err != nil {
 			return fmt.Errorf("MCP server error: %w", err)
 		}

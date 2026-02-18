@@ -35,7 +35,7 @@ var addCmd = &cobra.Command{
 			Tags:        addTags,
 		}
 
-		task, err := taskService.AddTask(ctx, req)
+		task, err := app.tasks.AddTask(ctx, req)
 		if err != nil {
 			return fmt.Errorf("failed to add task: %w", err)
 		}

@@ -21,7 +21,7 @@ var stopCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
-		session, err := pomodoroSvc.StopSession(ctx)
+		session, err := app.pomodoro.StopSession(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to stop session: %w", err)
 		}
@@ -39,7 +39,7 @@ var stopCmd = &cobra.Command{
 				if scanner.Scan() {
 					accomplishment = strings.TrimSpace(scanner.Text())
 					if accomplishment != "" {
-						_ = pomodoroSvc.SetAccomplishment(ctx, session.ID, accomplishment)
+						_ = app.pomodoro.SetAccomplishment(ctx, session.ID, accomplishment)
 					}
 				}
 
@@ -67,7 +67,7 @@ var stopCmd = &cobra.Command{
 						TomorrowPlan:       tomorrowPlan,
 						ClosingPhrase:      closingPhrase,
 					}
-					_ = pomodoroSvc.SetShutdownRitual(ctx, session.ID, ritual)
+					_ = app.pomodoro.SetShutdownRitual(ctx, session.ID, ritual)
 				}
 				fmt.Println()
 			case domain.MethodologyMakeTime:
@@ -78,7 +78,7 @@ var stopCmd = &cobra.Command{
 					if text != "" {
 						score, err := strconv.Atoi(text)
 						if err == nil && score >= 1 && score <= 5 {
-							_ = pomodoroSvc.SetFocusScore(ctx, session.ID, score)
+							_ = app.pomodoro.SetFocusScore(ctx, session.ID, score)
 						}
 					}
 				}
@@ -89,21 +89,21 @@ var stopCmd = &cobra.Command{
 				if scanner.Scan() {
 					notes := strings.TrimSpace(scanner.Text())
 					if notes != "" {
-						session, _ = pomodoroSvc.AddSessionNotes(ctx, session.ID, notes)
+						session, _ = app.pomodoro.AddSessionNotes(ctx, session.ID, notes)
 					}
 				}
 			}
 		}
 
 		// Send notification if enabled
-		if notifier != nil && notifier.IsEnabled() {
+		if app.notifier != nil && app.notifier.IsEnabled() {
 			switch session.Type {
 			case domain.SessionTypeWork:
-				_ = notifier.NotifyPomodoroComplete(session.Duration.String())
+				_ = app.notifier.NotifyPomodoroComplete(session.Duration.String())
 			case domain.SessionTypeShortBreak:
-				_ = notifier.NotifyBreakComplete("Short")
+				_ = app.notifier.NotifyBreakComplete("Short")
 			case domain.SessionTypeLongBreak:
-				_ = notifier.NotifyBreakComplete("Long")
+				_ = app.notifier.NotifyBreakComplete("Long")
 			}
 		}
 

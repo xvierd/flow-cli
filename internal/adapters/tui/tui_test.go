@@ -217,9 +217,8 @@ func TestInlineModel_CompletionPromptsComplete_DeepWork(t *testing.T) {
 
 	// Not complete: accomplishment not saved
 	m := InlineModel{
-		mode:                mode,
-		completedType:       domain.SessionTypeWork,
-		accomplishmentSaved: false,
+		mode:          mode,
+		completedType: domain.SessionTypeWork,
 	}
 	if m.completionPromptsComplete() {
 		t.Error("Deep Work should not be complete without accomplishment saved")
@@ -241,10 +240,11 @@ func TestInlineModel_CompletionPromptsComplete_DeepWork(t *testing.T) {
 
 	// Complete: accomplishment saved, no distractions
 	m2 := InlineModel{
-		mode:                mode,
-		completedType:       domain.SessionTypeWork,
-		accomplishmentSaved: true,
-		distractions:        nil,
+		mode:          mode,
+		completedType: domain.SessionTypeWork,
+		completionState: completionState{
+			accomplishmentSaved: true,
+		},
 	}
 	if !m2.completionPromptsComplete() {
 		t.Error("Deep Work should be complete with accomplishment saved and no distractions")
@@ -312,7 +312,6 @@ func TestModel_CompletionPromptsComplete_DeepWork(t *testing.T) {
 	m := Model{
 		mode:                 mode,
 		completedSessionType: domain.SessionTypeWork,
-		accomplishmentSaved:  false,
 	}
 	if m.completionPromptsComplete() {
 		t.Error("Model Deep Work should not be complete without accomplishment")
@@ -382,9 +381,11 @@ func TestModel_EmptyAccomplishment_UnblocksNewSession(t *testing.T) {
 		mode:                 mode,
 		completed:            true,
 		completedSessionType: domain.SessionTypeWork,
-		accomplishmentMode:   true,
-		width:                80,
-		height:               24,
+		completionState: completionState{
+			accomplishmentMode: true,
+		},
+		width:  80,
+		height: 24,
 	}
 	// Send Enter key with empty input
 	result, _ := m.updateAccomplishmentInput(tea.KeyMsg{Type: tea.KeyEnter})
@@ -403,11 +404,13 @@ func TestInlineModel_EmptyAccomplishment_UnblocksNewSession(t *testing.T) {
 		state: &domain.CurrentState{
 			TodayStats: domain.DailyStats{},
 		},
-		mode:               mode,
-		completed:          true,
-		completedType:      domain.SessionTypeWork,
-		accomplishmentMode: true,
-		width:              80,
+		mode:          mode,
+		completed:     true,
+		completedType: domain.SessionTypeWork,
+		completionState: completionState{
+			accomplishmentMode: true,
+		},
+		width: 80,
 	}
 	result, _ := m.updateAccomplishmentInput(tea.KeyMsg{Type: tea.KeyEnter})
 	updated := result.(InlineModel)

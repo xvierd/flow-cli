@@ -37,6 +37,7 @@ type Timer struct {
 	autoBreak               bool
 	notificationsEnabled    bool
 	notificationToggle      func(bool)
+	firstRun                bool
 	// PostAction holds the action selected from the main menu (stats/reflect).
 	PostAction MainMenuAction
 	// WantsNewSession is set when user wants to chain another session (fullscreen mode).
@@ -159,6 +160,10 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 		}
 	}
 
+	if t.firstRun {
+		model.phase = phaseWelcome
+	}
+
 	t.program = tea.NewProgram(model)
 
 	go func() {
@@ -223,6 +228,11 @@ func (t *Timer) SetFocusScoreCallback(callback func(score int) error) {
 // SetAutoBreak enables auto-starting breaks when a work session completes.
 func (t *Timer) SetAutoBreak(enabled bool) {
 	t.autoBreak = enabled
+}
+
+// SetFirstRun enables the first-run welcome screen.
+func (t *Timer) SetFirstRun(firstRun bool) {
+	t.firstRun = firstRun
 }
 
 // SetEnergizeCallback sets a callback for recording energize activities (Make Time).

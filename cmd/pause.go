@@ -15,7 +15,7 @@ var pauseCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
-		session, err := pomodoroSvc.PauseSession(ctx)
+		session, err := app.pomodoro.PauseSession(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to pause session: %w", err)
 		}

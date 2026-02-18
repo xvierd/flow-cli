@@ -88,65 +88,29 @@ type stateMsg struct {
 
 // Model represents the TUI state.
 type Model struct {
-	state                  *domain.CurrentState
-	progress               progress.Model
-	width                  int
-	height                 int
-	completed              bool
-	completedSessionType   domain.SessionType
-	completedElapsed       time.Duration // actual time worked, captured at session end
-	notified               bool
-	confirmBreak           bool
-	confirmFinish          bool
-	fetchState             func() *domain.CurrentState
-	commandCallback        func(ports.TimerCommand) error
-	onSessionComplete      func(domain.SessionType)
-	distractionCallback    func(string, string) error
+	state                *domain.CurrentState
+	progress             progress.Model
+	width                int
+	height               int
+	completed            bool
+	completedSessionType domain.SessionType
+	completedElapsed     time.Duration // actual time worked, captured at session end
+	notified             bool
+	confirmBreak         bool
+	confirmFinish        bool
+	fetchState           func() *domain.CurrentState
+	commandCallback      func(ports.TimerCommand) error
+	onSessionComplete    func(domain.SessionType)
+	distractionCallback  func(string, string) error
 	accomplishmentCallback func(string) error
-	focusScoreCallback     func(int) error
-	energizeCallback       func(string) error
-	completionInfo         *domain.CompletionInfo
-	theme                  config.ThemeConfig
-	mode                   methodology.Mode
+	focusScoreCallback   func(int) error
+	energizeCallback     func(string) error
+	completionInfo       *domain.CompletionInfo
+	theme                config.ThemeConfig
+	mode                 methodology.Mode
 
-	// Deep Work: distraction log
-	distractionMode         bool
-	distractionInput        textinput.Model
-	distractions            []string
-	distractionCategoryMode bool
-	distractionPendingText  string
-
-	// Deep Work: accomplishment (shutdown ritual)
-	accomplishmentMode  bool
-	accomplishmentInput textinput.Model
-	accomplishmentSaved bool
-
-	// Deep Work: 3-step shutdown ritual
-	shutdownRitualMode       bool
-	shutdownStep             int // 0=pending tasks, 1=tomorrow plan, 2=closing phrase
-	shutdownInputs           [3]textinput.Model
-	shutdownComplete         bool
-	shutdownRitualCallback   func(domain.ShutdownRitual) error
-
-	// Make Time: focus score
-	focusScore      *int
-	focusScoreSaved bool
-
-	// Make Time: energize reminder
-	energizeShown bool
-	energizeTicks int
-
-	// Make Time: energize activity log
-	energizeActivity string
-	energizeSaved    bool
-
-	// Auto-break
-	autoBreak      bool
-	autoBreakTicks int
-
-	// Deep Work: distraction review (shown after accomplishment in shutdown ritual)
-	distractionReviewMode bool
-	distractionReviewDone bool
+	// completionState holds all mode-specific fields shared with InlineModel.
+	completionState
 
 	// Notifications
 	notificationsEnabled bool
@@ -187,13 +151,15 @@ func NewModel(initialState *domain.CurrentState, info *domain.CompletionInfo, th
 	}
 
 	return Model{
-		state:               initialState,
-		progress:            progress.New(progress.WithDefaultGradient()),
-		completionInfo:      info,
-		theme:               resolveTheme(theme),
-		distractionInput:    di,
-		accomplishmentInput: ai,
-		shutdownInputs:      shutdownInputs,
+		state:          initialState,
+		progress:       progress.New(progress.WithDefaultGradient()),
+		completionInfo: info,
+		theme:          resolveTheme(theme),
+		completionState: completionState{
+			distractionInput:    di,
+			accomplishmentInput: ai,
+			shutdownInputs:      shutdownInputs,
+		},
 	}
 }
 
@@ -516,40 +482,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // resetCompletionState resets mode-specific completion state.
 func (m *Model) resetCompletionState() {
 	m.completedElapsed = 0
-	m.accomplishmentSaved = false
-	m.focusScore = nil
-	m.focusScoreSaved = false
-	m.distractions = nil
-	m.distractionReviewMode = false
-	m.distractionReviewDone = false
-	m.energizeActivity = ""
-	m.energizeSaved = false
-	m.shutdownRitualMode = false
-	m.shutdownStep = 0
-	m.shutdownComplete = false
+	m.completionState.reset()
 }
 
 // completionPromptsComplete returns true when all mode-specific completion prompts are done.
 func (m Model) completionPromptsComplete() bool {
-	if m.mode == nil {
-		return true
-	}
-	// Deep Work: need shutdown ritual complete (or accomplishment saved for legacy) and distraction review
-	if m.mode.HasShutdownRitual() && m.completedSessionType == domain.SessionTypeWork {
-		if !m.shutdownComplete && !m.accomplishmentSaved {
-			return false
-		}
-		if len(m.distractions) > 0 && !m.distractionReviewDone {
-			return false
-		}
-		return true
-	}
-	// Make Time: need focus score and energize activity
-	if m.mode.HasFocusScore() && m.completedSessionType == domain.SessionTypeWork {
-		return m.focusScoreSaved && m.energizeSaved
-	}
-	// Pomodoro or break: always ready
-	return true
+	return m.completionState.promptsDone(m.mode, m.completedSessionType)
 }
 
 // updateDistractionInput handles input while in distraction logging mode.

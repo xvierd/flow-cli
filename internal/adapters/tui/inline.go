@@ -27,6 +27,7 @@ const (
 	phaseTaskSelect
 	phaseTaskName
 	phaseTimer
+	phaseWelcome
 )
 
 // MainMenuAction represents what the user selected from the main menu.
@@ -123,45 +124,10 @@ type InlineModel struct {
 	// Methodology mode
 	mode           methodology.Mode
 	onboardingMode bool
+	firstRun       bool
 
-	// Deep Work: distraction log
-	distractionMode         bool
-	distractionInput        textinput.Model
-	distractions            []string
-	distractionCategoryMode bool
-	distractionPendingText  string
-
-	// Deep Work: accomplishment (shutdown ritual)
-	accomplishmentMode  bool
-	accomplishmentInput textinput.Model
-	accomplishmentSaved bool
-
-	// Deep Work: 3-step shutdown ritual
-	shutdownRitualMode       bool
-	shutdownStep             int // 0=pending tasks, 1=tomorrow plan, 2=closing phrase
-	shutdownInputs           [3]textinput.Model
-	shutdownComplete         bool
-	shutdownRitualCallback   func(domain.ShutdownRitual) error
-
-	// Deep Work: distraction review (shown after accomplishment in shutdown ritual)
-	distractionReviewMode bool
-	distractionReviewDone bool
-
-	// Make Time: focus score
-	focusScore      *int
-	focusScoreSaved bool
-
-	// Make Time: energize reminder
-	energizeShown bool
-	energizeTicks int
-
-	// Make Time: energize activity log
-	energizeActivity string
-	energizeSaved    bool
-
-	// Auto-break
-	autoBreak      bool
-	autoBreakTicks int
+	// completionState holds all mode-specific fields shared with Model.
+	completionState
 
 	// Notifications
 	notificationsEnabled bool
@@ -224,16 +190,18 @@ func NewInlineModel(state *domain.CurrentState, info *domain.CompletionInfo, the
 	}
 
 	return InlineModel{
-		phase:               startPhase,
-		state:               state,
-		progress:            pbar,
-		width:               w,
-		completionInfo:      info,
-		theme:               resolved,
-		taskInput:           ti,
-		distractionInput:    di,
-		accomplishmentInput: ai,
-		shutdownInputs:      shutdownInputs,
+		phase:          startPhase,
+		state:          state,
+		progress:       pbar,
+		width:          w,
+		completionInfo: info,
+		theme:          resolved,
+		taskInput:      ti,
+		completionState: completionState{
+			distractionInput:    di,
+			accomplishmentInput: ai,
+			shutdownInputs:      shutdownInputs,
+		},
 	}
 }
 
@@ -246,6 +214,8 @@ func (m InlineModel) Init() tea.Cmd {
 
 func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.phase {
+	case phaseWelcome:
+		return m.updateWelcome(msg)
 	case phaseMainMenu:
 		return m.updateMainMenu(msg)
 	case phasePickMode:
@@ -272,6 +242,46 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateTimer(msg)
 	}
 	return m, nil
+}
+
+func (m InlineModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter", " ":
+			if m.modeLocked {
+				m.phase = phasePickDuration
+			} else {
+				m.phase = phaseMainMenu
+			}
+			return m, nil
+		case "c", "ctrl+c", "esc":
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m InlineModel) viewWelcome() string {
+	accent := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+
+	var b strings.Builder
+	b.WriteString(accent.Render("  Welcome to Flow!"))
+	b.WriteString("\n")
+	b.WriteString(dim.Render("  Three methodologies to choose from:"))
+	b.WriteString("\n")
+	b.WriteString(accent.Render("  Pomodoro   ") + dim.Render("25m sprints, short breaks — frictionless and fast"))
+	b.WriteString("\n")
+	b.WriteString(accent.Render("  Deep Work  ") + dim.Render("long blocks, distraction tracking, shutdown ritual (Newport)"))
+	b.WriteString("\n")
+	b.WriteString(accent.Render("  Make Time  ") + dim.Render("daily Highlight, focus score, energize (Knapp)"))
+	b.WriteString("\n")
+	b.WriteString(dim.Render("  Change anytime with \"flow config\""))
+	b.WriteString("\n")
+	b.WriteString(dim.Render("  enter continue · c close"))
+	b.WriteString("\n")
+	return b.String()
 }
 
 func (m InlineModel) updateMainMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -1080,6 +1090,8 @@ func (m InlineModel) completionPromptsComplete() bool {
 
 func (m InlineModel) View() string {
 	switch m.phase {
+	case phaseWelcome:
+		return m.viewWelcome()
 	case phaseMainMenu:
 		return m.viewMainMenu()
 	case phasePickMode:

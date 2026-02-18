@@ -43,7 +43,7 @@ func runExport(ctx context.Context) error {
 		since = time.Time{}
 	}
 
-	sessions, err := storageAdapter.Sessions().FindRecent(ctx, since)
+	sessions, err := app.storage.Sessions().FindRecent(ctx, since)
 	if err != nil {
 		return fmt.Errorf("failed to fetch sessions: %w", err)
 	}

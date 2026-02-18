@@ -42,14 +42,14 @@ var statsCmd = &cobra.Command{
 			label = fmt.Sprintf("Week of %s", start.Format("Jan 2"))
 		}
 
-		stats, err := storageAdapter.Sessions().GetPeriodStats(ctx, start, end)
+		stats, err := app.storage.Sessions().GetPeriodStats(ctx, start, end)
 		if err != nil {
 			return fmt.Errorf("failed to get stats: %w", err)
 		}
 		stats.Label = label
 
 		// Fetch hourly productivity (last 30 days)
-		hourly, err := storageAdapter.Sessions().GetHourlyProductivity(ctx, 30)
+		hourly, err := app.storage.Sessions().GetHourlyProductivity(ctx, 30)
 		if err != nil {
 			hourly = nil // non-fatal
 		}

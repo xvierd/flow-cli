@@ -55,7 +55,7 @@ var reflectCmd = &cobra.Command{
 				break
 			}
 
-			stats, err := storageAdapter.Sessions().GetDailyStats(ctx, day)
+			stats, err := app.storage.Sessions().GetDailyStats(ctx, day)
 			if err != nil {
 				continue
 			}
@@ -91,7 +91,7 @@ var reflectCmd = &cobra.Command{
 		)
 
 		// Period stats for focus score and distractions
-		periodStats, err := storageAdapter.Sessions().GetPeriodStats(ctx, weekStart, weekEnd)
+		periodStats, err := app.storage.Sessions().GetPeriodStats(ctx, weekStart, weekEnd)
 		if err == nil {
 			if periodStats.FocusScoreCount > 0 {
 				fmt.Printf("  %s  %s  %s\n",
@@ -121,7 +121,7 @@ var reflectCmd = &cobra.Command{
 			if day.After(now) {
 				break
 			}
-			highlight, err := storageAdapter.Tasks().FindTodayHighlight(ctx, day)
+			highlight, err := app.storage.Tasks().FindTodayHighlight(ctx, day)
 			if err != nil || highlight == nil {
 				continue
 			}
@@ -142,7 +142,7 @@ var reflectCmd = &cobra.Command{
 		fmt.Println()
 
 		// Energize correlation
-		energizeStats, err := storageAdapter.Sessions().GetEnergizeStats(ctx, weekStart, weekEnd)
+		energizeStats, err := app.storage.Sessions().GetEnergizeStats(ctx, weekStart, weekEnd)
 		if err == nil && len(energizeStats) > 0 {
 			fmt.Printf("  %s\n", dimStyle.Render("Energize vs Focus"))
 			fmt.Printf("  %s\n", dimStyle.Render(strings.Repeat("─", 35)))
@@ -176,7 +176,7 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 	fmt.Printf("  %s\n\n", dimStyle.Render(strings.Repeat("─", 45)))
 
 	// Today's stats
-	stats, err := storageAdapter.Sessions().GetDailyStats(ctx, now)
+	stats, err := app.storage.Sessions().GetDailyStats(ctx, now)
 	if err != nil {
 		return fmt.Errorf("failed to get today's stats: %w", err)
 	}
@@ -186,7 +186,7 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 	fmt.Println()
 
 	// Today's highlight
-	highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, now)
+	highlight, _ := app.storage.Tasks().FindTodayHighlight(ctx, now)
 	if highlight != nil {
 		status := dimStyle.Render("in progress")
 		if highlight.Status == "completed" {
@@ -199,7 +199,7 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 	// Today's focus scores from sessions
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	todayEnd := todayStart.AddDate(0, 0, 1)
-	sessions, _ := storageAdapter.Sessions().FindRecent(ctx, todayStart)
+	sessions, _ := app.storage.Sessions().FindRecent(ctx, todayStart)
 	var focusScores []int
 	var energizeActivities []string
 	for _, s := range sessions {

@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+	"github.com/xvierd/flow-cli/internal/domain"
 )
 
 // Config holds all configuration for the Flow application.
 type Config struct {
 	Methodology   string             `mapstructure:"methodology"`
+	FirstRun      bool               `mapstructure:"first_run"`
 	Pomodoro      PomodoroConfig     `mapstructure:"pomodoro"`
 	DeepWork      DeepWorkConfig     `mapstructure:"deepwork"`
 	MakeTime      MakeTimeConfig     `mapstructure:"maketime"`
@@ -99,6 +101,7 @@ func (c *PomodoroConfig) GetPresets() []SessionPreset {
 // DeepWorkConfig holds deep work timer settings.
 type DeepWorkConfig struct {
 	DeepWorkGoalHours float64  `mapstructure:"deep_work_goal_hours"`
+	BreakDuration     Duration `mapstructure:"break_duration"`
 	Preset1Name       string   `mapstructure:"preset1_name"`
 	Preset1Duration   Duration `mapstructure:"preset1_duration"`
 	Preset2Name       string   `mapstructure:"preset2_name"`
@@ -118,6 +121,7 @@ func (c *DeepWorkConfig) GetPresets() []SessionPreset {
 
 // MakeTimeConfig holds make time timer settings.
 type MakeTimeConfig struct {
+	BreakDuration   Duration `mapstructure:"break_duration"`
 	Preset1Name     string   `mapstructure:"preset1_name"`
 	Preset1Duration Duration `mapstructure:"preset1_duration"`
 	Preset2Name     string   `mapstructure:"preset2_name"`
@@ -179,6 +183,7 @@ func (d Duration) String() string {
 func DefaultConfig() *Config {
 	return &Config{
 		Methodology: "pomodoro",
+		FirstRun:    true,
 		Pomodoro: PomodoroConfig{
 			WorkDuration:       Duration(25 * time.Minute),
 			ShortBreak:         Duration(5 * time.Minute),
@@ -193,6 +198,7 @@ func DefaultConfig() *Config {
 		},
 		DeepWork: DeepWorkConfig{
 			DeepWorkGoalHours: 4.0,
+			BreakDuration:     Duration(20 * time.Minute),
 			Preset1Name:       "Deep",
 			Preset1Duration:   Duration(90 * time.Minute),
 			Preset2Name:       "Focus",
@@ -201,6 +207,7 @@ func DefaultConfig() *Config {
 			Preset3Duration:   Duration(25 * time.Minute),
 		},
 		MakeTime: MakeTimeConfig{
+			BreakDuration:   Duration(15 * time.Minute),
 			Preset1Name:     "Highlight",
 			Preset1Duration: Duration(60 * time.Minute),
 			Preset2Name:     "Sprint",
@@ -289,6 +296,7 @@ func Save(cfg *Config) error {
 
 	// Set all values
 	viper.Set("methodology", cfg.Methodology)
+	viper.Set("first_run", cfg.FirstRun)
 	viper.Set("pomodoro.work_duration", cfg.Pomodoro.WorkDuration.String())
 	viper.Set("pomodoro.short_break", cfg.Pomodoro.ShortBreak.String())
 	viper.Set("pomodoro.long_break", cfg.Pomodoro.LongBreak.String())
@@ -301,12 +309,14 @@ func Save(cfg *Config) error {
 	viper.Set("pomodoro.preset3_name", cfg.Pomodoro.Preset3Name)
 	viper.Set("pomodoro.preset3_duration", cfg.Pomodoro.Preset3Duration.String())
 	viper.Set("deepwork.deep_work_goal_hours", cfg.DeepWork.DeepWorkGoalHours)
+	viper.Set("deepwork.break_duration", cfg.DeepWork.BreakDuration.String())
 	viper.Set("deepwork.preset1_name", cfg.DeepWork.Preset1Name)
 	viper.Set("deepwork.preset1_duration", cfg.DeepWork.Preset1Duration.String())
 	viper.Set("deepwork.preset2_name", cfg.DeepWork.Preset2Name)
 	viper.Set("deepwork.preset2_duration", cfg.DeepWork.Preset2Duration.String())
 	viper.Set("deepwork.preset3_name", cfg.DeepWork.Preset3Name)
 	viper.Set("deepwork.preset3_duration", cfg.DeepWork.Preset3Duration.String())
+	viper.Set("maketime.break_duration", cfg.MakeTime.BreakDuration.String())
 	viper.Set("maketime.preset1_name", cfg.MakeTime.Preset1Name)
 	viper.Set("maketime.preset1_duration", cfg.MakeTime.Preset1Duration.String())
 	viper.Set("maketime.preset2_name", cfg.MakeTime.Preset2Name)
@@ -339,6 +349,7 @@ func GetDBPath(cfg *Config) string {
 // setDefaults sets default values for viper.
 func setDefaults() {
 	viper.SetDefault("methodology", "pomodoro")
+	viper.SetDefault("first_run", true)
 	viper.SetDefault("pomodoro.work_duration", "25m")
 	viper.SetDefault("pomodoro.short_break", "5m")
 	viper.SetDefault("pomodoro.long_break", "15m")
@@ -351,12 +362,14 @@ func setDefaults() {
 	viper.SetDefault("pomodoro.preset3_name", "Deep")
 	viper.SetDefault("pomodoro.preset3_duration", "50m0s")
 	viper.SetDefault("deepwork.deep_work_goal_hours", 4.0)
+	viper.SetDefault("deepwork.break_duration", "20m0s")
 	viper.SetDefault("deepwork.preset1_name", "Deep")
 	viper.SetDefault("deepwork.preset1_duration", "1h30m0s")
 	viper.SetDefault("deepwork.preset2_name", "Focus")
 	viper.SetDefault("deepwork.preset2_duration", "50m0s")
 	viper.SetDefault("deepwork.preset3_name", "Shallow")
 	viper.SetDefault("deepwork.preset3_duration", "25m0s")
+	viper.SetDefault("maketime.break_duration", "15m0s")
 	viper.SetDefault("maketime.preset1_name", "Highlight")
 	viper.SetDefault("maketime.preset1_duration", "1h0m0s")
 	viper.SetDefault("maketime.preset2_name", "Sprint")
@@ -396,4 +409,25 @@ func (c *Config) ToPomodoroDomainConfig() (work, shortBreak, longBreak time.Dura
 		time.Duration(c.Pomodoro.ShortBreak),
 		time.Duration(c.Pomodoro.LongBreak),
 		c.Pomodoro.SessionsBeforeLong
+}
+
+// GetBreakDurations returns the short and long break durations for the given methodology.
+// Deep Work and Make Time use a single break duration; Pomodoro uses short/long.
+func (c *Config) GetBreakDurations(m domain.Methodology) (short, long time.Duration) {
+	switch m {
+	case domain.MethodologyDeepWork:
+		bd := time.Duration(c.DeepWork.BreakDuration)
+		if bd == 0 {
+			bd = 20 * time.Minute
+		}
+		return bd, bd
+	case domain.MethodologyMakeTime:
+		bd := time.Duration(c.MakeTime.BreakDuration)
+		if bd == 0 {
+			bd = 15 * time.Minute
+		}
+		return bd, bd
+	default:
+		return time.Duration(c.Pomodoro.ShortBreak), time.Duration(c.Pomodoro.LongBreak)
+	}
 }

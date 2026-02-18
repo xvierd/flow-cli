@@ -17,7 +17,7 @@ var completeCmd = &cobra.Command{
 		ctx := context.Background()
 		taskID := args[0]
 
-		if err := taskService.CompleteTask(ctx, taskID); err != nil {
+		if err := app.tasks.CompleteTask(ctx, taskID); err != nil {
 			return fmt.Errorf("failed to complete task: %w", err)
 		}
 
