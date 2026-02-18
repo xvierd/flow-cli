@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/methodology"
 )
@@ -203,7 +204,7 @@ func TestInlineModel_CompletionPromptsComplete_NilMode(t *testing.T) {
 
 func TestInlineModel_CompletionPromptsComplete_Pomodoro(t *testing.T) {
 	m := InlineModel{
-		mode:          methodology.ForMethodology(domain.MethodologyPomodoro),
+		mode:          methodology.ForMethodology(domain.MethodologyPomodoro, nil),
 		completedType: domain.SessionTypeWork,
 	}
 	if !m.completionPromptsComplete() {
@@ -212,7 +213,7 @@ func TestInlineModel_CompletionPromptsComplete_Pomodoro(t *testing.T) {
 }
 
 func TestInlineModel_CompletionPromptsComplete_DeepWork(t *testing.T) {
-	mode := methodology.ForMethodology(domain.MethodologyDeepWork)
+	mode := methodology.ForMethodology(domain.MethodologyDeepWork, nil)
 
 	// Not complete: accomplishment not saved
 	m := InlineModel{
@@ -251,7 +252,7 @@ func TestInlineModel_CompletionPromptsComplete_DeepWork(t *testing.T) {
 }
 
 func TestInlineModel_CompletionPromptsComplete_MakeTime(t *testing.T) {
-	mode := methodology.ForMethodology(domain.MethodologyMakeTime)
+	mode := methodology.ForMethodology(domain.MethodologyMakeTime, nil)
 
 	// Not complete: neither saved
 	m := InlineModel{
@@ -279,7 +280,7 @@ func TestInlineModel_CompletionPromptsComplete_BreakSession(t *testing.T) {
 	// Break sessions should always be "complete" regardless of mode
 	for _, meth := range []domain.Methodology{domain.MethodologyPomodoro, domain.MethodologyDeepWork, domain.MethodologyMakeTime} {
 		m := InlineModel{
-			mode:          methodology.ForMethodology(meth),
+			mode:          methodology.ForMethodology(meth, nil),
 			completedType: domain.SessionTypeShortBreak,
 		}
 		if !m.completionPromptsComplete() {
@@ -297,7 +298,7 @@ func TestModel_CompletionPromptsComplete_NilMode(t *testing.T) {
 
 func TestModel_CompletionPromptsComplete_Pomodoro(t *testing.T) {
 	m := Model{
-		mode:                 methodology.ForMethodology(domain.MethodologyPomodoro),
+		mode:                 methodology.ForMethodology(domain.MethodologyPomodoro, nil),
 		completedSessionType: domain.SessionTypeWork,
 	}
 	if !m.completionPromptsComplete() {
@@ -306,7 +307,7 @@ func TestModel_CompletionPromptsComplete_Pomodoro(t *testing.T) {
 }
 
 func TestModel_CompletionPromptsComplete_DeepWork(t *testing.T) {
-	mode := methodology.ForMethodology(domain.MethodologyDeepWork)
+	mode := methodology.ForMethodology(domain.MethodologyDeepWork, nil)
 
 	m := Model{
 		mode:                 mode,
@@ -331,7 +332,7 @@ func TestModel_CompletionPromptsComplete_DeepWork(t *testing.T) {
 }
 
 func TestModel_CompletionPromptsComplete_MakeTime(t *testing.T) {
-	mode := methodology.ForMethodology(domain.MethodologyMakeTime)
+	mode := methodology.ForMethodology(domain.MethodologyMakeTime, nil)
 
 	m := Model{
 		mode:                 mode,
@@ -369,5 +370,115 @@ func TestModel_View_WorkComplete_ShowsNewSession(t *testing.T) {
 	view := model.View()
 	if !strings.Contains(view, "[n]ew session") {
 		t.Error("Work-complete view should show [n]ew session option for session chaining")
+	}
+}
+
+func TestModel_EmptyAccomplishment_UnblocksNewSession(t *testing.T) {
+	mode := methodology.ForMethodology(domain.MethodologyDeepWork, nil)
+	m := Model{
+		state: &domain.CurrentState{
+			TodayStats: domain.DailyStats{},
+		},
+		mode:                 mode,
+		completed:            true,
+		completedSessionType: domain.SessionTypeWork,
+		accomplishmentMode:   true,
+		width:                80,
+		height:               24,
+	}
+	// Send Enter key with empty input
+	result, _ := m.updateAccomplishmentInput(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := result.(Model)
+	if !updated.accomplishmentSaved {
+		t.Error("Empty Enter should mark accomplishmentSaved = true")
+	}
+	if updated.accomplishmentMode {
+		t.Error("Empty Enter should exit accomplishmentMode")
+	}
+}
+
+func TestInlineModel_EmptyAccomplishment_UnblocksNewSession(t *testing.T) {
+	mode := methodology.ForMethodology(domain.MethodologyDeepWork, nil)
+	m := InlineModel{
+		state: &domain.CurrentState{
+			TodayStats: domain.DailyStats{},
+		},
+		mode:               mode,
+		completed:          true,
+		completedType:      domain.SessionTypeWork,
+		accomplishmentMode: true,
+		width:              80,
+	}
+	result, _ := m.updateAccomplishmentInput(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := result.(InlineModel)
+	if !updated.accomplishmentSaved {
+		t.Error("Empty Enter should mark accomplishmentSaved = true")
+	}
+	if updated.accomplishmentMode {
+		t.Error("Empty Enter should exit accomplishmentMode")
+	}
+}
+
+func TestModel_View_ShowsIntendedOutcome(t *testing.T) {
+	config := domain.DefaultPomodoroConfig()
+	session := domain.NewPomodoroSession(config, nil)
+	session.IntendedOutcome = "Build the API"
+
+	state := &domain.CurrentState{
+		ActiveSession: session,
+		TodayStats:    domain.DailyStats{},
+	}
+	model := NewModel(state, nil, nil)
+	model.width = 80
+	model.height = 24
+
+	view := model.View()
+	if !strings.Contains(view, "Goal: Build the API") {
+		t.Error("View() should show 'Goal: Build the API' when IntendedOutcome is set")
+	}
+}
+
+func TestModel_View_HidesEmptyOutcome(t *testing.T) {
+	config := domain.DefaultPomodoroConfig()
+	session := domain.NewPomodoroSession(config, nil)
+	session.IntendedOutcome = ""
+
+	state := &domain.CurrentState{
+		ActiveSession: session,
+		TodayStats:    domain.DailyStats{},
+	}
+	model := NewModel(state, nil, nil)
+	model.width = 80
+	model.height = 24
+
+	view := model.View()
+	if strings.Contains(view, "Goal:") {
+		t.Error("View() should not show 'Goal:' when IntendedOutcome is empty")
+	}
+}
+
+func TestModel_View_DynamicTitle(t *testing.T) {
+	state := &domain.CurrentState{
+		TodayStats: domain.DailyStats{},
+	}
+
+	// Pomodoro mode
+	model := NewModel(state, nil, nil)
+	model.width = 80
+	model.height = 24
+	model.mode = methodology.ForMethodology(domain.MethodologyPomodoro, nil)
+	view := model.View()
+	if !strings.Contains(view, "Pomodoro") {
+		t.Error("Pomodoro mode should show 'Pomodoro' in title")
+	}
+
+	// Nil mode fallback
+	model2 := NewModel(state, nil, nil)
+	model2.width = 80
+	model2.height = 24
+	model2.mode = nil
+	view2 := model2.View()
+	if !strings.Contains(view2, "Flow") {
+		t.Error("Nil mode should show 'Flow' in title")
 	}
 }

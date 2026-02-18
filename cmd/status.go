@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
@@ -30,15 +31,28 @@ var statusCmd = &cobra.Command{
 		// Use the TUI to display the status
 		tui.ShowStatus(state, &appConfig.Theme)
 
+		// Show today's Highlight for Make Time mode
+		if appConfig.Methodology == "maketime" || appConfig.Methodology == "make_time" {
+			highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
+			if highlight != nil {
+				fmt.Printf("\nHighlight: %s\n", highlight.Title)
+			} else if state.ActiveTask != nil {
+				fmt.Printf("\nHighlight: %s\n", state.ActiveTask.Title)
+			}
+		}
+
 		return nil
 	},
 }
 
 // outputStatusJSON outputs the status in JSON format
 func outputStatusJSON(state *domain.CurrentState) error {
+	ctx := context.Background()
+
 	result := map[string]interface{}{
 		"active_task":    nil,
 		"active_session": nil,
+		"highlight":      nil,
 		"today_stats": map[string]interface{}{
 			"work_sessions":   state.TodayStats.WorkSessions,
 			"breaks_taken":    state.TodayStats.BreaksTaken,
@@ -74,6 +88,18 @@ func outputStatusJSON(state *domain.CurrentState) error {
 			sessionData["task_id"] = *session.TaskID
 		}
 		result["active_session"] = sessionData
+	}
+
+	// Include highlight for Make Time mode
+	if appConfig.Methodology == "maketime" || appConfig.Methodology == "make_time" {
+		highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, time.Now())
+		if highlight != nil {
+			result["highlight"] = map[string]interface{}{
+				"id":     highlight.ID,
+				"title":  highlight.Title,
+				"status": string(highlight.Status),
+			}
+		}
 	}
 
 	jsonData, err := json.MarshalIndent(result, "", "  ")

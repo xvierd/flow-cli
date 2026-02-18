@@ -24,6 +24,19 @@ const (
 	SessionStatusCancelled SessionStatus = "cancelled"
 )
 
+// ShutdownRitual captures the structured end-of-session reflection for Deep Work mode.
+type ShutdownRitual struct {
+	PendingTasksReview string
+	TomorrowPlan       string
+	ClosingPhrase      string
+}
+
+// Distraction represents a logged distraction during a session.
+type Distraction struct {
+	Text     string
+	Category string // "internal", "external", or ""
+}
+
 // PomodoroSession represents a single work or break interval.
 type PomodoroSession struct {
 	ID               string
@@ -40,7 +53,8 @@ type PomodoroSession struct {
 	Notes            string
 	Methodology      Methodology
 	FocusScore       *int
-	Distractions     []string
+	Distractions     []Distraction
+	ShutdownRitual   *ShutdownRitual
 	Accomplishment   string
 	IntendedOutcome  string
 	Tags             []string

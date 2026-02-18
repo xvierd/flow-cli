@@ -18,8 +18,9 @@ type Timer struct {
 	fetchState              func() *domain.CurrentState
 	commandCallback         func(ports.TimerCommand) error
 	onSessionComplete       func(domain.SessionType)
-	distractionCallback     func(string) error
+	distractionCallback     func(string, string) error
 	accomplishmentCallback  func(string) error
+	shutdownRitualCallback  func(domain.ShutdownRitual) error
 	focusScoreCallback      func(int) error
 	energizeCallback        func(string) error
 	completionInfo          *domain.CompletionInfo
@@ -85,6 +86,7 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	model.onSessionComplete = t.onSessionComplete
 	model.distractionCallback = t.distractionCallback
 	model.accomplishmentCallback = t.accomplishmentCallback
+	model.shutdownRitualCallback = t.shutdownRitualCallback
 	model.focusScoreCallback = t.focusScoreCallback
 	model.energizeCallback = t.energizeCallback
 	model.mode = t.mode
@@ -125,6 +127,7 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.onSessionComplete = t.onSessionComplete
 	model.distractionCallback = t.distractionCallback
 	model.accomplishmentCallback = t.accomplishmentCallback
+	model.shutdownRitualCallback = t.shutdownRitualCallback
 	model.focusScoreCallback = t.focusScoreCallback
 	model.energizeCallback = t.energizeCallback
 	model.presets = t.presets
@@ -198,13 +201,18 @@ func (t *Timer) SetOnSessionComplete(callback func(domain.SessionType)) {
 }
 
 // SetDistractionCallback sets a callback for logging distractions (Deep Work mode).
-func (t *Timer) SetDistractionCallback(callback func(text string) error) {
+func (t *Timer) SetDistractionCallback(callback func(text string, category string) error) {
 	t.distractionCallback = callback
 }
 
 // SetAccomplishmentCallback sets a callback for recording accomplishments (Deep Work shutdown ritual).
 func (t *Timer) SetAccomplishmentCallback(callback func(text string) error) {
 	t.accomplishmentCallback = callback
+}
+
+// SetShutdownRitualCallback sets a callback for recording the 3-step shutdown ritual (Deep Work mode).
+func (t *Timer) SetShutdownRitualCallback(callback func(domain.ShutdownRitual) error) {
+	t.shutdownRitualCallback = callback
 }
 
 // SetFocusScoreCallback sets a callback for recording focus scores (Make Time).

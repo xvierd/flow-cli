@@ -85,10 +85,13 @@ type Timer interface {
 	UpdateState(state *domain.CurrentState)
 
 	// SetDistractionCallback sets a callback for logging distractions (Deep Work mode).
-	SetDistractionCallback(callback func(text string) error)
+	SetDistractionCallback(callback func(text string, category string) error)
 
 	// SetAccomplishmentCallback sets a callback for recording accomplishments (Deep Work shutdown ritual).
 	SetAccomplishmentCallback(callback func(text string) error)
+
+	// SetShutdownRitualCallback sets a callback for recording the 3-step shutdown ritual (Deep Work mode).
+	SetShutdownRitualCallback(callback func(domain.ShutdownRitual) error)
 
 	// SetFocusScoreCallback sets a callback for recording focus scores (Make Time).
 	SetFocusScoreCallback(callback func(score int) error)

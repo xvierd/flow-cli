@@ -294,6 +294,24 @@ func TestParseTagsFromInput(t *testing.T) {
 	}
 }
 
+func TestDistraction_Struct(t *testing.T) {
+	d := Distraction{Text: "phone rang", Category: "external"}
+	if d.Text != "phone rang" || d.Category != "external" {
+		t.Error("Distraction struct fields not set correctly")
+	}
+}
+
+func TestShutdownRitual_Struct(t *testing.T) {
+	sr := ShutdownRitual{
+		PendingTasksReview: "review tasks",
+		TomorrowPlan:       "plan tomorrow",
+		ClosingPhrase:      "Shutdown complete",
+	}
+	if sr.ClosingPhrase != "Shutdown complete" {
+		t.Error("ShutdownRitual struct fields not set correctly")
+	}
+}
+
 func TestValidateMethodology(t *testing.T) {
 	tests := []struct {
 		input   string

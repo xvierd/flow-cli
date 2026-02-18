@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
@@ -22,13 +26,40 @@ var stopCmd = &cobra.Command{
 			return fmt.Errorf("failed to stop session: %w", err)
 		}
 
-		// Prompt for notes (optional)
+		// Methodology-aware prompts (only in interactive mode)
 		if !jsonOutput {
-			fmt.Print("Add session notes (optional, press Enter to skip): ")
-			var notes string
-			_, _ = fmt.Scanln(&notes)
-			if notes != "" {
-				session, _ = pomodoroSvc.AddSessionNotes(ctx, session.ID, notes)
+			switch session.Methodology {
+			case domain.MethodologyDeepWork:
+				fmt.Print("What did you accomplish? (Enter to skip): ")
+				scanner := bufio.NewScanner(os.Stdin)
+				if scanner.Scan() {
+					text := strings.TrimSpace(scanner.Text())
+					if text != "" {
+						_ = pomodoroSvc.SetAccomplishment(ctx, session.ID, text)
+					}
+				}
+			case domain.MethodologyMakeTime:
+				fmt.Print("Focus score (1-5, Enter to skip): ")
+				scanner := bufio.NewScanner(os.Stdin)
+				if scanner.Scan() {
+					text := strings.TrimSpace(scanner.Text())
+					if text != "" {
+						score, err := strconv.Atoi(text)
+						if err == nil && score >= 1 && score <= 5 {
+							_ = pomodoroSvc.SetFocusScore(ctx, session.ID, score)
+						}
+					}
+				}
+			default:
+				// Pomodoro: prompt for notes
+				fmt.Print("Add session notes (optional, press Enter to skip): ")
+				scanner := bufio.NewScanner(os.Stdin)
+				if scanner.Scan() {
+					notes := strings.TrimSpace(scanner.Text())
+					if notes != "" {
+						session, _ = pomodoroSvc.AddSessionNotes(ctx, session.ID, notes)
+					}
+				}
 			}
 		}
 
@@ -48,7 +79,7 @@ var stopCmd = &cobra.Command{
 			return outputJSON(session)
 		}
 
-		fmt.Printf("✅ Session completed! Duration: %s\n", session.Duration)
+		fmt.Printf("Session completed! Duration: %s\n", session.Duration)
 		if session.TaskID != nil {
 			fmt.Printf("   Task ID: %s\n", *session.TaskID)
 		}

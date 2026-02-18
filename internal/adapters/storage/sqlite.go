@@ -120,6 +120,7 @@ func (s *sqliteStorage) Migrate() error {
 		"ALTER TABLE tasks ADD COLUMN highlight_date DATETIME",
 		"ALTER TABLE sessions ADD COLUMN tags TEXT",
 		"ALTER TABLE sessions ADD COLUMN energize_activity TEXT",
+		"ALTER TABLE sessions ADD COLUMN shutdown_ritual TEXT",
 	}
 
 	for _, m := range migrations {

@@ -2,10 +2,12 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -94,6 +96,7 @@ func init() {
 	rootCmd.AddCommand(pauseCmd)
 	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(completeCmd)
+	rootCmd.AddCommand(resetCmd)
 }
 
 // initializeServices sets up all the required services and adapters.
@@ -160,7 +163,7 @@ func initializeServices() error {
 		return fmt.Errorf("invalid mode: %w", err)
 	}
 	effectiveMethodology = m
-	activeMode = methodology.ForMethodology(effectiveMethodology)
+	activeMode = methodology.ForMethodology(effectiveMethodology, appConfig)
 
 	return nil
 }
@@ -271,7 +274,7 @@ func runWizard(cmd *cobra.Command, args []string) error {
 		}
 		methodologies := []domain.Methodology{domain.MethodologyPomodoro, domain.MethodologyDeepWork, domain.MethodologyMakeTime}
 		effectiveMethodology = methodologies[modeResult.Index]
-		activeMode = methodology.ForMethodology(effectiveMethodology)
+		activeMode = methodology.ForMethodology(effectiveMethodology, appConfig)
 		fmt.Println()
 	}
 
@@ -431,6 +434,21 @@ func runWizard(cmd *cobra.Command, args []string) error {
 		lastFullscreenTimer.WantsNewSession = false
 	}
 
+	// After quitting, in Make Time mode, prompt for tomorrow's highlight
+	if mode.HasHighlight() {
+		fmt.Print("\nWhat's your Highlight for tomorrow? (Enter to skip): ")
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			text := strings.TrimSpace(scanner.Text())
+			if text != "" {
+				task, err := domain.NewTask(text)
+				if err == nil {
+					_ = storageAdapter.Tasks().Save(ctx, task)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -477,7 +495,7 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 		inlineTimer.SetModeLocked(modeFlag != "")
 		inlineTimer.SetOnModeSelected(func(m domain.Methodology) {
 			effectiveMethodology = m
-			activeMode = methodology.ForMethodology(m)
+			activeMode = methodology.ForMethodology(m, appConfig)
 			presets = activeMode.Presets()
 			inlineTimer.SetMode(activeMode)
 		})
@@ -590,12 +608,12 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 	})
 
 	// Wire methodology callbacks
-	timer.SetDistractionCallback(func(text string) error {
+	timer.SetDistractionCallback(func(text string, category string) error {
 		activeState, err := pomodoroSvc.GetCurrentState(ctx)
 		if err != nil || activeState.ActiveSession == nil {
 			return nil
 		}
-		return pomodoroSvc.LogDistraction(ctx, activeState.ActiveSession.ID, text)
+		return pomodoroSvc.LogDistraction(ctx, activeState.ActiveSession.ID, text, category)
 	})
 
 	timer.SetAccomplishmentCallback(func(text string) error {
@@ -605,6 +623,14 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 			return nil
 		}
 		return pomodoroSvc.SetAccomplishment(ctx, recent[0].ID, text)
+	})
+
+	timer.SetShutdownRitualCallback(func(ritual domain.ShutdownRitual) error {
+		recent, err := pomodoroSvc.GetRecentSessions(ctx, 1)
+		if err != nil || len(recent) == 0 {
+			return nil
+		}
+		return pomodoroSvc.SetShutdownRitual(ctx, recent[0].ID, ritual)
 	})
 
 	timer.SetFocusScoreCallback(func(score int) error {
@@ -642,7 +668,7 @@ func launchTUI(ctx context.Context, state *domain.CurrentState, workingDir strin
 	// Fetch Deep Work streak if in deepwork mode
 	var deepWorkStreak int
 	if effectiveMethodology == domain.MethodologyDeepWork {
-		deepWorkStreak, _ = pomodoroSvc.GetDeepWorkStreak(ctx)
+		deepWorkStreak, _ = pomodoroSvc.GetDeepWorkStreak(ctx, time.Duration(appConfig.DeepWork.DeepWorkGoalHours*float64(time.Hour)))
 	}
 
 	timer.SetCompletionInfo(&domain.CompletionInfo{

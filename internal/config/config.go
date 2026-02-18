@@ -14,6 +14,8 @@ import (
 type Config struct {
 	Methodology   string             `mapstructure:"methodology"`
 	Pomodoro      PomodoroConfig     `mapstructure:"pomodoro"`
+	DeepWork      DeepWorkConfig     `mapstructure:"deepwork"`
+	MakeTime      MakeTimeConfig     `mapstructure:"maketime"`
 	Notifications NotificationConfig `mapstructure:"notifications"`
 	MCP           MCPConfig          `mapstructure:"mcp"`
 	Storage       StorageConfig      `mapstructure:"storage"`
@@ -94,6 +96,45 @@ func (c *PomodoroConfig) GetPresets() []SessionPreset {
 	}
 }
 
+// DeepWorkConfig holds deep work timer settings.
+type DeepWorkConfig struct {
+	DeepWorkGoalHours float64  `mapstructure:"deep_work_goal_hours"`
+	Preset1Name       string   `mapstructure:"preset1_name"`
+	Preset1Duration   Duration `mapstructure:"preset1_duration"`
+	Preset2Name       string   `mapstructure:"preset2_name"`
+	Preset2Duration   Duration `mapstructure:"preset2_duration"`
+	Preset3Name       string   `mapstructure:"preset3_name"`
+	Preset3Duration   Duration `mapstructure:"preset3_duration"`
+}
+
+// GetPresets returns the three session presets for deep work.
+func (c *DeepWorkConfig) GetPresets() []SessionPreset {
+	return []SessionPreset{
+		{Name: c.Preset1Name, Duration: time.Duration(c.Preset1Duration)},
+		{Name: c.Preset2Name, Duration: time.Duration(c.Preset2Duration)},
+		{Name: c.Preset3Name, Duration: time.Duration(c.Preset3Duration)},
+	}
+}
+
+// MakeTimeConfig holds make time timer settings.
+type MakeTimeConfig struct {
+	Preset1Name     string   `mapstructure:"preset1_name"`
+	Preset1Duration Duration `mapstructure:"preset1_duration"`
+	Preset2Name     string   `mapstructure:"preset2_name"`
+	Preset2Duration Duration `mapstructure:"preset2_duration"`
+	Preset3Name     string   `mapstructure:"preset3_name"`
+	Preset3Duration Duration `mapstructure:"preset3_duration"`
+}
+
+// GetPresets returns the three session presets for make time.
+func (c *MakeTimeConfig) GetPresets() []SessionPreset {
+	return []SessionPreset{
+		{Name: c.Preset1Name, Duration: time.Duration(c.Preset1Duration)},
+		{Name: c.Preset2Name, Duration: time.Duration(c.Preset2Duration)},
+		{Name: c.Preset3Name, Duration: time.Duration(c.Preset3Duration)},
+	}
+}
+
 // NotificationConfig holds notification settings.
 type NotificationConfig struct {
 	Enabled bool `mapstructure:"enabled"`
@@ -149,6 +190,23 @@ func DefaultConfig() *Config {
 			Preset2Duration:    Duration(15 * time.Minute),
 			Preset3Name:        "Deep",
 			Preset3Duration:    Duration(50 * time.Minute),
+		},
+		DeepWork: DeepWorkConfig{
+			DeepWorkGoalHours: 4.0,
+			Preset1Name:       "Deep",
+			Preset1Duration:   Duration(90 * time.Minute),
+			Preset2Name:       "Focus",
+			Preset2Duration:   Duration(50 * time.Minute),
+			Preset3Name:       "Shallow",
+			Preset3Duration:   Duration(25 * time.Minute),
+		},
+		MakeTime: MakeTimeConfig{
+			Preset1Name:     "Highlight",
+			Preset1Duration: Duration(60 * time.Minute),
+			Preset2Name:     "Sprint",
+			Preset2Duration: Duration(25 * time.Minute),
+			Preset3Name:     "Quick",
+			Preset3Duration: Duration(15 * time.Minute),
 		},
 		Notifications: NotificationConfig{
 			Enabled: true,
@@ -242,6 +300,19 @@ func Save(cfg *Config) error {
 	viper.Set("pomodoro.preset2_duration", cfg.Pomodoro.Preset2Duration.String())
 	viper.Set("pomodoro.preset3_name", cfg.Pomodoro.Preset3Name)
 	viper.Set("pomodoro.preset3_duration", cfg.Pomodoro.Preset3Duration.String())
+	viper.Set("deepwork.deep_work_goal_hours", cfg.DeepWork.DeepWorkGoalHours)
+	viper.Set("deepwork.preset1_name", cfg.DeepWork.Preset1Name)
+	viper.Set("deepwork.preset1_duration", cfg.DeepWork.Preset1Duration.String())
+	viper.Set("deepwork.preset2_name", cfg.DeepWork.Preset2Name)
+	viper.Set("deepwork.preset2_duration", cfg.DeepWork.Preset2Duration.String())
+	viper.Set("deepwork.preset3_name", cfg.DeepWork.Preset3Name)
+	viper.Set("deepwork.preset3_duration", cfg.DeepWork.Preset3Duration.String())
+	viper.Set("maketime.preset1_name", cfg.MakeTime.Preset1Name)
+	viper.Set("maketime.preset1_duration", cfg.MakeTime.Preset1Duration.String())
+	viper.Set("maketime.preset2_name", cfg.MakeTime.Preset2Name)
+	viper.Set("maketime.preset2_duration", cfg.MakeTime.Preset2Duration.String())
+	viper.Set("maketime.preset3_name", cfg.MakeTime.Preset3Name)
+	viper.Set("maketime.preset3_duration", cfg.MakeTime.Preset3Duration.String())
 	viper.Set("notifications.enabled", cfg.Notifications.Enabled)
 	viper.Set("notifications.sound", cfg.Notifications.Sound)
 	viper.Set("mcp.enabled", cfg.MCP.Enabled)
@@ -279,6 +350,19 @@ func setDefaults() {
 	viper.SetDefault("pomodoro.preset2_duration", "15m0s")
 	viper.SetDefault("pomodoro.preset3_name", "Deep")
 	viper.SetDefault("pomodoro.preset3_duration", "50m0s")
+	viper.SetDefault("deepwork.deep_work_goal_hours", 4.0)
+	viper.SetDefault("deepwork.preset1_name", "Deep")
+	viper.SetDefault("deepwork.preset1_duration", "1h30m0s")
+	viper.SetDefault("deepwork.preset2_name", "Focus")
+	viper.SetDefault("deepwork.preset2_duration", "50m0s")
+	viper.SetDefault("deepwork.preset3_name", "Shallow")
+	viper.SetDefault("deepwork.preset3_duration", "25m0s")
+	viper.SetDefault("maketime.preset1_name", "Highlight")
+	viper.SetDefault("maketime.preset1_duration", "1h0m0s")
+	viper.SetDefault("maketime.preset2_name", "Sprint")
+	viper.SetDefault("maketime.preset2_duration", "25m0s")
+	viper.SetDefault("maketime.preset3_name", "Quick")
+	viper.SetDefault("maketime.preset3_duration", "15m0s")
 	viper.SetDefault("notifications.enabled", true)
 	viper.SetDefault("notifications.sound", true)
 	viper.SetDefault("mcp.enabled", true)

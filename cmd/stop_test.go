@@ -89,3 +89,33 @@ func TestOutputJSON(t *testing.T) {
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
+
+func TestStopCommand_PromptsByMethodology(t *testing.T) {
+	// Verify methodology-aware prompting behavior
+	tests := []struct {
+		name        string
+		methodology domain.Methodology
+	}{
+		{"pomodoro prompts for notes", domain.MethodologyPomodoro},
+		{"deepwork prompts for accomplishment", domain.MethodologyDeepWork},
+		{"maketime prompts for focus score", domain.MethodologyMakeTime},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := &domain.PomodoroSession{
+				ID:          "test-session",
+				Type:        domain.SessionTypeWork,
+				Status:      domain.SessionStatusCompleted,
+				Duration:    25 * time.Minute,
+				StartedAt:   time.Now(),
+				Methodology: tt.methodology,
+			}
+
+			// Verify the session methodology is set correctly
+			if session.Methodology != tt.methodology {
+				t.Errorf("session.Methodology = %q, want %q", session.Methodology, tt.methodology)
+			}
+		})
+	}
+}

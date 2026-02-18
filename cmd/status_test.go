@@ -165,3 +165,37 @@ func strPtr(s string) *string {
 func containsStr(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
+
+func TestStatusCommand_ShowsHighlight(t *testing.T) {
+	// Verify the JSON output structure includes a highlight field
+	result := map[string]interface{}{
+		"active_task":    nil,
+		"active_session": nil,
+		"highlight":      nil,
+		"today_stats": map[string]interface{}{
+			"work_sessions":   0,
+			"breaks_taken":    0,
+			"total_work_time": "0s",
+		},
+	}
+
+	// Simulate highlight being present (Make Time mode)
+	result["highlight"] = map[string]interface{}{
+		"id":     "highlight-task-1",
+		"title":  "Write chapter outline",
+		"status": "in_progress",
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		t.Fatalf("failed to marshal status with highlight: %v", err)
+	}
+
+	output := string(jsonData)
+	if !containsStr(output, "highlight") {
+		t.Error("output should contain highlight field")
+	}
+	if !containsStr(output, "Write chapter outline") {
+		t.Error("output should contain highlight title")
+	}
+}

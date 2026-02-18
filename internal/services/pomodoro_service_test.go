@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/ports"
@@ -275,4 +276,118 @@ func TestPomodoroService_GetRecentSessions(t *testing.T) {
 			t.Errorf("GetRecentSessions() returned %d sessions, want 2", len(sessions))
 		}
 	})
+}
+
+func TestPomodoroService_LogDistraction_WithCategory(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	clearSessions(t, store, ctx)
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+
+	err = service.LogDistraction(ctx, session.ID, "checked email", "external")
+	if err != nil {
+		t.Fatalf("LogDistraction() error = %v", err)
+	}
+
+	found, _ := store.Sessions().FindByID(ctx, session.ID)
+	if len(found.Distractions) != 1 {
+		t.Fatalf("got %d distractions, want 1", len(found.Distractions))
+	}
+	if found.Distractions[0].Text != "checked email" {
+		t.Errorf("distraction text = %q, want 'checked email'", found.Distractions[0].Text)
+	}
+	if found.Distractions[0].Category != "external" {
+		t.Errorf("distraction category = %q, want 'external'", found.Distractions[0].Category)
+	}
+}
+
+func TestPomodoroService_SetShutdownRitual(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	clearSessions(t, store, ctx)
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{
+		Methodology: domain.MethodologyDeepWork,
+	})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+
+	ritual := domain.ShutdownRitual{
+		PendingTasksReview: "all clear",
+		TomorrowPlan:       "write tests",
+		ClosingPhrase:      "shutdown complete",
+	}
+	err = service.SetShutdownRitual(ctx, session.ID, ritual)
+	if err != nil {
+		t.Fatalf("SetShutdownRitual() error = %v", err)
+	}
+
+	found, _ := store.Sessions().FindByID(ctx, session.ID)
+	if found.ShutdownRitual == nil {
+		t.Fatal("ShutdownRitual should not be nil")
+	}
+	if found.ShutdownRitual.TomorrowPlan != "write tests" {
+		t.Errorf("TomorrowPlan = %q, want 'write tests'", found.ShutdownRitual.TomorrowPlan)
+	}
+}
+
+func TestPomodoroService_GetDeepWorkStreak_CustomThreshold(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	// Create a deep work session for today with 90 min duration
+	session := &domain.PomodoroSession{
+		ID:          "dw-streak-test",
+		Type:        domain.SessionTypeWork,
+		Status:      domain.SessionStatusCompleted,
+		Duration:    90 * time.Minute,
+		StartedAt:   time.Now().Add(-2 * time.Hour),
+		Methodology: domain.MethodologyDeepWork,
+	}
+	now := time.Now()
+	session.CompletedAt = &now
+	if err := store.Sessions().Save(ctx, session); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	// With 1 hour threshold, should have streak >= 1
+	streak, err := service.GetDeepWorkStreak(ctx, 1*time.Hour)
+	if err != nil {
+		t.Fatalf("GetDeepWorkStreak() error = %v", err)
+	}
+	if streak < 1 {
+		t.Errorf("streak = %d, want >= 1 with 1h threshold", streak)
+	}
+
+	// With 2 hour threshold, streak should be 0 (only 90 min)
+	streak, err = service.GetDeepWorkStreak(ctx, 2*time.Hour)
+	if err != nil {
+		t.Fatalf("GetDeepWorkStreak() error = %v", err)
+	}
+	if streak != 0 {
+		t.Errorf("streak = %d, want 0 with 2h threshold", streak)
+	}
+
+	// With 0 threshold, should default to 4h, so streak should be 0
+	streak, err = service.GetDeepWorkStreak(ctx, 0)
+	if err != nil {
+		t.Fatalf("GetDeepWorkStreak() error = %v", err)
+	}
+	if streak != 0 {
+		t.Errorf("streak = %d, want 0 with default 4h threshold", streak)
+	}
 }

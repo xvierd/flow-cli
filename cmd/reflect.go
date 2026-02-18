@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var reflectTodayFlag bool
+
 var reflectCmd = &cobra.Command{
 	Use:   "reflect",
 	Short: "Show a weekly reflection dashboard",
@@ -17,6 +19,10 @@ var reflectCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		now := time.Now()
+
+		if reflectTodayFlag {
+			return runReflectToday(ctx, now)
+		}
 
 		// Compute week start (Monday)
 		weekday := int(now.Weekday())
@@ -156,4 +162,75 @@ var reflectCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(reflectCmd)
+	reflectCmd.Flags().BoolVar(&reflectTodayFlag, "today", false, "Show today's reflection summary")
+}
+
+// runReflectToday displays a summary of today's sessions, highlight, and focus scores.
+func runReflectToday(ctx context.Context, now time.Time) error {
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C6FE0"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
+	valueStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A78BFA"))
+
+	fmt.Println()
+	fmt.Printf("  %s\n", titleStyle.Render(fmt.Sprintf("Today's Reflection — %s", now.Format("Mon Jan 2"))))
+	fmt.Printf("  %s\n\n", dimStyle.Render(strings.Repeat("─", 45)))
+
+	// Today's stats
+	stats, err := storageAdapter.Sessions().GetDailyStats(ctx, now)
+	if err != nil {
+		return fmt.Errorf("failed to get today's stats: %w", err)
+	}
+
+	fmt.Printf("  %s  %s\n", dimStyle.Render("Sessions:"), valueStyle.Render(fmt.Sprintf("%d", stats.WorkSessions)))
+	fmt.Printf("  %s  %s\n", dimStyle.Render("Work time:"), valueStyle.Render(formatMinutes(stats.TotalWorkTime)))
+	fmt.Println()
+
+	// Today's highlight
+	highlight, _ := storageAdapter.Tasks().FindTodayHighlight(ctx, now)
+	if highlight != nil {
+		status := dimStyle.Render("in progress")
+		if highlight.Status == "completed" {
+			status = valueStyle.Render("completed")
+		}
+		fmt.Printf("  %s  %s (%s)\n", dimStyle.Render("Highlight:"), valueStyle.Render(highlight.Title), status)
+		fmt.Println()
+	}
+
+	// Today's focus scores from sessions
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayEnd := todayStart.AddDate(0, 0, 1)
+	sessions, _ := storageAdapter.Sessions().FindRecent(ctx, todayStart)
+	var focusScores []int
+	var energizeActivities []string
+	for _, s := range sessions {
+		if s.StartedAt.After(todayEnd) {
+			continue
+		}
+		if s.FocusScore != nil {
+			focusScores = append(focusScores, *s.FocusScore)
+		}
+		if s.EnergizeActivity != "" {
+			energizeActivities = append(energizeActivities, s.EnergizeActivity)
+		}
+	}
+
+	if len(focusScores) > 0 {
+		sum := 0
+		for _, sc := range focusScores {
+			sum += sc
+		}
+		avg := float64(sum) / float64(len(focusScores))
+		fmt.Printf("  %s  %s  %s\n",
+			dimStyle.Render("Avg focus:"),
+			valueStyle.Render(fmt.Sprintf("%.1f/5", avg)),
+			dimStyle.Render(fmt.Sprintf("(%d sessions)", len(focusScores))),
+		)
+	}
+
+	if len(energizeActivities) > 0 {
+		fmt.Printf("  %s  %s\n", dimStyle.Render("Energize:"), valueStyle.Render(strings.Join(energizeActivities, ", ")))
+	}
+
+	fmt.Println()
+	return nil
 }

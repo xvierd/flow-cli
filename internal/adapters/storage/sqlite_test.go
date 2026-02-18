@@ -431,7 +431,7 @@ func TestSessionRepository_GetPeriodStats(t *testing.T) {
 		// Create a deep work session
 		dwSession := domain.NewPomodoroSession(config, nil)
 		dwSession.Methodology = domain.MethodologyDeepWork
-		dwSession.Distractions = []string{"email", "slack"}
+		dwSession.Distractions = []domain.Distraction{{Text: "email"}, {Text: "slack"}}
 		dwSession.Complete()
 		if err := sessionRepo.Save(ctx, dwSession); err != nil {
 			t.Fatalf("Save() error = %v", err)
@@ -801,4 +801,116 @@ func TestTaskRepository_FindYesterdayHighlight(t *testing.T) {
 			t.Error("FindYesterdayHighlight() should not return completed tasks")
 		}
 	})
+}
+
+func TestStorage_DistractionBackwardCompat(t *testing.T) {
+	t.Run("new JSON format", func(t *testing.T) {
+		data := `[{"Text":"email","Category":"external"},{"Text":"phone","Category":""}]`
+		result := unmarshalDistractions(data)
+		if len(result) != 2 {
+			t.Fatalf("got %d distractions, want 2", len(result))
+		}
+		if result[0].Text != "email" || result[0].Category != "external" {
+			t.Errorf("first distraction = %+v, want {Text:email Category:external}", result[0])
+		}
+		if result[1].Text != "phone" {
+			t.Errorf("second distraction text = %q, want phone", result[1].Text)
+		}
+	})
+
+	t.Run("old newline-separated format", func(t *testing.T) {
+		data := "checked email\nlooked at phone"
+		result := unmarshalDistractions(data)
+		if len(result) != 2 {
+			t.Fatalf("got %d distractions, want 2", len(result))
+		}
+		if result[0].Text != "checked email" {
+			t.Errorf("first distraction text = %q, want 'checked email'", result[0].Text)
+		}
+		if result[0].Category != "" {
+			t.Errorf("first distraction category = %q, want empty", result[0].Category)
+		}
+		if result[1].Text != "looked at phone" {
+			t.Errorf("second distraction text = %q, want 'looked at phone'", result[1].Text)
+		}
+	})
+
+	t.Run("empty string", func(t *testing.T) {
+		result := unmarshalDistractions("")
+		if result != nil {
+			t.Errorf("got %v, want nil", result)
+		}
+	})
+}
+
+func TestStorage_ShutdownRitualPersistence(t *testing.T) {
+	store, _ := NewMemory()
+	defer func() { _ = store.Close() }()
+
+	ctx := context.Background()
+	repo := store.Sessions()
+	config := domain.DefaultPomodoroConfig()
+
+	session := domain.NewPomodoroSession(config, nil)
+	session.Methodology = domain.MethodologyDeepWork
+	session.ShutdownRitual = &domain.ShutdownRitual{
+		PendingTasksReview: "reviewed inbox",
+		TomorrowPlan:       "finish API endpoint",
+		ClosingPhrase:      "shutdown complete",
+	}
+	session.Complete()
+
+	if err := repo.Save(ctx, session); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	found, err := repo.FindByID(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("FindByID() error = %v", err)
+	}
+	if found.ShutdownRitual == nil {
+		t.Fatal("ShutdownRitual should not be nil after reload")
+	}
+	if found.ShutdownRitual.PendingTasksReview != "reviewed inbox" {
+		t.Errorf("PendingTasksReview = %q, want 'reviewed inbox'", found.ShutdownRitual.PendingTasksReview)
+	}
+	if found.ShutdownRitual.TomorrowPlan != "finish API endpoint" {
+		t.Errorf("TomorrowPlan = %q, want 'finish API endpoint'", found.ShutdownRitual.TomorrowPlan)
+	}
+	if found.ShutdownRitual.ClosingPhrase != "shutdown complete" {
+		t.Errorf("ClosingPhrase = %q, want 'shutdown complete'", found.ShutdownRitual.ClosingPhrase)
+	}
+}
+
+func TestStorage_DistractionPersistence(t *testing.T) {
+	store, _ := NewMemory()
+	defer func() { _ = store.Close() }()
+
+	ctx := context.Background()
+	repo := store.Sessions()
+	config := domain.DefaultPomodoroConfig()
+
+	session := domain.NewPomodoroSession(config, nil)
+	session.Distractions = []domain.Distraction{
+		{Text: "email notification", Category: "external"},
+		{Text: "random thought", Category: "internal"},
+	}
+
+	if err := repo.Save(ctx, session); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	found, err := repo.FindByID(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("FindByID() error = %v", err)
+	}
+	if len(found.Distractions) != 2 {
+		t.Fatalf("got %d distractions, want 2", len(found.Distractions))
+	}
+	if found.Distractions[0].Text != "email notification" || found.Distractions[0].Category != "external" {
+		t.Errorf("first distraction = %+v, want {Text:email notification Category:external}", found.Distractions[0])
+	}
+	if found.Distractions[1].Text != "random thought" || found.Distractions[1].Category != "internal" {
+		t.Errorf("second distraction = %+v, want {Text:random thought Category:internal}", found.Distractions[1])
+	}
 }

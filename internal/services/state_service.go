@@ -157,7 +157,7 @@ func (s *StateService) LogDistraction(ctx context.Context, sessionID string, tex
 	if s.pomodoroSvc == nil {
 		return domain.ErrNoActiveSession
 	}
-	return s.pomodoroSvc.LogDistraction(ctx, sessionID, text)
+	return s.pomodoroSvc.LogDistraction(ctx, sessionID, text, "")
 }
 
 // SetFocusScore implements ports.MCPStateProvider.

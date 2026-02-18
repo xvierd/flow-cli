@@ -98,18 +98,19 @@ type InlineModel struct {
 	taskInput textinput.Model
 
 	// Timer state
-	state                  *domain.CurrentState
-	progress               progress.Model
-	width                  int
-	completed              bool
-	completedType          domain.SessionType
-	notified               bool
+	state                   *domain.CurrentState
+	progress                progress.Model
+	width                   int
+	completed               bool
+	completedType           domain.SessionType
+	completedElapsed        time.Duration // actual time worked, captured at session end
+	notified                bool
 	confirmBreak           bool
 	confirmFinish          bool
 	fetchState             func() *domain.CurrentState
 	commandCallback        func(ports.TimerCommand) error
 	onSessionComplete      func(domain.SessionType)
-	distractionCallback    func(string) error
+	distractionCallback    func(string, string) error
 	accomplishmentCallback func(string) error
 	focusScoreCallback     func(int) error
 	energizeCallback       func(string) error
@@ -120,17 +121,27 @@ type InlineModel struct {
 	onStartSession func(presetIndex int, taskName string) error
 
 	// Methodology mode
-	mode methodology.Mode
+	mode           methodology.Mode
+	onboardingMode bool
 
 	// Deep Work: distraction log
-	distractionMode  bool
-	distractionInput textinput.Model
-	distractions     []string
+	distractionMode         bool
+	distractionInput        textinput.Model
+	distractions            []string
+	distractionCategoryMode bool
+	distractionPendingText  string
 
 	// Deep Work: accomplishment (shutdown ritual)
 	accomplishmentMode  bool
 	accomplishmentInput textinput.Model
 	accomplishmentSaved bool
+
+	// Deep Work: 3-step shutdown ritual
+	shutdownRitualMode       bool
+	shutdownStep             int // 0=pending tasks, 1=tomorrow plan, 2=closing phrase
+	shutdownInputs           [3]textinput.Model
+	shutdownComplete         bool
+	shutdownRitualCallback   func(domain.ShutdownRitual) error
 
 	// Deep Work: distraction review (shown after accomplishment in shutdown ritual)
 	distractionReviewMode bool
@@ -192,6 +203,20 @@ func NewInlineModel(state *domain.CurrentState, info *domain.CompletionInfo, the
 	ai.CharLimit = 200
 	ai.Width = w - 10
 
+	var shutdownInputs [3]textinput.Model
+	placeholders := [3]string{
+		"Review pending tasks — anything urgent?",
+		"Plan for tomorrow",
+		"Closing phrase (e.g. 'Shutdown complete')",
+	}
+	for i := range shutdownInputs {
+		si := textinput.New()
+		si.Placeholder = placeholders[i]
+		si.CharLimit = 200
+		si.Width = w - 10
+		shutdownInputs[i] = si
+	}
+
 	// If there's already an active session, skip setup
 	startPhase := phasePickDuration
 	if state.ActiveSession != nil {
@@ -208,6 +233,7 @@ func NewInlineModel(state *domain.CurrentState, info *domain.CompletionInfo, the
 		taskInput:           ti,
 		distractionInput:    di,
 		accomplishmentInput: ai,
+		shutdownInputs:      shutdownInputs,
 	}
 }
 
@@ -236,6 +262,9 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.accomplishmentMode {
 			return m.updateAccomplishmentInput(msg)
+		}
+		if m.shutdownRitualMode {
+			return m.updateShutdownRitual(msg)
 		}
 		if m.distractionReviewMode {
 			return m.updateDistractionReview(msg)
@@ -322,6 +351,27 @@ func (m InlineModel) viewMainMenu() string {
 }
 
 func (m InlineModel) updatePickMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Onboarding overlay: dismiss on Enter
+	if m.onboardingMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "enter":
+				m.onboardingMode = false
+				m.phase = phasePickDuration
+				m.presetCursor = 0
+				return m, nil
+			case "esc":
+				// Go back to mode picker
+				m.onboardingMode = false
+				return m, nil
+			case "ctrl+c":
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -364,11 +414,17 @@ func (m InlineModel) updatePickMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m InlineModel) selectMode() (tea.Model, tea.Cmd) {
 	selected := modeOptions[m.modeCursor]
-	m.mode = methodology.ForMethodology(selected.methodology)
+	m.mode = methodology.ForMethodology(selected.methodology, nil)
 	m.presets = m.mode.Presets()
 
 	if m.onModeSelected != nil {
 		m.onModeSelected(selected.methodology)
+	}
+
+	// Show onboarding overlay with mode description
+	if m.mode.Description() != "" {
+		m.onboardingMode = true
+		return m, nil
 	}
 
 	m.phase = phasePickDuration
@@ -550,15 +606,57 @@ func (m InlineModel) updateTaskName(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m InlineModel) updateDistractionInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Category picker sub-mode
+	if m.distractionCategoryMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "i":
+				m.distractions = append(m.distractions, m.distractionPendingText)
+				if m.distractionCallback != nil {
+					_ = m.distractionCallback(m.distractionPendingText, "internal")
+				}
+				m.distractionCategoryMode = false
+				m.distractionMode = false
+				return m, tickCmd()
+			case "e":
+				m.distractions = append(m.distractions, m.distractionPendingText)
+				if m.distractionCallback != nil {
+					_ = m.distractionCallback(m.distractionPendingText, "external")
+				}
+				m.distractionCategoryMode = false
+				m.distractionMode = false
+				return m, tickCmd()
+			case "enter", "esc":
+				m.distractions = append(m.distractions, m.distractionPendingText)
+				if m.distractionCallback != nil {
+					_ = m.distractionCallback(m.distractionPendingText, "")
+				}
+				m.distractionCategoryMode = false
+				m.distractionMode = false
+				return m, tickCmd()
+			case "ctrl+c":
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter":
 			text := m.distractionInput.Value()
 			if text != "" {
+				m.distractionInput.Blur()
+				if m.mode != nil && m.mode.HasDistractionLog() {
+					m.distractionPendingText = text
+					m.distractionCategoryMode = true
+					return m, nil
+				}
 				m.distractions = append(m.distractions, text)
 				if m.distractionCallback != nil {
-					_ = m.distractionCallback(text)
+					_ = m.distractionCallback(text, "")
 				}
 			}
 			m.distractionMode = false
@@ -584,8 +682,8 @@ func (m InlineModel) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd)
 		switch msg.String() {
 		case "enter":
 			text := m.accomplishmentInput.Value()
+			m.accomplishmentSaved = true // Always mark saved (empty = "skipped")
 			if text != "" {
-				m.accomplishmentSaved = true
 				if m.accomplishmentCallback != nil {
 					_ = m.accomplishmentCallback(text)
 				}
@@ -609,6 +707,55 @@ func (m InlineModel) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd)
 	var cmd tea.Cmd
 	m.accomplishmentInput, cmd = m.accomplishmentInput.Update(msg)
 	return m, cmd
+}
+
+func (m InlineModel) updateShutdownRitual(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			m.shutdownInputs[m.shutdownStep].Blur()
+			m.shutdownStep++
+			if m.shutdownStep >= 3 {
+				return m.finishShutdownRitual()
+			}
+			m.shutdownInputs[m.shutdownStep].Focus()
+			return m, m.shutdownInputs[m.shutdownStep].Cursor.BlinkCmd()
+		case "esc":
+			// Abandon the entire ritual — return to the completion screen
+			m.shutdownRitualMode = false
+			for i := range m.shutdownInputs {
+				m.shutdownInputs[i].Blur()
+			}
+			return m, nil
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+
+	var cmd tea.Cmd
+	m.shutdownInputs[m.shutdownStep], cmd = m.shutdownInputs[m.shutdownStep].Update(msg)
+	return m, cmd
+}
+
+func (m InlineModel) finishShutdownRitual() (tea.Model, tea.Cmd) {
+	m.shutdownRitualMode = false
+	m.shutdownComplete = true
+	m.accomplishmentSaved = true
+
+	ritual := domain.ShutdownRitual{
+		PendingTasksReview: m.shutdownInputs[0].Value(),
+		TomorrowPlan:       m.shutdownInputs[1].Value(),
+		ClosingPhrase:      m.shutdownInputs[2].Value(),
+	}
+	if m.shutdownRitualCallback != nil {
+		_ = m.shutdownRitualCallback(ritual)
+	}
+
+	if len(m.distractions) > 0 && !m.distractionReviewDone {
+		m.distractionReviewMode = true
+	}
+	return m, nil
 }
 
 func (m InlineModel) updateDistractionReview(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -713,11 +860,14 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.distractionReviewMode = true
 			}
 		case "a":
-			if m.mode != nil && m.mode.HasShutdownRitual() && m.completed && m.completedType == domain.SessionTypeWork && !m.accomplishmentSaved {
-				m.accomplishmentMode = true
-				m.accomplishmentInput.Reset()
-				m.accomplishmentInput.Focus()
-				return m, m.accomplishmentInput.Cursor.BlinkCmd()
+			if m.mode != nil && m.mode.HasShutdownRitual() && m.completed && m.completedType == domain.SessionTypeWork && !m.shutdownComplete && !m.accomplishmentSaved {
+				m.shutdownRitualMode = true
+				m.shutdownStep = 0
+				for i := range m.shutdownInputs {
+					m.shutdownInputs[i].Reset()
+				}
+				m.shutdownInputs[0].Focus()
+				return m, m.shutdownInputs[0].Cursor.BlinkCmd()
 			}
 		case "1", "2", "3", "4", "5":
 			if m.mode != nil && m.mode.HasFocusScore() && m.completed && m.completedType == domain.SessionTypeWork && !m.focusScoreSaved {
@@ -808,6 +958,19 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.confirmFinish = true
 			m.confirmBreak = false
+		case "m":
+			// Switch mode: cancel active session (if any) and go back to mode picker
+			if !m.completed && m.state.ActiveSession != nil && m.commandCallback != nil {
+				_ = m.commandCallback(ports.CmdCancel)
+			}
+			m.completed = false
+			m.notified = false
+			m.confirmFinish = false
+			m.confirmBreak = false
+			m.resetCompletionState()
+			m.phase = phasePickMode
+			m.modeLocked = false
+			return m, nil
 		default:
 			m.confirmBreak = false
 			m.confirmFinish = false
@@ -817,7 +980,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode != nil && m.mode.HasEnergizeReminder() && !m.energizeShown && m.state.ActiveSession != nil && !m.state.ActiveSession.IsBreakSession() {
 			prog := m.state.ActiveSession.Progress()
 			if prog >= 0.5 {
-				m.energizeTicks = 5
+				m.energizeTicks = 30
 				m.energizeShown = true
 			}
 		}
@@ -846,6 +1009,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.state != nil {
 			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
 				m.completedType = m.state.ActiveSession.Type
+				m.completedElapsed = m.state.ActiveSession.Duration
 				m.completed = true
 				if !m.notified && m.onSessionComplete != nil {
 					m.onSessionComplete(m.completedType)
@@ -875,6 +1039,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *InlineModel) resetCompletionState() {
+	m.completedElapsed = 0
 	m.accomplishmentSaved = false
 	m.focusScore = nil
 	m.focusScoreSaved = false
@@ -883,6 +1048,9 @@ func (m *InlineModel) resetCompletionState() {
 	m.distractionReviewDone = false
 	m.energizeActivity = ""
 	m.energizeSaved = false
+	m.shutdownRitualMode = false
+	m.shutdownStep = 0
+	m.shutdownComplete = false
 }
 
 // completionPromptsComplete returns true when all mode-specific completion prompts are done.
@@ -890,9 +1058,9 @@ func (m InlineModel) completionPromptsComplete() bool {
 	if m.mode == nil {
 		return true
 	}
-	// Deep Work: need accomplishment saved (or skipped) and distraction review done (or no distractions)
+	// Deep Work: need shutdown ritual complete (or accomplishment saved) and distraction review
 	if m.mode.HasShutdownRitual() && m.completedType == domain.SessionTypeWork {
-		if !m.accomplishmentSaved {
+		if !m.shutdownComplete && !m.accomplishmentSaved {
 			return false
 		}
 		if len(m.distractions) > 0 && !m.distractionReviewDone {
@@ -934,6 +1102,14 @@ func (m InlineModel) viewPickMode() string {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
 	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+
+	// Onboarding overlay
+	if m.onboardingMode && m.mode != nil {
+		b.WriteString(activeStyle.Render("  "+m.mode.TUITitle()) + "\n")
+		b.WriteString(dimStyle.Render("  "+m.mode.Description()) + "\n")
+		b.WriteString(dimStyle.Render("  enter continue · esc back to mode picker") + "\n")
+		return b.String()
+	}
 
 	b.WriteString(titleStyle.Render("  Mode:") + "  ")
 
@@ -1139,17 +1315,26 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	prog := session.Progress()
 	typeLabel := domain.GetSessionTypeLabel(session.Type)
 
+	// Show methodology name for work sessions, session type for breaks
+	displayLabel := typeLabel
+	if m.mode != nil && session.IsWorkSession() {
+		displayLabel = m.mode.TUITitle()
+	}
+
 	var b strings.Builder
 
 	if session.Status == domain.SessionStatusPaused {
 		b.WriteString(pausedStyle.Render(fmt.Sprintf("  %s %s  %s  %s PAUSED",
-			m.theme.IconApp, typeLabel, timeStr, m.theme.IconPaused)))
+			m.theme.IconApp, displayLabel, timeStr, m.theme.IconPaused)))
 	} else {
-		b.WriteString(accent.Render(fmt.Sprintf("  %s %s  %s", m.theme.IconApp, typeLabel, timeStr)))
+		b.WriteString(accent.Render(fmt.Sprintf("  %s %s  %s", m.theme.IconApp, displayLabel, timeStr)))
 	}
 
 	if m.state.ActiveTask != nil {
 		b.WriteString(dim.Render(fmt.Sprintf("  %s %s", m.theme.IconTask, m.state.ActiveTask.Title)))
+	}
+	if session.IntendedOutcome != "" {
+		b.WriteString(dim.Italic(true).Render(fmt.Sprintf("  Goal: %s", session.IntendedOutcome)))
 	}
 	if len(session.Tags) > 0 {
 		tagStr := ""
@@ -1164,15 +1349,24 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	if m.energizeTicks > 0 {
 		reminderStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTask))
 		b.WriteString(reminderStyle.Render("  Quick stretch? Take a moment to energize."))
+		b.WriteString("  ")
+		b.WriteString(dim.Render("[b]reak"))
 		b.WriteString("\n")
 	}
 
 	// Text input overlays
 	if m.distractionMode {
-		b.WriteString(dim.Render("  Distraction: ") + m.distractionInput.View())
-		b.WriteString("\n")
-		b.WriteString(dim.Render("  enter save · esc cancel"))
-		b.WriteString("\n")
+		if m.distractionCategoryMode {
+			b.WriteString(dim.Render(fmt.Sprintf("  Categorize: %s", m.distractionPendingText)))
+			b.WriteString("\n")
+			b.WriteString(dim.Render("  [i]nternal  [e]xternal  [enter] skip category"))
+			b.WriteString("\n")
+		} else {
+			b.WriteString(dim.Render("  Distraction: ") + m.distractionInput.View())
+			b.WriteString("\n")
+			b.WriteString(dim.Render("  enter save · esc cancel"))
+			b.WriteString("\n")
+		}
 		return b.String()
 	}
 	if m.accomplishmentMode {
@@ -1209,18 +1403,22 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 
 	// Help
 	if m.confirmFinish {
-		b.WriteString(dim.Render("  Stop session? Press [f] again to confirm"))
+		b.WriteString(dim.Render("  Stop session? [f] confirm  [esc] cancel  [m]ode"))
 	} else if m.confirmBreak {
-		b.WriteString(dim.Render("  Press [b] again to confirm break"))
+		b.WriteString(dim.Render("  Start break? [b] confirm  [esc] cancel  [m]ode"))
 	} else if session.IsBreakSession() {
-		b.WriteString(dim.Render(fmt.Sprintf("  [s]kip [p]ause [f]inish [c]lose  tab:notify %s", notifLabel)))
+		b.WriteString(dim.Render(fmt.Sprintf("  [s]kip [p]ause [f]inish [m]ode [c]lose  tab:notify %s", notifLabel)))
 	} else {
-		helpText := "  [p]ause [f]inish [b]reak [c]lose"
-		if m.mode != nil && m.mode.HasDistractionLog() {
+		pauseAction := "[p]ause"
+		if session.Status == domain.SessionStatusPaused {
+			pauseAction = "[p]resume"
+		}
+		helpText := fmt.Sprintf("  %s [f]inish [b]reak [m]ode [c]lose", pauseAction)
+		if m.mode != nil && m.mode.HasDistractionLog() && session.Status == domain.SessionStatusRunning {
 			if len(m.distractions) > 0 {
-				helpText = fmt.Sprintf("  [p]ause [d]istraction(%d) [f]inish [b]reak [c]lose", len(m.distractions))
+				helpText = fmt.Sprintf("  %s [d]istraction(%d) [f]inish [b]reak [m]ode [c]lose", pauseAction, len(m.distractions))
 			} else {
-				helpText = "  [p]ause [d]istraction [f]inish [b]reak [c]lose"
+				helpText = fmt.Sprintf("  %s [d]istraction [f]inish [b]reak [m]ode [c]lose", pauseAction)
 			}
 		}
 		helpText += fmt.Sprintf("  tab:notify %s", notifLabel)
@@ -1245,33 +1443,39 @@ func (m InlineModel) viewInlineComplete(accent, dim lipgloss.Style) string {
 
 	// Break complete
 	var b strings.Builder
-	b.WriteString(accent.Render(fmt.Sprintf("  %s Break over! ", m.theme.IconApp)))
+	b.WriteString(accent.Render(fmt.Sprintf("  %s Break over!", m.theme.IconApp)))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  [n]ew session [q]uit"))
+	b.WriteString(dim.Render("  Start your next session or call it a day."))
+	b.WriteString("\n")
+	b.WriteString(dim.Render("  [n]ew session  [m]ode  [q]uit"))
 	b.WriteString("\n")
 	return b.String()
 }
 
 func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) string {
 	var b strings.Builder
-	b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete! ", m.theme.IconApp)))
 
-	if m.completionInfo != nil {
-		breakLabel := domain.GetSessionTypeLabel(m.completionInfo.NextBreakType)
-		breakDur := formatDuration(m.completionInfo.NextBreakDuration)
-		b.WriteString(dim.Render(fmt.Sprintf("Next: %s %s", breakDur, breakLabel)))
+	// Header: show time worked so it's clear whether this was a full or early stop
+	if m.completedElapsed > 0 {
+		b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete — %s worked", m.theme.IconApp, formatMinutesCompact(m.completedElapsed))))
+	} else {
+		b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete!", m.theme.IconApp)))
 	}
 	b.WriteString("\n")
 
 	stats := m.state.TodayStats
-	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s worked today",
+	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s today",
 		m.theme.IconStats, stats.WorkSessions, formatMinutesCompact(stats.TotalWorkTime))))
 	b.WriteString("\n")
 
 	if m.autoBreakTicks > 0 {
 		b.WriteString(accent.Render(fmt.Sprintf("  Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+	} else if m.completionInfo != nil {
+		breakLabel := domain.GetSessionTypeLabel(m.completionInfo.NextBreakType)
+		breakDur := formatDuration(m.completionInfo.NextBreakDuration)
+		b.WriteString(dim.Render(fmt.Sprintf("  [n]ew session  [b]reak %s %s  [m]ode  [q]uit", breakDur, breakLabel)))
 	} else {
-		b.WriteString(dim.Render("  [n]ew session [b]reak [q]uit"))
+		b.WriteString(dim.Render("  [n]ew session  [b]reak  [m]ode  [q]uit"))
 	}
 	b.WriteString("\n")
 	return b.String()
@@ -1289,11 +1493,28 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 
 	stats := m.state.TodayStats
 	deepWorkHours := stats.TotalWorkTime.Hours()
-	b.WriteString(dim.Render(fmt.Sprintf("  Deep Work: %s today (%.0f%% of 8h)",
-		formatMinutesCompact(stats.TotalWorkTime), deepWorkHours/8.0*100)))
+	goalHours := 4.0
+	if m.mode != nil && m.mode.DeepWorkGoalHours() > 0 {
+		goalHours = m.mode.DeepWorkGoalHours()
+	}
+	b.WriteString(dim.Render(fmt.Sprintf("  Deep Work: %s today (%.0f%% of %.0fh)",
+		formatMinutesCompact(stats.TotalWorkTime), deepWorkHours/goalHours*100, goalHours)))
 	b.WriteString("\n")
 
-	if m.accomplishmentMode {
+	shutdownStepLabels := [3]string{
+		"Review pending tasks — anything urgent?",
+		"Plan for tomorrow:",
+		"Closing phrase (e.g. 'Shutdown complete'):",
+	}
+	if m.shutdownRitualMode {
+		b.WriteString(accent.Render(fmt.Sprintf("  Shutdown Ritual (step %d/3):", m.shutdownStep+1)))
+		b.WriteString("\n")
+		b.WriteString(dim.Render("  " + shutdownStepLabels[m.shutdownStep]))
+		b.WriteString("\n")
+		b.WriteString("  " + m.shutdownInputs[m.shutdownStep].View())
+		b.WriteString("\n")
+		b.WriteString(dim.Render("  enter save/skip step · esc exit ritual"))
+	} else if m.accomplishmentMode {
 		b.WriteString(dim.Render("  Accomplishment: ") + m.accomplishmentInput.View())
 		b.WriteString("\n")
 		b.WriteString(dim.Render("  enter save · esc cancel"))
@@ -1307,28 +1528,34 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 		b.WriteString(dim.Render("  Consider batching these for tomorrow."))
 		b.WriteString("\n")
 		b.WriteString(dim.Render("  enter dismiss"))
-	} else if m.accomplishmentSaved {
+	} else if m.shutdownComplete || m.accomplishmentSaved {
 		if len(m.distractions) > 0 && !m.distractionReviewDone {
-			b.WriteString(accent.Render("  Accomplishment saved."))
+			b.WriteString(accent.Render("  Shutdown ritual complete."))
 			b.WriteString("\n")
 			b.WriteString(dim.Render(fmt.Sprintf("  [r]eview %d distractions", len(m.distractions))))
 		} else {
 			b.WriteString(accent.Render("  Shutdown ritual complete."))
 		}
-	} else {
-		b.WriteString(dim.Render("  [a]ccomplishment [b]reak [s]kip [c]lose"))
 	}
 	b.WriteString("\n")
 
-	if !m.accomplishmentMode && !m.distractionReviewMode {
+	if !m.accomplishmentMode && !m.distractionReviewMode && !m.shutdownRitualMode {
 		if m.completionPromptsComplete() {
-			b.WriteString(dim.Render("  [n]ew session [b]reak [q]uit"))
-		} else if !m.accomplishmentSaved {
-			b.WriteString(dim.Render("  [a]ccomplishment [b]reak [q]uit"))
+			b.WriteString(dim.Render("  [n]ew session [b]reak [m]ode [q]uit"))
+		} else if !m.shutdownComplete && !m.accomplishmentSaved {
+			b.WriteString(dim.Render("  → [n]ew session locked: complete the shutdown ritual first"))
+			b.WriteString("\n")
+			b.WriteString(dim.Render("    Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest."))
+			b.WriteString("\n")
+			b.WriteString(dim.Render("  [a] shutdown ritual [b]reak [m]ode [q]uit"))
 		} else if len(m.distractions) > 0 && !m.distractionReviewDone {
-			b.WriteString(dim.Render("  [r]eview distractions [b]reak [q]uit"))
+			b.WriteString(dim.Render("  → [n]ew session locked: review your distractions first"))
+			b.WriteString("\n")
+			b.WriteString(dim.Render("    Newport: batch distractions and schedule them — don't let them follow you into the next block."))
+			b.WriteString("\n")
+			b.WriteString(dim.Render("  [r]eview distractions [b]reak [m]ode [q]uit"))
 		} else {
-			b.WriteString(dim.Render("  [b]reak [q]uit"))
+			b.WriteString(dim.Render("  [b]reak [m]ode [q]uit"))
 		}
 		b.WriteString("\n")
 	}
@@ -1368,9 +1595,19 @@ func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) stri
 	b.WriteString("\n")
 
 	if m.completionPromptsComplete() {
-		b.WriteString(dim.Render("  [n]ew session [b]reak [q]uit"))
+		b.WriteString(dim.Render("  [n]ew session [b]reak [m]ode [q]uit"))
+	} else if !m.focusScoreSaved {
+		b.WriteString(dim.Render("  → [n]ew session locked: rate your focus first"))
+		b.WriteString("\n")
+		b.WriteString(dim.Render("    Make Time: tracking focus shows you when you're at your best — skip it and the data disappears."))
+		b.WriteString("\n")
+		b.WriteString(dim.Render("  [1-5] focus score [b]reak [m]ode [q]uit"))
 	} else {
-		b.WriteString(dim.Render("  [b]reak [q]uit"))
+		b.WriteString(dim.Render("  → [n]ew session locked: log how you'll recharge first"))
+		b.WriteString("\n")
+		b.WriteString(dim.Render("    Make Time: energy fuels your next Highlight — Knapp says laser focus requires an energized body."))
+		b.WriteString("\n")
+		b.WriteString(dim.Render("  [w]alk [t]stretch [e]xercise [n]one [b]reak [m]ode [q]uit"))
 	}
 	b.WriteString("\n")
 	return b.String()
