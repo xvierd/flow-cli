@@ -220,6 +220,9 @@ func (s *PomodoroService) SetAccomplishment(ctx context.Context, sessionID strin
 
 // SetFocusScore records the focus score (1–5) on a session (Make Time).
 func (s *PomodoroService) SetFocusScore(ctx context.Context, sessionID string, score int) error {
+	if score < 1 || score > 5 {
+		return fmt.Errorf("focus score must be between 1 and 5, got %d", score)
+	}
 	session, err := s.storage.Sessions().FindByID(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to find session: %w", err)

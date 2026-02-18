@@ -12,32 +12,47 @@ import (
 	"github.com/xvierd/flow-cli/internal/domain"
 )
 
+
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "View and edit session presets and break durations",
 	Long:  `Interactively configure the three session presets, short break, long break, and sessions before long break.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		reader := bufio.NewReader(os.Stdin)
-		presets := appConfig.Pomodoro.GetPresets()
 
-		fmt.Println()
-		fmt.Println("  Current configuration:")
-		fmt.Println()
 		methodology := appConfig.Methodology
 		if methodology == "" {
 			methodology = "pomodoro"
 		}
-		fmt.Printf("  Methodology:  %s\n", domain.Methodology(methodology).Label())
+		meth := domain.Methodology(methodology)
+
+		// Show presets for the active methodology
+		var presets []config.SessionPreset
+		switch meth {
+		case domain.MethodologyDeepWork:
+			presets = appConfig.DeepWork.GetPresets()
+		case domain.MethodologyMakeTime:
+			presets = appConfig.MakeTime.GetPresets()
+		default:
+			presets = appConfig.Pomodoro.GetPresets()
+		}
+
+		fmt.Println()
+		fmt.Println("  Current configuration:")
+		fmt.Println()
+		fmt.Printf("  Methodology:  %s\n", meth.Label())
 		fmt.Println()
 		fmt.Println("  Session presets:")
 		for i, p := range presets {
 			fmt.Printf("    [%d] %-8s  %s\n", i+1, p.Name, formatMinutes(p.Duration))
 		}
 		fmt.Println()
-		fmt.Printf("    Short break:          %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.ShortBreak)))
-		fmt.Printf("    Long break:           %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.LongBreak)))
-		fmt.Printf("    Sessions before long:  %d\n", appConfig.Pomodoro.SessionsBeforeLong)
-		fmt.Printf("    Auto-break:            %v\n", appConfig.Pomodoro.AutoBreak)
+		if meth == domain.MethodologyPomodoro {
+			fmt.Printf("    Short break:          %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.ShortBreak)))
+			fmt.Printf("    Long break:           %s\n", formatMinutes(time.Duration(appConfig.Pomodoro.LongBreak)))
+			fmt.Printf("    Sessions before long:  %d\n", appConfig.Pomodoro.SessionsBeforeLong)
+			fmt.Printf("    Auto-break:            %v\n", appConfig.Pomodoro.AutoBreak)
+		}
 		notifStatus := "off"
 		if appConfig.Notifications.Enabled {
 			notifStatus = "on"
@@ -51,7 +66,9 @@ var configCmd = &cobra.Command{
 		fmt.Println("    [1] Edit preset 1")
 		fmt.Println("    [2] Edit preset 2")
 		fmt.Println("    [3] Edit preset 3")
-		fmt.Println("    [b] Edit break durations")
+		if meth == domain.MethodologyPomodoro {
+			fmt.Println("    [b] Edit break durations")
+		}
 		fmt.Println("    [m] Change methodology")
 		fmt.Println("    [n] Toggle notifications")
 		fmt.Println("    [q] Quit without saving")
@@ -68,6 +85,9 @@ var configCmd = &cobra.Command{
 		case "3":
 			return editPreset(reader, appConfig, 3)
 		case "b":
+			if meth != domain.MethodologyPomodoro {
+				return fmt.Errorf("break duration editing is only available for Pomodoro methodology")
+			}
 			return editBreaks(reader, appConfig)
 		case "m":
 			return editMethodology(reader, appConfig)
@@ -87,7 +107,22 @@ func init() {
 }
 
 func editPreset(reader *bufio.Reader, cfg *config.Config, num int) error {
-	presets := cfg.Pomodoro.GetPresets()
+	methodology := cfg.Methodology
+	if methodology == "" {
+		methodology = "pomodoro"
+	}
+	meth := domain.Methodology(methodology)
+
+	var presets []config.SessionPreset
+	switch meth {
+	case domain.MethodologyDeepWork:
+		presets = cfg.DeepWork.GetPresets()
+	case domain.MethodologyMakeTime:
+		presets = cfg.MakeTime.GetPresets()
+	default:
+		presets = cfg.Pomodoro.GetPresets()
+	}
+
 	p := presets[num-1]
 
 	fmt.Printf("\n  Editing preset %d (currently: %s — %s)\n", num, p.Name, formatMinutes(p.Duration))
@@ -112,17 +147,44 @@ func editPreset(reader *bufio.Reader, cfg *config.Config, num int) error {
 		dur = parsed
 	}
 
-	switch num {
-	case 1:
-		cfg.Pomodoro.Preset1Name = name
-		cfg.Pomodoro.Preset1Duration = config.Duration(dur)
-		cfg.Pomodoro.WorkDuration = config.Duration(dur)
-	case 2:
-		cfg.Pomodoro.Preset2Name = name
-		cfg.Pomodoro.Preset2Duration = config.Duration(dur)
-	case 3:
-		cfg.Pomodoro.Preset3Name = name
-		cfg.Pomodoro.Preset3Duration = config.Duration(dur)
+	switch meth {
+	case domain.MethodologyDeepWork:
+		switch num {
+		case 1:
+			cfg.DeepWork.Preset1Name = name
+			cfg.DeepWork.Preset1Duration = config.Duration(dur)
+		case 2:
+			cfg.DeepWork.Preset2Name = name
+			cfg.DeepWork.Preset2Duration = config.Duration(dur)
+		case 3:
+			cfg.DeepWork.Preset3Name = name
+			cfg.DeepWork.Preset3Duration = config.Duration(dur)
+		}
+	case domain.MethodologyMakeTime:
+		switch num {
+		case 1:
+			cfg.MakeTime.Preset1Name = name
+			cfg.MakeTime.Preset1Duration = config.Duration(dur)
+		case 2:
+			cfg.MakeTime.Preset2Name = name
+			cfg.MakeTime.Preset2Duration = config.Duration(dur)
+		case 3:
+			cfg.MakeTime.Preset3Name = name
+			cfg.MakeTime.Preset3Duration = config.Duration(dur)
+		}
+	default: // Pomodoro
+		switch num {
+		case 1:
+			cfg.Pomodoro.Preset1Name = name
+			cfg.Pomodoro.Preset1Duration = config.Duration(dur)
+			cfg.Pomodoro.WorkDuration = config.Duration(dur)
+		case 2:
+			cfg.Pomodoro.Preset2Name = name
+			cfg.Pomodoro.Preset2Duration = config.Duration(dur)
+		case 3:
+			cfg.Pomodoro.Preset3Name = name
+			cfg.Pomodoro.Preset3Duration = config.Duration(dur)
+		}
 	}
 
 	if err := config.Save(cfg); err != nil {

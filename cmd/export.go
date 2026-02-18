@@ -75,6 +75,30 @@ func exportMarkdown(sessions []*domain.PomodoroSession) error {
 		if s.FocusScore != nil {
 			fmt.Printf("- Focus: %d/5\n", *s.FocusScore)
 		}
+		if s.EnergizeActivity != "" {
+			fmt.Printf("- Energize: %s\n", s.EnergizeActivity)
+		}
+		if len(s.Distractions) > 0 {
+			fmt.Printf("- Distractions (%d):\n", len(s.Distractions))
+			for _, d := range s.Distractions {
+				if d.Category != "" {
+					fmt.Printf("  - [%s] %s\n", d.Category, d.Text)
+				} else {
+					fmt.Printf("  - %s\n", d.Text)
+				}
+			}
+		}
+		if s.ShutdownRitual != nil {
+			if s.ShutdownRitual.TomorrowPlan != "" {
+				fmt.Printf("- Tomorrow: %s\n", s.ShutdownRitual.TomorrowPlan)
+			}
+			if s.ShutdownRitual.PendingTasksReview != "" {
+				fmt.Printf("- Pending review: %s\n", s.ShutdownRitual.PendingTasksReview)
+			}
+			if s.ShutdownRitual.ClosingPhrase != "" {
+				fmt.Printf("- Closing: %s\n", s.ShutdownRitual.ClosingPhrase)
+			}
+		}
 		fmt.Println()
 	}
 	return nil
@@ -84,7 +108,11 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 	w := csv.NewWriter(os.Stdout)
 	defer w.Flush()
 
-	w.Write([]string{"date", "methodology", "duration_min", "goal", "accomplished", "focus_score", "tags"})
+	_ = w.Write([]string{
+		"date", "methodology", "duration_min", "goal", "accomplished",
+		"focus_score", "tags", "energize_activity", "distraction_count",
+		"distractions", "tomorrow_plan",
+	})
 
 	for _, s := range sessions {
 		if !s.IsWorkSession() {
@@ -94,7 +122,16 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 		if s.FocusScore != nil {
 			focusScore = fmt.Sprintf("%d", *s.FocusScore)
 		}
-		w.Write([]string{
+		distractionCount := fmt.Sprintf("%d", len(s.Distractions))
+		var distractionTexts []string
+		for _, d := range s.Distractions {
+			distractionTexts = append(distractionTexts, d.Text)
+		}
+		tomorrowPlan := ""
+		if s.ShutdownRitual != nil {
+			tomorrowPlan = s.ShutdownRitual.TomorrowPlan
+		}
+		_ = w.Write([]string{
 			s.StartedAt.Format("2006-01-02"),
 			string(s.Methodology),
 			fmt.Sprintf("%.0f", s.Duration.Minutes()),
@@ -102,6 +139,10 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 			s.Accomplishment,
 			focusScore,
 			strings.Join(s.Tags, ";"),
+			s.EnergizeActivity,
+			distractionCount,
+			strings.Join(distractionTexts, "; "),
+			tomorrowPlan,
 		})
 	}
 	return nil

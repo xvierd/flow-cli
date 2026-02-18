@@ -340,12 +340,15 @@ func (r *sessionRepository) GetPeriodStats(ctx context.Context, start, end time.
 	}
 	stats.FocusScoreCount = scoreCount
 
-	// Count distractions (Deep Work sessions)
+	// Count distractions (Deep Work sessions).
+	// Distractions are stored as JSON arrays (new format) or newline-separated strings (legacy).
 	distractQuery := `
 		SELECT COALESCE(SUM(
-			CASE WHEN distractions IS NOT NULL AND distractions != ''
-			THEN LENGTH(distractions) - LENGTH(REPLACE(distractions, CHAR(10), '')) + 1
-			ELSE 0 END
+			CASE
+				WHEN distractions IS NULL OR distractions = '' THEN 0
+				WHEN distractions LIKE '[%' THEN json_array_length(distractions)
+				ELSE LENGTH(distractions) - LENGTH(REPLACE(distractions, CHAR(10), '')) + 1
+			END
 		), 0)
 		FROM sessions
 		WHERE type = 'work' AND status = 'completed'
@@ -401,9 +404,12 @@ func (r *sessionRepository) GetDeepWorkStreak(ctx context.Context, threshold tim
 func (r *sessionRepository) GetHourlyProductivity(ctx context.Context, days int) (map[int]time.Duration, error) {
 	since := time.Now().AddDate(0, 0, -days)
 
+	// Go stores time.Time as RFC3339 (e.g. "2024-01-15T09:30:00Z").
+	// SQLite's strftime('%H', ...) cannot parse the 'T' separator or trailing timezone,
+	// so we extract the hour by byte position: chars 12-13 in the RFC3339 string.
 	query := `
 		SELECT
-			CAST(strftime('%H', started_at) AS INTEGER) as hour,
+			CAST(substr(started_at, 12, 2) AS INTEGER) as hour,
 			SUM(duration_ms) as total_ms
 		FROM sessions
 		WHERE type = 'work' AND status = 'completed'

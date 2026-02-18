@@ -30,14 +30,46 @@ var stopCmd = &cobra.Command{
 		if !jsonOutput {
 			switch session.Methodology {
 			case domain.MethodologyDeepWork:
-				fmt.Print("What did you accomplish? (Enter to skip): ")
 				scanner := bufio.NewScanner(os.Stdin)
+				fmt.Println()
+				fmt.Println("  — Shutdown Ritual —")
+
+				fmt.Print("  What did you accomplish? (Enter to skip): ")
+				var accomplishment string
 				if scanner.Scan() {
-					text := strings.TrimSpace(scanner.Text())
-					if text != "" {
-						_ = pomodoroSvc.SetAccomplishment(ctx, session.ID, text)
+					accomplishment = strings.TrimSpace(scanner.Text())
+					if accomplishment != "" {
+						_ = pomodoroSvc.SetAccomplishment(ctx, session.ID, accomplishment)
 					}
 				}
+
+				fmt.Print("  Pending tasks to review (Enter to skip): ")
+				var pendingReview string
+				if scanner.Scan() {
+					pendingReview = strings.TrimSpace(scanner.Text())
+				}
+
+				fmt.Print("  Plan for tomorrow (Enter to skip): ")
+				var tomorrowPlan string
+				if scanner.Scan() {
+					tomorrowPlan = strings.TrimSpace(scanner.Text())
+				}
+
+				fmt.Print("  Closing phrase (e.g. 'Shutdown complete', Enter to skip): ")
+				var closingPhrase string
+				if scanner.Scan() {
+					closingPhrase = strings.TrimSpace(scanner.Text())
+				}
+
+				if pendingReview != "" || tomorrowPlan != "" || closingPhrase != "" {
+					ritual := domain.ShutdownRitual{
+						PendingTasksReview: pendingReview,
+						TomorrowPlan:       tomorrowPlan,
+						ClosingPhrase:      closingPhrase,
+					}
+					_ = pomodoroSvc.SetShutdownRitual(ctx, session.ID, ritual)
+				}
+				fmt.Println()
 			case domain.MethodologyMakeTime:
 				fmt.Print("Focus score (1-5, Enter to skip): ")
 				scanner := bufio.NewScanner(os.Stdin)
