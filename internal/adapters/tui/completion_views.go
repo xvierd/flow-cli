@@ -7,9 +7,10 @@ import (
 	"github.com/xvierd/flow-cli/internal/methodology"
 )
 
-// shutdownStepLabels are the prompt labels for the 3-step Deep Work shutdown ritual.
-var shutdownStepLabels = [3]string{
+// shutdownStepLabels are the prompt labels for the 4-step Deep Work shutdown ritual (Cal Newport).
+var shutdownStepLabels = [4]string{
 	"Review pending tasks — anything urgent?",
+	"Review tomorrow's calendar — any conflicts?",
 	"Plan for tomorrow:",
 	"Closing phrase (e.g. 'Shutdown complete'):",
 }

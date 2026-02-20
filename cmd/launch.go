@@ -187,7 +187,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			task, _ := app.storage.Tasks().FindYesterdayHighlight(ctx, time.Now())
 			return task
 		},
-		OnStartSession: func(presetIndex int, taskName string) error {
+		OnStartSession: func(presetIndex int, taskName string, intendedOutcome string) error {
 			currentMode := app.mode
 			currentPresets := currentMode.Presets()
 
@@ -212,11 +212,12 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			}
 
 			_, err := app.pomodoro.StartPomodoro(ctx, services.StartPomodoroRequest{
-				TaskID:      taskID,
-				WorkingDir:  workingDir,
-				Duration:    currentPresets[presetIndex].Duration,
-				Methodology: app.methodology,
-				Tags:        sessionTags,
+				TaskID:          taskID,
+				WorkingDir:      workingDir,
+				Duration:        currentPresets[presetIndex].Duration,
+				Methodology:     app.methodology,
+				Tags:            sessionTags,
+				IntendedOutcome: intendedOutcome,
 			})
 			return err
 		},

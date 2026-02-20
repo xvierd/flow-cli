@@ -129,7 +129,7 @@ func handleShutdownRitual(cs *completionState, cb *completionCallbacks, msg tea.
 		case "enter":
 			cs.shutdownInputs[cs.shutdownStep].Blur()
 			cs.shutdownStep++
-			if cs.shutdownStep >= 3 {
+			if cs.shutdownStep >= 4 {
 				return finishShutdownRitual(cs, cb)
 			}
 			cs.shutdownInputs[cs.shutdownStep].Focus()
@@ -159,8 +159,9 @@ func finishShutdownRitual(cs *completionState, cb *completionCallbacks) tea.Cmd 
 
 	ritual := domain.ShutdownRitual{
 		PendingTasksReview: cs.shutdownInputs[0].Value(),
-		TomorrowPlan:       cs.shutdownInputs[1].Value(),
-		ClosingPhrase:      cs.shutdownInputs[2].Value(),
+		CalendarReview:     cs.shutdownInputs[1].Value(),
+		TomorrowPlan:       cs.shutdownInputs[2].Value(),
+		ClosingPhrase:      cs.shutdownInputs[3].Value(),
 	}
 	if cb.shutdownRitualCallback != nil {
 		_ = cb.shutdownRitualCallback(ritual)
@@ -191,7 +192,7 @@ func handleDistractionReview(cs *completionState, msg tea.Msg) tea.Cmd {
 
 // newCompletionInputs returns initialized text inputs for completion state.
 // Exported for reuse in NewModel and NewInlineModel.
-func newCompletionInputs(width int) (distraction, accomplishment textinput.Model, shutdown [3]textinput.Model) {
+func newCompletionInputs(width int) (distraction, accomplishment textinput.Model, shutdown [4]textinput.Model) {
 	distraction = textinput.New()
 	distraction.Placeholder = "What distracted you?"
 	distraction.CharLimit = 200
@@ -202,8 +203,10 @@ func newCompletionInputs(width int) (distraction, accomplishment textinput.Model
 	accomplishment.CharLimit = 200
 	accomplishment.Width = width
 
-	placeholders := [3]string{
+	// Cal Newport's 4-step shutdown ritual
+	placeholders := [4]string{
 		"Review pending tasks — anything urgent?",
+		"Review tomorrow's calendar — any conflicts?",
 		"Plan for tomorrow",
 		"Closing phrase (e.g. 'Shutdown complete')",
 	}

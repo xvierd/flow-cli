@@ -28,7 +28,7 @@ type Timer struct {
 	inline                  bool
 	presets                 []config.SessionPreset
 	breakInfo               string
-	onStartSession          func(presetIndex int, taskName string) error
+	onStartSession          func(presetIndex int, taskName string, intendedOutcome string) error
 	mode                    methodology.Mode
 	modeLocked              bool
 	onModeSelected          func(domain.Methodology)
@@ -76,7 +76,7 @@ type TimerConfig struct {
 	NotificationToggle      func(bool)
 	Presets                 []config.SessionPreset
 	BreakInfo               string
-	OnStartSession          func(presetIndex int, taskName string) error
+	OnStartSession          func(presetIndex int, taskName string, intendedOutcome string) error
 	Mode                    methodology.Mode
 	ModeLocked              bool
 	OnModeSelected          func(domain.Methodology)
@@ -307,7 +307,7 @@ func (t *Timer) SetFetchYesterdayHighlight(fetch func() *domain.Task) {
 }
 
 // SetInlineSetup configures the inline setup phase (presets, break info, start callback).
-func (t *Timer) SetInlineSetup(presets []config.SessionPreset, breakInfo string, onStart func(presetIndex int, taskName string) error) {
+func (t *Timer) SetInlineSetup(presets []config.SessionPreset, breakInfo string, onStart func(presetIndex int, taskName string, intendedOutcome string) error) {
 	t.presets = presets
 	t.breakInfo = breakInfo
 	t.onStartSession = onStart

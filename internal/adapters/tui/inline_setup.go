@@ -19,6 +19,7 @@ const (
 	phasePickDuration
 	phaseTaskSelect
 	phaseTaskName
+	phaseOutcome // Deep Work: intended outcome (shown after task, before timer)
 	phaseTimer
 	phaseWelcome
 )
@@ -471,14 +472,8 @@ func (m InlineModel) updateTaskSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m InlineModel) selectCarryOverTask() (tea.Model, tea.Cmd) {
 	task := m.yesterdayHighlight
 	task.SetAsHighlight() // updates to today
-	if m.onStartSession != nil {
-		if err := m.onStartSession(m.presetCursor, task.Title); err != nil {
-			m.phase = phaseTimer
-			return m, tickCmd()
-		}
-	}
-	m.phase = phaseTimer
-	return m, tickCmd()
+	m.taskInput.SetValue(task.Title)
+	return m.advanceFromTask(task.Title)
 }
 
 func (m InlineModel) selectRecentTask() (tea.Model, tea.Cmd) {
@@ -487,11 +482,28 @@ func (m InlineModel) selectRecentTask() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	task := m.recentTasks[recentIdx]
-	// Pre-fill the task input with the selected task title
 	m.taskInput.SetValue(task.Title)
-	// Start the session immediately with the selected task name
+	return m.advanceFromTask(task.Title)
+}
+
+// advanceFromTask decides whether to show the outcome phase (Deep Work)
+// or start the session immediately. taskName may be empty.
+func (m InlineModel) advanceFromTask(taskName string) (tea.Model, tea.Cmd) {
+	if m.mode != nil && m.mode.OutcomePrompt() != "" {
+		// Deep Work: ask for intended outcome before starting
+		m.taskInput.Blur()
+		m.outcomeInput.SetValue("")
+		m.outcomeInput.Focus()
+		m.phase = phaseOutcome
+		return m, m.outcomeInput.Cursor.BlinkCmd()
+	}
+	return m.startSession(taskName, "")
+}
+
+// startSession calls onStartSession and transitions to the timer phase.
+func (m InlineModel) startSession(taskName, intendedOutcome string) (tea.Model, tea.Cmd) {
 	if m.onStartSession != nil {
-		if err := m.onStartSession(m.presetCursor, task.Title); err != nil {
+		if err := m.onStartSession(m.presetCursor, taskName, intendedOutcome); err != nil {
 			m.phase = phaseTimer
 			return m, tickCmd()
 		}
@@ -555,15 +567,8 @@ func (m InlineModel) updateTaskName(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter":
-			if m.onStartSession != nil {
-				taskName := strings.TrimSpace(m.taskInput.Value())
-				if err := m.onStartSession(m.presetCursor, taskName); err != nil {
-					m.phase = phaseTimer
-					return m, tickCmd()
-				}
-			}
-			m.phase = phaseTimer
-			return m, tickCmd()
+			taskName := strings.TrimSpace(m.taskInput.Value())
+			return m.advanceFromTask(taskName)
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
@@ -599,6 +604,63 @@ func (m InlineModel) viewTaskName() string {
 	}
 	b.WriteString(titleStyle.Render("  " + taskPrompt + " "))
 	b.WriteString(m.taskInput.View())
+	b.WriteString("\n")
+
+	b.WriteString(dimStyle.Render("  enter start · esc back · ctrl+c quit") + "\n")
+
+	return b.String()
+}
+
+// updatePickOutcome handles the intended outcome input phase (Deep Work only).
+func (m InlineModel) updatePickOutcome(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			outcome := strings.TrimSpace(m.outcomeInput.Value())
+			m.intendedOutcome = outcome
+			m.outcomeInput.Blur()
+			taskName := strings.TrimSpace(m.taskInput.Value())
+			return m.startSession(taskName, outcome)
+		case "esc":
+			// Go back to task name input
+			m.outcomeInput.Blur()
+			m.phase = phaseTaskName
+			m.taskInput.Focus()
+			return m, m.taskInput.Cursor.BlinkCmd()
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+
+	var cmd tea.Cmd
+	m.outcomeInput, cmd = m.outcomeInput.Update(msg)
+	return m, cmd
+}
+
+// viewPickOutcome renders the intended outcome prompt (Deep Work only).
+func (m InlineModel) viewPickOutcome() string {
+	var b strings.Builder
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
+	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+
+	p := m.presets[m.presetCursor]
+	b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ %s %s", p.Name, formatMinutesCompact(p.Duration))))
+	b.WriteString("\n")
+
+	if m.taskInput.Value() != "" {
+		b.WriteString(dimStyle.Render(fmt.Sprintf("  Task: %s", strings.TrimSpace(m.taskInput.Value()))))
+		b.WriteString("\n")
+	}
+
+	outcomePrompt := "Intended outcome:"
+	if m.mode != nil && m.mode.OutcomePrompt() != "" {
+		outcomePrompt = m.mode.OutcomePrompt()
+	}
+	b.WriteString(titleStyle.Render("  "+outcomePrompt+" "))
+	b.WriteString(m.outcomeInput.View())
 	b.WriteString("\n")
 
 	b.WriteString(dimStyle.Render("  enter start · esc back · ctrl+c quit") + "\n")

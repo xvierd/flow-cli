@@ -476,11 +476,18 @@ func TestModel_ShutdownRitual_ThreeStepsAdvanceOnEnter(t *testing.T) {
 		t.Errorf("Enter on step 1 should advance to step 2, got %d", m.shutdownStep)
 	}
 
-	// Step 2 → complete
+	// Step 2 → 3
+	result, _ = m.updateShutdownRitual(key("enter"))
+	m = result.(Model)
+	if m.shutdownStep != 3 {
+		t.Errorf("Enter on step 2 should advance to step 3, got %d", m.shutdownStep)
+	}
+
+	// Step 3 → complete
 	result, _ = m.updateShutdownRitual(key("enter"))
 	m = result.(Model)
 	if !m.shutdownComplete {
-		t.Error("Enter on step 2 should set shutdownComplete = true")
+		t.Error("Enter on step 3 should set shutdownComplete = true")
 	}
 	if m.shutdownRitualMode {
 		t.Error("shutdownRitualMode should be false after completing ritual")
@@ -512,7 +519,7 @@ func TestModel_ShutdownRitual_CallsCallback(t *testing.T) {
 		return nil
 	}
 	m.shutdownRitualMode = true
-	m.shutdownStep = 2
+	m.shutdownStep = 3
 
 	m.updateShutdownRitual(key("enter"))
 
@@ -536,9 +543,11 @@ func TestInlineModel_ShutdownRitual_ThreeStepsAdvanceOnEnter(t *testing.T) {
 	m = result.(InlineModel)
 	result, _ = m.updateShutdownRitual(key("enter"))
 	m = result.(InlineModel)
+	result, _ = m.updateShutdownRitual(key("enter"))
+	m = result.(InlineModel)
 
 	if !m.shutdownComplete {
-		t.Error("After 3 Enters, shutdownComplete should be true in InlineModel")
+		t.Error("After 4 Enters, shutdownComplete should be true in InlineModel")
 	}
 }
 
@@ -562,14 +571,14 @@ func TestInlineModel_ShutdownRitual_SkipAllWithEnter(t *testing.T) {
 	m.shutdownRitualMode = true
 	m.shutdownStep = 0
 
-	// Empty Enter on each step skips it and advances — 3 times completes the ritual
-	for i := 0; i < 3; i++ {
+	// Empty Enter on each step skips it and advances — 4 times completes the ritual (Cal Newport's 4 steps)
+	for i := 0; i < 4; i++ {
 		result, _ := m.updateShutdownRitual(key("enter"))
 		m = result.(InlineModel)
 	}
 
 	if !m.shutdownComplete {
-		t.Error("Empty Enter on all 3 steps should still complete the ritual")
+		t.Error("Empty Enter on all 4 steps should still complete the ritual")
 	}
 }
 
