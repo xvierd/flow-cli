@@ -54,10 +54,13 @@ var statsCmd = &cobra.Command{
 			hourly = nil // non-fatal
 		}
 
-		// Fetch energize stats (Make Time)
-		energize, err := app.storage.Sessions().GetEnergizeStats(ctx, start, end)
-		if err != nil {
-			energize = nil // non-fatal
+		// Fetch energize stats — only relevant for Make Time methodology
+		var energize []domain.EnergizeStat
+		if app.methodology == domain.MethodologyMakeTime {
+			energize, err = app.storage.Sessions().GetEnergizeStats(ctx, start, end)
+			if err != nil {
+				energize = nil // non-fatal
+			}
 		}
 
 		fmt.Println()
@@ -150,25 +153,23 @@ func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, en
 	renderEnergizeInsights(energize, dimStyle, valueStyle, titleStyle)
 }
 
-// renderEnergizeInsights displays a table of energize activities and their avg focus scores.
+// renderEnergizeInsights displays a table of energize activities vs avg focus score (Make Time).
+// Results are sorted by avg focus score descending.
 func renderEnergizeInsights(energize []domain.EnergizeStat, dimStyle, valueStyle, titleStyle lipgloss.Style) {
 	if len(energize) == 0 {
 		return
 	}
 
-	fmt.Printf("  %s\n", dimStyle.Render("Energize Insights"))
+	fmt.Printf("  %s\n", titleStyle.Render("Energize → Focus correlation"))
 	for _, e := range energize {
-		activityLabel := fmt.Sprintf("%-10s", e.Activity)
-		fmt.Printf("  %s  %s session%s  avg focus %s\n",
-			dimStyle.Render(activityLabel),
-			valueStyle.Render(fmt.Sprintf("%d", e.SessionCount)),
-			func() string {
-				if e.SessionCount == 1 {
-					return ""
-				}
-				return "s"
-			}(),
-			valueStyle.Render(fmt.Sprintf("%.1f", e.AvgFocusScore)),
+		plural := "s"
+		if e.SessionCount == 1 {
+			plural = ""
+		}
+		fmt.Printf("  %-12s  %-15s  avg focus %s\n",
+			dimStyle.Render(e.Activity),
+			dimStyle.Render(fmt.Sprintf("%d session%s", e.SessionCount, plural)),
+			valueStyle.Render(fmt.Sprintf("%.1f/5", e.AvgFocusScore)),
 		)
 	}
 	fmt.Println()

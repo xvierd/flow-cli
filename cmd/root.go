@@ -71,4 +71,5 @@ func init() {
 	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(completeCmd)
 	rootCmd.AddCommand(resetCmd)
+	rootCmd.AddCommand(voidCmd)
 }
