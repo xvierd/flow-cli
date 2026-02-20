@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/domain"
 )
 
 var reflectTodayFlag bool
@@ -165,17 +168,18 @@ func init() {
 	reflectCmd.Flags().BoolVar(&reflectTodayFlag, "today", false, "Show today's reflection summary")
 }
 
-// runReflectToday displays a summary of today's sessions, highlight, and focus scores.
+// runReflectToday displays a methodology-aware summary of today's sessions with interactive prompts.
 func runReflectToday(ctx context.Context, now time.Time) error {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C6FE0"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
 	valueStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A78BFA"))
+	accentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))
 
 	fmt.Println()
 	fmt.Printf("  %s\n", titleStyle.Render(fmt.Sprintf("Today's Reflection — %s", now.Format("Mon Jan 2"))))
 	fmt.Printf("  %s\n\n", dimStyle.Render(strings.Repeat("─", 45)))
 
-	// Today's stats
+	// Today's stats (common to all methodologies)
 	stats, err := app.storage.Sessions().GetDailyStats(ctx, now)
 	if err != nil {
 		return fmt.Errorf("failed to get today's stats: %w", err)
@@ -183,6 +187,120 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 
 	fmt.Printf("  %s  %s\n", dimStyle.Render("Sessions:"), valueStyle.Render(fmt.Sprintf("%d", stats.WorkSessions)))
 	fmt.Printf("  %s  %s\n", dimStyle.Render("Work time:"), valueStyle.Render(formatMinutes(stats.TotalWorkTime)))
+	fmt.Println()
+
+	// Fetch today's sessions for methodology-specific stats and persistence
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayEnd := todayStart.AddDate(0, 0, 1)
+	sessions, _ := app.storage.Sessions().FindRecent(ctx, todayStart)
+
+	// Filter to today only
+	var todaySessions []*domain.PomodoroSession
+	for _, s := range sessions {
+		if !s.StartedAt.After(todayEnd) {
+			todaySessions = append(todaySessions, s)
+		}
+	}
+
+	// Find today's last work session (for persistence)
+	var lastWorkSession *domain.PomodoroSession
+	for i := len(todaySessions) - 1; i >= 0; i-- {
+		if todaySessions[i].IsWorkSession() {
+			lastWorkSession = todaySessions[i]
+			break
+		}
+	}
+
+	// Branch by methodology
+	switch app.methodology {
+	case domain.MethodologyMakeTime:
+		runReflectMakeTime(ctx, now, stats, todaySessions, lastWorkSession, dimStyle, valueStyle, accentStyle)
+	case domain.MethodologyDeepWork:
+		runReflectDeepWork(ctx, now, stats, todaySessions, lastWorkSession, dimStyle, valueStyle)
+	default:
+		runReflectPomodoro(ctx, todaySessions, lastWorkSession, dimStyle, valueStyle)
+	}
+
+	return nil
+}
+
+// runReflectPomodoro shows pomodoro-specific reflection.
+func runReflectPomodoro(
+	ctx context.Context,
+	todaySessions []*domain.PomodoroSession,
+	lastWorkSession *domain.PomodoroSession,
+	dimStyle, valueStyle lipgloss.Style,
+) {
+	// Count completed and interrupted work sessions
+	var completed, interrupted int
+	for _, s := range todaySessions {
+		if !s.IsWorkSession() {
+			continue
+		}
+		switch s.Status {
+		case domain.SessionStatusCompleted:
+			completed++
+		case domain.SessionStatusInterrupted:
+			interrupted++
+		}
+	}
+
+	fmt.Printf("  %s\n", dimStyle.Render("— Pomodoro Review —"))
+	fmt.Println()
+	interruptedStr := ""
+	if interrupted > 0 {
+		interruptedStr = fmt.Sprintf(" · %d interrupted", interrupted)
+	}
+	fmt.Printf("  %s %s completed today%s\n",
+		valueStyle.Render(fmt.Sprintf("%d", completed)),
+		dimStyle.Render("sessions"),
+		dimStyle.Render(interruptedStr),
+	)
+	fmt.Println()
+
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Printf("  %s ", dimStyle.Render("Que aprendiste hoy? (Enter to skip):"))
+	if scanner.Scan() {
+		answer := strings.TrimSpace(scanner.Text())
+		if answer != "" && lastWorkSession != nil {
+			_ = app.pomodoro.SetAccomplishment(ctx, lastWorkSession.ID, answer)
+		}
+	}
+	fmt.Println()
+}
+
+// runReflectMakeTime shows Make Time specific reflection with highlight review.
+func runReflectMakeTime(
+	ctx context.Context,
+	now time.Time,
+	stats *domain.DailyStats,
+	todaySessions []*domain.PomodoroSession,
+	lastWorkSession *domain.PomodoroSession,
+	dimStyle, valueStyle, accentStyle lipgloss.Style,
+) {
+	fmt.Printf("  %s\n", dimStyle.Render("— Make Time · Reflect —"))
+	fmt.Println()
+
+	// Show today's highlight
+	highlight, _ := app.storage.Tasks().FindTodayHighlight(ctx, now)
+	if highlight != nil {
+		statusLabel := dimStyle.Render("in progress")
+		if highlight.Status == "completed" {
+			statusLabel = accentStyle.Render("completed")
+		}
+		fmt.Printf("  %s  %s (%s)\n",
+			dimStyle.Render("Highlight de hoy:"),
+			valueStyle.Render(fmt.Sprintf("%q", highlight.Title)),
+			statusLabel,
+		)
+	} else {
+		fmt.Printf("  %s  %s\n",
+			dimStyle.Render("Highlight de hoy:"),
+			dimStyle.Render("No highlight set"),
+		)
+	}
+
+	// Show highlight target progress if configured
 	if app.config.MakeTime.HighlightTargetMinutes > 0 {
 		target := time.Duration(app.config.MakeTime.HighlightTargetMinutes) * time.Minute
 		pct := 0
@@ -198,37 +316,14 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 			dimStyle.Render(fmt.Sprintf("(%d%% complete)", pct)),
 		)
 	}
-	fmt.Println()
 
-	// Today's highlight
-	highlight, _ := app.storage.Tasks().FindTodayHighlight(ctx, now)
-	if highlight != nil {
-		status := dimStyle.Render("in progress")
-		if highlight.Status == "completed" {
-			status = valueStyle.Render("completed")
-		}
-		fmt.Printf("  %s  %s (%s)\n", dimStyle.Render("Highlight:"), valueStyle.Render(highlight.Title), status)
-		fmt.Println()
-	}
-
-	// Today's focus scores from sessions
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	todayEnd := todayStart.AddDate(0, 0, 1)
-	sessions, _ := app.storage.Sessions().FindRecent(ctx, todayStart)
+	// Show focus scores
 	var focusScores []int
-	var energizeActivities []string
-	for _, s := range sessions {
-		if s.StartedAt.After(todayEnd) {
-			continue
-		}
+	for _, s := range todaySessions {
 		if s.FocusScore != nil {
 			focusScores = append(focusScores, *s.FocusScore)
 		}
-		if s.EnergizeActivity != "" {
-			energizeActivities = append(energizeActivities, s.EnergizeActivity)
-		}
 	}
-
 	if len(focusScores) > 0 {
 		sum := 0
 		for _, sc := range focusScores {
@@ -242,10 +337,102 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 		)
 	}
 
-	if len(energizeActivities) > 0 {
-		fmt.Printf("  %s  %s\n", dimStyle.Render("Energize:"), valueStyle.Render(strings.Join(energizeActivities, ", ")))
+	fmt.Println()
+
+	// Interactive reflection prompts
+	scanner := bufio.NewScanner(os.Stdin)
+
+	fmt.Printf("  %s ", dimStyle.Render("Hiciste tiempo para tu Highlight? (s/n, Enter to skip):"))
+	if scanner.Scan() {
+		// Display-only, no persistence needed
+		_ = strings.TrimSpace(scanner.Text())
+	}
+
+	fmt.Printf("  %s ", dimStyle.Render("Que funciono bien hoy? (Enter to skip):"))
+	if scanner.Scan() {
+		answer := strings.TrimSpace(scanner.Text())
+		if answer != "" && lastWorkSession != nil {
+			_ = app.pomodoro.SetAccomplishment(ctx, lastWorkSession.ID, answer)
+		}
+	}
+
+	fmt.Printf("  %s ", dimStyle.Render("Que cambiarias manana? (Enter to skip):"))
+	if scanner.Scan() {
+		// Display-only prompt; no domain field for this yet
+		_ = strings.TrimSpace(scanner.Text())
 	}
 
 	fmt.Println()
-	return nil
+	fmt.Printf("  %s\n", accentStyle.Render("Reflect completado. Manana elige un nuevo Highlight."))
+	fmt.Println()
+}
+
+// runReflectDeepWork shows Deep Work specific reflection with depth tracking.
+func runReflectDeepWork(
+	ctx context.Context,
+	now time.Time,
+	stats *domain.DailyStats,
+	todaySessions []*domain.PomodoroSession,
+	lastWorkSession *domain.PomodoroSession,
+	dimStyle, valueStyle lipgloss.Style,
+) {
+	fmt.Printf("  %s\n", dimStyle.Render("— Deep Work · Review —"))
+	fmt.Println()
+
+	// Show depth vs goal
+	goalHours := app.config.DeepWork.DeepWorkGoalHours
+	if goalHours > 0 {
+		depthHours := stats.TotalWorkTime.Hours()
+		fmt.Printf("  %s  %s\n",
+			dimStyle.Render("Profundidad hoy:"),
+			valueStyle.Render(fmt.Sprintf("%.1fh / %.1fh (goal)", depthHours, goalHours)),
+		)
+	}
+
+	// Show streak
+	threshold := time.Duration(goalHours * float64(time.Hour))
+	streak, err := app.pomodoro.GetDeepWorkStreak(ctx, threshold)
+	if err == nil && streak > 0 {
+		fmt.Printf("  %s  %s\n",
+			dimStyle.Render("Racha:"),
+			valueStyle.Render(fmt.Sprintf("%d dias", streak)),
+		)
+	}
+
+	// Show focus scores
+	var focusScores []int
+	for _, s := range todaySessions {
+		if s.FocusScore != nil {
+			focusScores = append(focusScores, *s.FocusScore)
+		}
+	}
+	if len(focusScores) > 0 {
+		sum := 0
+		for _, sc := range focusScores {
+			sum += sc
+		}
+		avg := float64(sum) / float64(len(focusScores))
+		fmt.Printf("  %s  %s  %s\n",
+			dimStyle.Render("Avg focus:"),
+			valueStyle.Render(fmt.Sprintf("%.1f/5", avg)),
+			dimStyle.Render(fmt.Sprintf("(%d sessions)", len(focusScores))),
+		)
+	}
+
+	fmt.Println()
+
+	// Interactive shutdown ritual question
+	scanner := bufio.NewScanner(os.Stdin)
+	shutdownQ := "Completaste el shutdown ritual? (s/n, Enter to skip):" //nolint:misspell
+	fmt.Printf("  %s ", dimStyle.Render(shutdownQ))
+	if scanner.Scan() {
+		answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		if answer == "s" && lastWorkSession != nil {
+			// Record that shutdown ritual was completed
+			_ = app.pomodoro.SetShutdownRitual(ctx, lastWorkSession.ID, domain.ShutdownRitual{
+				ClosingPhrase: "Shutdown complete",
+			})
+		}
+	}
+	fmt.Println()
 }
