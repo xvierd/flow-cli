@@ -49,6 +49,12 @@ var stopCmd = &cobra.Command{
 					pendingReview = strings.TrimSpace(scanner.Text())
 				}
 
+				fmt.Print("  Review tomorrow's calendar — any conflicts? (Enter to skip): ")
+				var calendarReview string
+				if scanner.Scan() {
+					calendarReview = strings.TrimSpace(scanner.Text())
+				}
+
 				fmt.Print("  Plan for tomorrow (Enter to skip): ")
 				var tomorrowPlan string
 				if scanner.Scan() {
@@ -61,9 +67,10 @@ var stopCmd = &cobra.Command{
 					closingPhrase = strings.TrimSpace(scanner.Text())
 				}
 
-				if pendingReview != "" || tomorrowPlan != "" || closingPhrase != "" {
+				if pendingReview != "" || calendarReview != "" || tomorrowPlan != "" || closingPhrase != "" {
 					ritual := domain.ShutdownRitual{
 						PendingTasksReview: pendingReview,
+						CalendarReview:     calendarReview,
 						TomorrowPlan:       tomorrowPlan,
 						ClosingPhrase:      closingPhrase,
 					}
@@ -71,8 +78,11 @@ var stopCmd = &cobra.Command{
 				}
 				fmt.Println()
 			case domain.MethodologyMakeTime:
-				fmt.Print("Focus score (1-5, Enter to skip): ")
 				scanner := bufio.NewScanner(os.Stdin)
+				fmt.Println()
+				fmt.Println("  — Make Time Reflection —")
+
+				fmt.Print("  Focus score (1-5, Enter to skip): ")
 				if scanner.Scan() {
 					text := strings.TrimSpace(scanner.Text())
 					if text != "" {
@@ -82,6 +92,15 @@ var stopCmd = &cobra.Command{
 						}
 					}
 				}
+
+				fmt.Print("  How did you energize? (walk, nap, exercise… Enter to skip): ")
+				if scanner.Scan() {
+					activity := strings.TrimSpace(scanner.Text())
+					if activity != "" {
+						_ = app.pomodoro.SetEnergizeActivity(ctx, session.ID, activity)
+					}
+				}
+				fmt.Println()
 			default:
 				// Pomodoro: prompt for notes
 				fmt.Print("Add session notes (optional, press Enter to skip): ")

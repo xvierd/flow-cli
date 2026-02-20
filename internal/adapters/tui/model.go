@@ -45,26 +45,26 @@ type stateMsg struct {
 
 // Model represents the TUI state.
 type Model struct {
-	state                *domain.CurrentState
-	progress             progress.Model
-	width                int
-	height               int
-	completed            bool
-	completedSessionType domain.SessionType
-	completedElapsed     time.Duration // actual time worked, captured at session end
-	notified             bool
-	confirmBreak         bool
-	confirmFinish        bool
-	fetchState           func() *domain.CurrentState
-	commandCallback      func(ports.TimerCommand) error
-	onSessionComplete    func(domain.SessionType)
-	distractionCallback  func(string, string) error
+	state                  *domain.CurrentState
+	progress               progress.Model
+	width                  int
+	height                 int
+	completed              bool
+	completedSessionType   domain.SessionType
+	completedElapsed       time.Duration // actual time worked, captured at session end
+	notified               bool
+	confirmBreak           bool
+	confirmFinish          bool
+	fetchState             func() *domain.CurrentState
+	commandCallback        func(ports.TimerCommand) error
+	onSessionComplete      func(domain.SessionType)
+	distractionCallback    func(string, string) error
 	accomplishmentCallback func(string) error
-	focusScoreCallback   func(int) error
-	energizeCallback     func(string) error
-	completionInfo       *domain.CompletionInfo
-	theme                config.ThemeConfig
-	mode                 methodology.Mode
+	focusScoreCallback     func(int) error
+	energizeCallback       func(string) error
+	completionInfo         *domain.CompletionInfo
+	theme                  config.ThemeConfig
+	mode                   methodology.Mode
 
 	// completionState holds all mode-specific fields shared with InlineModel.
 	completionState

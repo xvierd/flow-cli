@@ -12,7 +12,6 @@ import (
 	"github.com/xvierd/flow-cli/internal/domain"
 )
 
-
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "View and edit session presets and break durations",

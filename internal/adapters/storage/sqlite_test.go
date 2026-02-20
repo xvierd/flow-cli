@@ -598,19 +598,25 @@ func TestSessionRepository_GetEnergizeStats(t *testing.T) {
 	})
 
 	t.Run("with energize sessions", func(t *testing.T) {
+		// Use fixed times relative to start (noon and 10 AM) to avoid midnight edge cases.
+		// Using time.Now().Add(-60min) can fall in the previous day if the test runs between 00:00–01:00.
+		session1Start := start.Add(12 * time.Hour) // noon today
+		session1End := session1Start.Add(25 * time.Minute)
+		session2Start := start.Add(10 * time.Hour) // 10 AM today
+		session2End := session2Start.Add(25 * time.Minute)
+
 		score := 7
 		session := &domain.PomodoroSession{
 			ID:               "energize-1",
 			Type:             domain.SessionTypeWork,
 			Status:           domain.SessionStatusCompleted,
 			Duration:         25 * time.Minute,
-			StartedAt:        time.Now().Add(-30 * time.Minute),
+			StartedAt:        session1Start,
 			Methodology:      domain.MethodologyMakeTime,
 			FocusScore:       &score,
 			EnergizeActivity: "morning walk",
 		}
-		completed := time.Now()
-		session.CompletedAt = &completed
+		session.CompletedAt = &session1End
 		if err := sessionRepo.Save(ctx, session); err != nil {
 			t.Fatalf("Save() error = %v", err)
 		}
@@ -621,13 +627,12 @@ func TestSessionRepository_GetEnergizeStats(t *testing.T) {
 			Type:             domain.SessionTypeWork,
 			Status:           domain.SessionStatusCompleted,
 			Duration:         25 * time.Minute,
-			StartedAt:        time.Now().Add(-60 * time.Minute),
+			StartedAt:        session2Start,
 			Methodology:      domain.MethodologyMakeTime,
 			FocusScore:       &score2,
 			EnergizeActivity: "morning walk",
 		}
-		completed2 := time.Now()
-		session2.CompletedAt = &completed2
+		session2.CompletedAt = &session2End
 		if err := sessionRepo.Save(ctx, session2); err != nil {
 			t.Fatalf("Save() error = %v", err)
 		}

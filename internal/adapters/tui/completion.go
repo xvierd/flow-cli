@@ -22,10 +22,10 @@ type completionState struct {
 	accomplishmentInput textinput.Model
 	accomplishmentSaved bool
 
-	// Deep Work: 3-step shutdown ritual
+	// Deep Work: 4-step shutdown ritual (Cal Newport)
 	shutdownRitualMode     bool
-	shutdownStep           int // 0=pending tasks, 1=tomorrow plan, 2=closing phrase
-	shutdownInputs         [3]textinput.Model
+	shutdownStep           int // 0=pending tasks, 1=calendar review, 2=tomorrow plan, 3=closing phrase
+	shutdownInputs         [4]textinput.Model
 	shutdownComplete       bool
 	shutdownRitualCallback func(domain.ShutdownRitual) error
 

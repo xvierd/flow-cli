@@ -48,14 +48,18 @@ type InlineModel struct {
 	// Setup: task name
 	taskInput textinput.Model
 
+	// Setup: intended outcome (Deep Work only)
+	outcomeInput    textinput.Model
+	intendedOutcome string
+
 	// Timer state
-	state                   *domain.CurrentState
-	progress                progress.Model
-	width                   int
-	completed               bool
-	completedType           domain.SessionType
-	completedElapsed        time.Duration // actual time worked, captured at session end
-	notified                bool
+	state                  *domain.CurrentState
+	progress               progress.Model
+	width                  int
+	completed              bool
+	completedType          domain.SessionType
+	completedElapsed       time.Duration // actual time worked, captured at session end
+	notified               bool
 	confirmBreak           bool
 	confirmFinish          bool
 	fetchState             func() *domain.CurrentState
@@ -69,7 +73,7 @@ type InlineModel struct {
 	theme                  config.ThemeConfig
 
 	// Callbacks for session creation (called during setup phase)
-	onStartSession func(presetIndex int, taskName string) error
+	onStartSession func(presetIndex int, taskName string, intendedOutcome string) error
 
 	// Methodology mode
 	mode           methodology.Mode
@@ -108,6 +112,11 @@ func NewInlineModel(state *domain.CurrentState, info *domain.CompletionInfo, the
 	ti.CharLimit = 120
 	ti.Width = w - 10
 
+	oi := textinput.New()
+	oi.Placeholder = "Enter to skip"
+	oi.CharLimit = 200
+	oi.Width = w - 10
+
 	di, ai, shutdownInputs := newCompletionInputs(w - 10)
 
 	// If there's already an active session, skip setup
@@ -124,6 +133,7 @@ func NewInlineModel(state *domain.CurrentState, info *domain.CompletionInfo, the
 		completionInfo: info,
 		theme:          resolved,
 		taskInput:      ti,
+		outcomeInput:   oi,
 		completionState: completionState{
 			distractionInput:    di,
 			accomplishmentInput: ai,
@@ -153,6 +163,8 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateTaskSelect(msg)
 	case phaseTaskName:
 		return m.updateTaskName(msg)
+	case phaseOutcome:
+		return m.updatePickOutcome(msg)
 	case phaseTimer:
 		if m.distractionMode {
 			return m.updateDistractionInput(msg)
@@ -170,7 +182,6 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-
 
 func (m InlineModel) updateDistractionInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cb := &completionCallbacks{
@@ -519,6 +530,8 @@ func (m InlineModel) View() string {
 		return m.viewTaskSelect()
 	case phaseTaskName:
 		return m.viewTaskName()
+	case phaseOutcome:
+		return m.viewPickOutcome()
 	case phaseTimer:
 		return m.viewTimer()
 	}

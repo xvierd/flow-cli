@@ -29,7 +29,7 @@ func ValidateMethodology(s string) (Methodology, error) {
 	return "", fmt.Errorf("invalid methodology %q: must be one of pomodoro, deepwork, maketime", s)
 }
 
-// MethodologyLabel returns a human-readable label.
+// Label returns a human-readable label for the methodology.
 func (m Methodology) Label() string {
 	switch m {
 	case MethodologyPomodoro:

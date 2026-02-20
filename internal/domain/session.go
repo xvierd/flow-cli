@@ -25,8 +25,14 @@ const (
 )
 
 // ShutdownRitual captures the structured end-of-session reflection for Deep Work mode.
+// Cal Newport's 4-step shutdown ritual:
+// 1. Review pending tasks
+// 2. Review tomorrow's calendar
+// 3. Plan for tomorrow
+// 4. Closing phrase
 type ShutdownRitual struct {
 	PendingTasksReview string
+	CalendarReview     string
 	TomorrowPlan       string
 	ClosingPhrase      string
 }
