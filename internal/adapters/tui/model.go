@@ -536,10 +536,15 @@ func (m Model) View() string {
 	} else if m.state.ActiveSession != nil {
 		sections = m.viewActiveSession(sections)
 	} else {
-		idleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused))
-		sections = append(sections, idleStyle.Render("No active session"))
-		sections = append(sections, "")
 		helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+		info := viewIdleMethodologyInfo(m.state, m.mode, m.completionInfo)
+		if info != "" {
+			sections = append(sections, helpStyle.Render(info))
+		} else {
+			idleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused))
+			sections = append(sections, idleStyle.Render("No active session"))
+		}
+		sections = append(sections, "")
 		sections = append(sections, helpStyle.Render("[s]tart  [c]lose"))
 	}
 

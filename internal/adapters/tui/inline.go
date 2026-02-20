@@ -590,26 +590,22 @@ func (m InlineModel) viewTimer() string {
 	}
 
 	if m.state.ActiveSession == nil {
-		// Make Time: show Highlight prominently if it's today's highlight
-		if m.mode != nil && m.mode.HasHighlight() {
-			var b strings.Builder
-			b.WriteString(accent.Render("  Make Time"))
+		var b strings.Builder
+		if m.mode != nil {
+			b.WriteString(accent.Render(fmt.Sprintf("  %s", m.mode.TUITitle())))
 			b.WriteString("\n")
-			if m.state.ActiveTask != nil && m.state.ActiveTask.IsTodayHighlight() {
-				b.WriteString(accent.Render(fmt.Sprintf("  ★ Today's Highlight: %s", m.state.ActiveTask.Title)))
-				b.WriteString("\n")
-			} else {
-				b.WriteString(dim.Render("  No Highlight set for today"))
-				b.WriteString("\n")
-				b.WriteString(dim.Render("  Start a session to choose your Highlight"))
+			info := viewIdleMethodologyInfo(m.state, m.mode, m.completionInfo)
+			if info != "" {
+				b.WriteString(dim.Render(info))
 				b.WriteString("\n")
 			}
-			b.WriteString(dim.Render("  [s]tart  [c]lose"))
+		} else {
+			b.WriteString(dim.Render("  No active session"))
 			b.WriteString("\n")
-			return b.String()
 		}
-		return dim.Render("  No active session") + "\n" +
-			dim.Render("  [s]tart  [c]lose") + "\n"
+		b.WriteString(dim.Render("  [s]tart  [m]ode  [c]lose"))
+		b.WriteString("\n")
+		return b.String()
 	}
 
 	return m.viewInlineActive(accent, dim, pausedStyle)
