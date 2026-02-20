@@ -659,7 +659,7 @@ func (m InlineModel) viewPickOutcome() string {
 	if m.mode != nil && m.mode.OutcomePrompt() != "" {
 		outcomePrompt = m.mode.OutcomePrompt()
 	}
-	b.WriteString(titleStyle.Render("  "+outcomePrompt+" "))
+	b.WriteString(titleStyle.Render("  " + outcomePrompt + " "))
 	b.WriteString(m.outcomeInput.View())
 	b.WriteString("\n")
 

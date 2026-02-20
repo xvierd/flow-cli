@@ -53,13 +53,13 @@ type InlineModel struct {
 	intendedOutcome string
 
 	// Timer state
-	state                   *domain.CurrentState
-	progress                progress.Model
-	width                   int
-	completed               bool
-	completedType           domain.SessionType
-	completedElapsed        time.Duration // actual time worked, captured at session end
-	notified                bool
+	state                  *domain.CurrentState
+	progress               progress.Model
+	width                  int
+	completed              bool
+	completedType          domain.SessionType
+	completedElapsed       time.Duration // actual time worked, captured at session end
+	notified               bool
 	confirmBreak           bool
 	confirmFinish          bool
 	fetchState             func() *domain.CurrentState
@@ -182,7 +182,6 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-
 
 func (m InlineModel) updateDistractionInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cb := &completionCallbacks{

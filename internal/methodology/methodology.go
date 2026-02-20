@@ -79,15 +79,15 @@ type pomodoroMode struct {
 	cfg *config.PomodoroConfig
 }
 
-func (p *pomodoroMode) Name() domain.Methodology  { return domain.MethodologyPomodoro }
-func (p *pomodoroMode) TaskPrompt() string        { return "What are you working on? (Enter to skip):" }
-func (p *pomodoroMode) OutcomePrompt() string     { return "" }
-func (p *pomodoroMode) HasDistractionLog() bool   { return false }
-func (p *pomodoroMode) HasEnergizeReminder() bool { return false }
-func (p *pomodoroMode) HasFocusScore() bool       { return false }
-func (p *pomodoroMode) HasShutdownRitual() bool   { return false }
-func (p *pomodoroMode) HasHighlight() bool        { return false }
-func (p *pomodoroMode) CompletionTitle() string   { return "Session complete! Great work." }
+func (p *pomodoroMode) Name() domain.Methodology   { return domain.MethodologyPomodoro }
+func (p *pomodoroMode) TaskPrompt() string         { return "What are you working on? (Enter to skip):" }
+func (p *pomodoroMode) OutcomePrompt() string      { return "" }
+func (p *pomodoroMode) HasDistractionLog() bool    { return false }
+func (p *pomodoroMode) HasEnergizeReminder() bool  { return false }
+func (p *pomodoroMode) HasFocusScore() bool        { return false }
+func (p *pomodoroMode) HasShutdownRitual() bool    { return false }
+func (p *pomodoroMode) HasHighlight() bool         { return false }
+func (p *pomodoroMode) CompletionTitle() string    { return "Session complete! Great work." }
 func (p *pomodoroMode) DeepWorkGoalHours() float64 { return 0 }
 func (p *pomodoroMode) Description() string {
 	return "The Pomodoro Technique: 25-minute focused sprints with short breaks to maintain sustainable productivity."
@@ -148,15 +148,15 @@ type makeTimeMode struct {
 	cfg *config.MakeTimeConfig
 }
 
-func (mt *makeTimeMode) Name() domain.Methodology  { return domain.MethodologyMakeTime }
-func (mt *makeTimeMode) TaskPrompt() string        { return "What's your Highlight for today?" }
-func (mt *makeTimeMode) OutcomePrompt() string     { return "" }
-func (mt *makeTimeMode) HasDistractionLog() bool   { return false }
-func (mt *makeTimeMode) HasEnergizeReminder() bool { return true }
-func (mt *makeTimeMode) HasFocusScore() bool       { return true }
-func (mt *makeTimeMode) HasShutdownRitual() bool   { return false }
-func (mt *makeTimeMode) HasHighlight() bool        { return true }
-func (mt *makeTimeMode) CompletionTitle() string   { return "Session Complete!" }
+func (mt *makeTimeMode) Name() domain.Methodology   { return domain.MethodologyMakeTime }
+func (mt *makeTimeMode) TaskPrompt() string         { return "What's your Highlight for today?" }
+func (mt *makeTimeMode) OutcomePrompt() string      { return "" }
+func (mt *makeTimeMode) HasDistractionLog() bool    { return false }
+func (mt *makeTimeMode) HasEnergizeReminder() bool  { return true }
+func (mt *makeTimeMode) HasFocusScore() bool        { return true }
+func (mt *makeTimeMode) HasShutdownRitual() bool    { return false }
+func (mt *makeTimeMode) HasHighlight() bool         { return true }
+func (mt *makeTimeMode) CompletionTitle() string    { return "Session Complete!" }
 func (mt *makeTimeMode) DeepWorkGoalHours() float64 { return 0 }
 func (mt *makeTimeMode) Description() string {
 	return "Jake Knapp's Make Time: choose a daily Highlight and laser focus on it. Energize your body to fuel your mind."

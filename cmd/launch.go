@@ -174,9 +174,9 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			DeepWorkStreak:     deepWorkStreak,
 		},
 		// Inline-specific fields (zero/nil values are ignored by fullscreen mode).
-		Presets:                 presets,
-		BreakInfo:               breakInfo,
-		FetchRecentTasks:        func(limit int) []*domain.Task {
+		Presets:   presets,
+		BreakInfo: breakInfo,
+		FetchRecentTasks: func(limit int) []*domain.Task {
 			tasks, err := app.storage.Tasks().FindRecentTasks(ctx, limit)
 			if err != nil {
 				return nil
