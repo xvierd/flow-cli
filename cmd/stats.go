@@ -54,8 +54,14 @@ var statsCmd = &cobra.Command{
 			hourly = nil // non-fatal
 		}
 
+		// Fetch energize stats (Make Time)
+		energize, err := app.storage.Sessions().GetEnergizeStats(ctx, start, end)
+		if err != nil {
+			energize = nil // non-fatal
+		}
+
 		fmt.Println()
-		renderDashboard(stats, hourly)
+		renderDashboard(stats, hourly, energize)
 		return nil
 	},
 }
@@ -65,7 +71,7 @@ func init() {
 	rootCmd.AddCommand(statsCmd)
 }
 
-func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration) {
+func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, energize []domain.EnergizeStat) {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C6FE0"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
 	valueStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A78BFA"))
@@ -139,6 +145,33 @@ func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration) {
 
 	// Hourly productivity heatmap
 	renderHourlyProductivity(hourly, dimStyle, valueStyle, barColor)
+
+	// Energize Insights (Make Time)
+	renderEnergizeInsights(energize, dimStyle, valueStyle, titleStyle)
+}
+
+// renderEnergizeInsights displays a table of energize activities and their avg focus scores.
+func renderEnergizeInsights(energize []domain.EnergizeStat, dimStyle, valueStyle, titleStyle lipgloss.Style) {
+	if len(energize) == 0 {
+		return
+	}
+
+	fmt.Printf("  %s\n", dimStyle.Render("Energize Insights"))
+	for _, e := range energize {
+		activityLabel := fmt.Sprintf("%-10s", e.Activity)
+		fmt.Printf("  %s  %s session%s  avg focus %s\n",
+			dimStyle.Render(activityLabel),
+			valueStyle.Render(fmt.Sprintf("%d", e.SessionCount)),
+			func() string {
+				if e.SessionCount == 1 {
+					return ""
+				}
+				return "s"
+			}(),
+			valueStyle.Render(fmt.Sprintf("%.1f", e.AvgFocusScore)),
+		)
+	}
+	fmt.Println()
 }
 
 // hourEntry pairs an hour with its total duration for sorting.

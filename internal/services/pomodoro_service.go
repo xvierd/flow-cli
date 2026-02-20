@@ -192,6 +192,25 @@ func (s *PomodoroService) CancelSession(ctx context.Context) error {
 	return s.storage.Sessions().Update(ctx, session)
 }
 
+// VoidSession marks the active session as interrupted (voided).
+// Interrupted sessions are excluded from productivity stats.
+func (s *PomodoroService) VoidSession(ctx context.Context) (*domain.PomodoroSession, error) {
+	session, err := s.storage.Sessions().FindActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find active session: %w", err)
+	}
+	if session == nil {
+		return nil, domain.ErrNoActiveSession
+	}
+
+	session.Interrupt()
+	if err := s.storage.Sessions().Update(ctx, session); err != nil {
+		return nil, fmt.Errorf("failed to void session: %w", err)
+	}
+
+	return session, nil
+}
+
 // LogDistraction appends a distraction entry to the active session.
 func (s *PomodoroService) LogDistraction(ctx context.Context, sessionID string, text string, category string) error {
 	session, err := s.storage.Sessions().FindByID(ctx, sessionID)

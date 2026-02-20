@@ -104,6 +104,8 @@ func GetStatusLabel(s SessionStatus) string {
 		return "Completed"
 	case SessionStatusCancelled:
 		return "Cancelled"
+	case SessionStatusInterrupted:
+		return "Interrupted"
 	default:
 		return "Unknown"
 	}

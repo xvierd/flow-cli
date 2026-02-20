@@ -18,10 +18,11 @@ const (
 type SessionStatus string
 
 const (
-	SessionStatusRunning   SessionStatus = "running"
-	SessionStatusPaused    SessionStatus = "paused"
-	SessionStatusCompleted SessionStatus = "completed"
-	SessionStatusCancelled SessionStatus = "cancelled"
+	SessionStatusRunning     SessionStatus = "running"
+	SessionStatusPaused      SessionStatus = "paused"
+	SessionStatusCompleted   SessionStatus = "completed"
+	SessionStatusCancelled   SessionStatus = "cancelled"
+	SessionStatusInterrupted SessionStatus = "interrupted"
 )
 
 // ShutdownRitual captures the structured end-of-session reflection for Deep Work mode.
@@ -149,6 +150,21 @@ func (s *PomodoroSession) Complete() {
 // Cancel aborts the session.
 func (s *PomodoroSession) Cancel() {
 	s.Status = SessionStatusCancelled
+}
+
+// Interrupt marks the session as interrupted (voided), recording actual elapsed time.
+func (s *PomodoroSession) Interrupt() {
+	// Record actual elapsed time before voiding
+	elapsed := time.Since(s.StartedAt)
+	if s.Status == SessionStatusPaused && s.PausedAt != nil {
+		elapsed = s.PausedAt.Sub(s.StartedAt)
+	}
+	if elapsed >= time.Second && elapsed < s.Duration {
+		s.Duration = elapsed
+	}
+	now := time.Now()
+	s.CompletedAt = &now
+	s.Status = SessionStatusInterrupted
 }
 
 // RemainingTime returns how much time is left in the session.

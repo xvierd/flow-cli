@@ -417,6 +417,16 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.confirmFinish = true
 			m.confirmBreak = false
+		case "v":
+			// Void (interrupt) the current session — not counted in stats
+			if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.Type == domain.SessionTypeWork && m.commandCallback != nil {
+				_ = m.commandCallback(ports.CmdVoid)
+				m.completed = false
+				m.notified = false
+				m.confirmBreak = false
+				m.confirmFinish = false
+				m.resetCompletionState()
+			}
 		case "m":
 			// Switch mode: cancel active session (if any) and go back to mode picker
 			if !m.completed && m.state.ActiveSession != nil && m.commandCallback != nil {
@@ -729,12 +739,12 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 		if session.Status == domain.SessionStatusPaused {
 			pauseAction = "[p]resume"
 		}
-		helpText := fmt.Sprintf("  %s [f]inish [b]reak [m]ode [c]lose", pauseAction)
+		helpText := fmt.Sprintf("  %s [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction)
 		if m.mode != nil && m.mode.HasDistractionLog() && session.Status == domain.SessionStatusRunning {
 			if len(m.distractions) > 0 {
-				helpText = fmt.Sprintf("  %s [d]istraction(%d) [f]inish [b]reak [m]ode [c]lose", pauseAction, len(m.distractions))
+				helpText = fmt.Sprintf("  %s [d]istraction(%d) [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction, len(m.distractions))
 			} else {
-				helpText = fmt.Sprintf("  %s [d]istraction [f]inish [b]reak [m]ode [c]lose", pauseAction)
+				helpText = fmt.Sprintf("  %s [d]istraction [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction)
 			}
 		}
 		helpText += fmt.Sprintf("  tab:notify %s", notifLabel)

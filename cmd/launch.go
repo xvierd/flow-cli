@@ -107,6 +107,9 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 				return err
 			case ports.CmdCancel:
 				return app.pomodoro.CancelSession(ctx)
+			case ports.CmdVoid:
+				_, err := app.pomodoro.VoidSession(ctx)
+				return err
 			case ports.CmdBreak:
 				_, err := app.pomodoro.StartBreak(ctx, workingDir)
 				return err

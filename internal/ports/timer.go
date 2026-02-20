@@ -57,6 +57,9 @@ const (
 
 	// CmdQuit exits the application.
 	CmdQuit TimerCommand = "quit"
+
+	// CmdVoid marks the current session as interrupted (not counted in stats).
+	CmdVoid TimerCommand = "void"
 )
 
 // Timer is the combined interface for TUI timer operations.
