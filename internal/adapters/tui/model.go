@@ -621,6 +621,10 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
 
+	if m.mode != nil && m.mode.Name() == domain.MethodologyPomodoro {
+		sections = append(sections, helpStyle.Render(fmt.Sprintf("\U0001F345 %d sessions today", vd.statsWorkSessions)))
+	}
+
 	sections = append(sections, "")
 	if m.autoBreakTicks > 0 {
 		sections = append(sections, statusStyle.Render(fmt.Sprintf("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))

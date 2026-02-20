@@ -789,6 +789,11 @@ func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) strin
 		m.theme.IconStats, vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime))))
 	b.WriteString("\n")
 
+	if m.mode != nil && m.mode.Name() == domain.MethodologyPomodoro {
+		b.WriteString(dim.Render(fmt.Sprintf("  \U0001F345 %d sessions today", vd.statsWorkSessions)))
+		b.WriteString("\n")
+	}
+
 	if m.autoBreakTicks > 0 {
 		b.WriteString(accent.Render(fmt.Sprintf("  Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
 	} else if vd.hasBreakInfo {

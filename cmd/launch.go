@@ -40,6 +40,10 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 
 	// Completion info: next break type and duration.
 	_, _, _, sessionsBeforeLong := app.config.ToPomodoroDomainConfig()
+	// Pomodoro Technique rule: long break always after every 4 work sessions.
+	if app.methodology == domain.MethodologyPomodoro {
+		sessionsBeforeLong = 4
+	}
 	workSessions := state.TodayStats.WorkSessions + 1
 	sessionsUntilLong := sessionsBeforeLong - (workSessions % sessionsBeforeLong)
 	if sessionsUntilLong == sessionsBeforeLong {
