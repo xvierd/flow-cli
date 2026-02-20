@@ -58,24 +58,25 @@ type InlineModel struct {
 	intendedOutcome string
 
 	// Timer state
-	state                  *domain.CurrentState
-	progress               progress.Model
-	width                  int
-	completed              bool
-	completedType          domain.SessionType
-	completedElapsed       time.Duration // actual time worked, captured at session end
-	notified               bool
-	confirmBreak           bool
-	confirmFinish          bool
-	fetchState             func() *domain.CurrentState
-	commandCallback        func(ports.TimerCommand) error
-	onSessionComplete      func(domain.SessionType)
-	distractionCallback    func(string, string) error
-	accomplishmentCallback func(string) error
-	focusScoreCallback     func(int) error
-	energizeCallback       func(string) error
-	completionInfo         *domain.CompletionInfo
-	theme                  config.ThemeConfig
+	state                   *domain.CurrentState
+	progress                progress.Model
+	width                   int
+	completed               bool
+	completedType           domain.SessionType
+	completedElapsed        time.Duration // actual time worked, captured at session end
+	notified                bool
+	confirmBreak            bool
+	confirmFinish           bool
+	fetchState              func() *domain.CurrentState
+	commandCallback         func(ports.TimerCommand) error
+	onSessionComplete       func(domain.SessionType)
+	distractionCallback     func(string, string) error
+	accomplishmentCallback  func(string) error
+	focusScoreCallback      func(int) error
+	energizeCallback        func(string) error
+	outcomeAchievedCallback func(string) error
+	completionInfo          *domain.CompletionInfo
+	theme                   config.ThemeConfig
 
 	// Callbacks for session creation (called during setup phase)
 	onStartSession func(presetIndex int, taskName string, intendedOutcome string) error
@@ -185,6 +186,9 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.distractionReviewMode {
 			return m.updateDistractionReview(msg)
 		}
+		if m.outcomeReviewMode {
+			return m.updateOutcomeReview(msg)
+		}
 		return m.updateTimer(msg)
 	}
 	return m, nil
@@ -214,6 +218,13 @@ func (m InlineModel) updateShutdownRitual(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m InlineModel) updateDistractionReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, handleDistractionReview(&m.completionState, msg)
+}
+
+func (m InlineModel) updateOutcomeReview(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cb := &completionCallbacks{
+		outcomeAchievedCallback: m.outcomeAchievedCallback,
+	}
+	return m, handleOutcomeReview(&m.completionState, cb, msg)
 }
 
 func (m InlineModel) showDailySummaryOrQuit() (tea.Model, tea.Cmd) {
@@ -311,6 +322,11 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.shutdownInputs[0].Focus()
 				return m, m.shutdownInputs[0].Cursor.BlinkCmd()
+			}
+		case "o":
+			// Deep Work: outcome review
+			if m.mode != nil && m.mode.HasShutdownRitual() && m.completed && m.completedType == domain.SessionTypeWork && m.completedIntendedOutcome != "" && !m.outcomeReviewDone {
+				m.outcomeReviewMode = true
 			}
 		case "1", "2", "3", "4", "5":
 			if m.mode != nil && m.mode.HasFocusScore() && m.completed && m.completedType == domain.SessionTypeWork && !m.focusScoreSaved {
@@ -490,6 +506,9 @@ func (m *InlineModel) resetCompletionState() {
 	m.distractions = nil
 	m.distractionReviewMode = false
 	m.distractionReviewDone = false
+	m.outcomeReviewMode = false
+	m.outcomeReviewDone = false
+	m.outcomeAchieved = ""
 	m.energizeActivity = ""
 	m.energizeSaved = false
 	m.shutdownRitualMode = false
@@ -807,6 +826,12 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 		b.WriteString(dim.Render("  Accomplishment: ") + m.accomplishmentInput.View())
 		b.WriteString("\n")
 		b.WriteString(dim.Render("  enter save · esc cancel"))
+	} else if m.outcomeReviewMode {
+		b.WriteString(accent.Render("  Did you achieve your intended outcome?"))
+		b.WriteString("\n")
+		b.WriteString(dim.Render(fmt.Sprintf("  Goal: %s", vd.intendedOutcome)))
+		b.WriteString("\n")
+		b.WriteString(dim.Render("  [y]es [p]artially [n]o [enter] skip"))
 	} else if m.distractionReviewMode {
 		b.WriteString(accent.Render("  Distraction Review:"))
 		b.WriteString("\n")
@@ -818,7 +843,11 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 		b.WriteString("\n")
 		b.WriteString(dim.Render("  enter dismiss"))
 	} else if m.shutdownComplete || m.accomplishmentSaved {
-		if vd.distractionCount > 0 && !m.distractionReviewDone {
+		if !m.outcomeReviewDone && vd.intendedOutcome != "" {
+			b.WriteString(accent.Render("  Shutdown ritual complete."))
+			b.WriteString("\n")
+			b.WriteString(dim.Render("  [o]utcome review"))
+		} else if vd.distractionCount > 0 && !m.distractionReviewDone {
 			b.WriteString(accent.Render("  Shutdown ritual complete."))
 			b.WriteString("\n")
 			b.WriteString(dim.Render(fmt.Sprintf("  [r]eview %d distractions", vd.distractionCount)))
@@ -828,7 +857,7 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 	}
 	b.WriteString("\n")
 
-	if !m.accomplishmentMode && !m.distractionReviewMode && !m.shutdownRitualMode {
+	if !m.accomplishmentMode && !m.distractionReviewMode && !m.shutdownRitualMode && !m.outcomeReviewMode {
 		if m.completionPromptsComplete() {
 			b.WriteString(dim.Render("  [n]ew session [b]reak [m]ode [q]uit"))
 		} else if !m.shutdownComplete && !m.accomplishmentSaved {
@@ -837,6 +866,12 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 			b.WriteString(dim.Render("    Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest."))
 			b.WriteString("\n")
 			b.WriteString(dim.Render("  [a] shutdown ritual [b]reak [m]ode [q]uit"))
+		} else if vd.intendedOutcome != "" && !m.outcomeReviewDone {
+			b.WriteString(dim.Render("  → [n]ew session locked: review your outcome first"))
+			b.WriteString("\n")
+			b.WriteString(dim.Render("    Did you achieve what you set out to do?"))
+			b.WriteString("\n")
+			b.WriteString(dim.Render("  [o]utcome review [b]reak [m]ode [q]uit"))
 		} else if vd.distractionCount > 0 && !m.distractionReviewDone {
 			b.WriteString(dim.Render("  → [n]ew session locked: review your distractions first"))
 			b.WriteString("\n")

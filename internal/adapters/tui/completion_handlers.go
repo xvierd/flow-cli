@@ -9,10 +9,11 @@ import (
 
 // completionCallbacks holds the external callbacks used by completion input handlers.
 type completionCallbacks struct {
-	distractionCallback    func(string, string) error
-	accomplishmentCallback func(string) error
-	shutdownRitualCallback func(domain.ShutdownRitual) error
-	mode                   methodology.Mode
+	distractionCallback     func(string, string) error
+	accomplishmentCallback  func(string) error
+	shutdownRitualCallback  func(domain.ShutdownRitual) error
+	outcomeAchievedCallback func(string) error
+	mode                    methodology.Mode
 }
 
 // handleDistractionInput processes messages while in distraction logging mode.
@@ -102,6 +103,11 @@ func handleAccomplishmentInput(cs *completionState, cb *completionCallbacks, msg
 			}
 			cs.accomplishmentMode = false
 			cs.accomplishmentInput.Blur()
+			// Auto-enter outcome review if there was an intended outcome
+			if cs.completedIntendedOutcome != "" {
+				cs.outcomeReviewMode = true
+				return nil
+			}
 			// Auto-enter distraction review if there are distractions
 			if len(cs.distractions) > 0 && !cs.distractionReviewDone {
 				cs.distractionReviewMode = true
@@ -167,6 +173,11 @@ func finishShutdownRitual(cs *completionState, cb *completionCallbacks) tea.Cmd 
 		_ = cb.shutdownRitualCallback(ritual)
 	}
 
+	// Auto-enter outcome review if there was an intended outcome
+	if cs.completedIntendedOutcome != "" {
+		cs.outcomeReviewMode = true
+		return nil
+	}
 	// Auto-enter distraction review if there are distractions
 	if len(cs.distractions) > 0 && !cs.distractionReviewDone {
 		cs.distractionReviewMode = true
@@ -216,4 +227,45 @@ func newCompletionInputs(width int) (distraction, accomplishment textinput.Model
 	shutdown[2] = newShutdownInput("Plan for tomorrow")
 	shutdown[3] = newShutdownInput("Closing phrase (e.g. 'Shutdown complete')")
 	return
+}
+
+// handleOutcomeReview processes messages during the outcome review overlay.
+func handleOutcomeReview(cs *completionState, cb *completionCallbacks, msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "y":
+			cs.outcomeAchieved = "y"
+			cs.outcomeReviewDone = true
+			cs.outcomeReviewMode = false
+			if cb.outcomeAchievedCallback != nil {
+				_ = cb.outcomeAchievedCallback("y")
+			}
+			return nil
+		case "p":
+			cs.outcomeAchieved = "p"
+			cs.outcomeReviewDone = true
+			cs.outcomeReviewMode = false
+			if cb.outcomeAchievedCallback != nil {
+				_ = cb.outcomeAchievedCallback("p")
+			}
+			return nil
+		case "n":
+			cs.outcomeAchieved = "n"
+			cs.outcomeReviewDone = true
+			cs.outcomeReviewMode = false
+			if cb.outcomeAchievedCallback != nil {
+				_ = cb.outcomeAchievedCallback("n")
+			}
+			return nil
+		case "enter":
+			// Skip (no answer)
+			cs.outcomeReviewDone = true
+			cs.outcomeReviewMode = false
+			return nil
+		case "ctrl+c":
+			return tea.Quit
+		}
+	}
+	return nil
 }

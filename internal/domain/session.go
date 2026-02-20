@@ -65,6 +65,7 @@ type PomodoroSession struct {
 	IntendedOutcome  string
 	Tags             []string
 	EnergizeActivity string
+	OutcomeAchieved  string // y/p/n for Deep Work outcome review
 }
 
 // PomodoroConfig holds configuration for pomodoro sessions.
