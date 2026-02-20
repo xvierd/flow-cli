@@ -473,6 +473,24 @@ func (r *sessionRepository) GetEnergizeStats(ctx context.Context, start, end tim
 	return stats, rows.Err()
 }
 
+// GetDeepWorkHours returns total deep work hours for a date range.
+func (r *sessionRepository) GetDeepWorkHours(ctx context.Context, start, end time.Time) (time.Duration, error) {
+	query := `
+		SELECT COALESCE(SUM(duration_ms), 0)
+		FROM sessions
+		WHERE type = 'work' AND status = 'completed'
+		  AND methodology = 'deepwork'
+		  AND started_at >= ? AND started_at < ?
+	`
+
+	var totalMs int64
+	if err := r.db.QueryRowContext(ctx, query, start, end).Scan(&totalMs); err != nil {
+		return 0, fmt.Errorf("failed to get deep work hours: %w", err)
+	}
+
+	return time.Duration(totalMs) * time.Millisecond, nil
+}
+
 // scanSession scans a single session row.
 func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, error) {
 	var session domain.PomodoroSession

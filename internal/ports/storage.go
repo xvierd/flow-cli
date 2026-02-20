@@ -84,6 +84,9 @@ type SessionRepository interface {
 
 	// GetEnergizeStats returns avg focus score per energize activity for a time range.
 	GetEnergizeStats(ctx context.Context, start, end time.Time) ([]domain.EnergizeStat, error)
+
+	// GetDeepWorkHours returns total deep work hours for a date range.
+	GetDeepWorkHours(ctx context.Context, start, end time.Time) (time.Duration, error)
 }
 
 // Storage is the combined repository interface.

@@ -72,6 +72,7 @@ var configCmd = &cobra.Command{
 		fmt.Println("    [3] Edit preset 3")
 		fmt.Println("    [b] Edit break durations")
 		fmt.Println("    [m] Change methodology")
+		fmt.Println("    [p] Change Deep Work philosophy")
 		fmt.Println("    [n] Toggle notifications")
 		fmt.Println("    [q] Quit without saving")
 		fmt.Print("  Choose: ")
@@ -90,6 +91,8 @@ var configCmd = &cobra.Command{
 			return editBreaks(reader, app.config)
 		case "m":
 			return editMethodology(reader, app.config)
+		case "p":
+			return editDeepWorkPhilosophy(reader, app.config)
 		case "n":
 			return editNotifications(reader, app.config)
 		case "q", "":
@@ -384,5 +387,45 @@ func editNotifications(reader *bufio.Reader, cfg *config.Config) error {
 		}
 	}
 	fmt.Printf("\n  Saved: notifications %s\n", status)
+	return nil
+}
+
+func editDeepWorkPhilosophy(reader *bufio.Reader, cfg *config.Config) error {
+	current := cfg.DeepWork.Philosophy
+	if current == "" {
+		current = "rhythmic"
+	}
+
+	fmt.Printf("\n  Current Deep Work philosophy: %s\n\n", current)
+	fmt.Println("    [1] Rhythmic    — Daily habit, same time each day")
+	fmt.Println("    [2] Bimodal     — Alternate deep/shallow periods")
+	fmt.Println("    [3] Journalistic — Grab depth whenever possible")
+	fmt.Println("    [4] Monastic    — Deep work is your primary work")
+	fmt.Print("  Choose: ")
+
+	choice, _ := reader.ReadString('\n')
+	choice = strings.TrimSpace(choice)
+
+	var p string
+	switch choice {
+	case "1":
+		p = "rhythmic"
+	case "2":
+		p = "bimodal"
+	case "3":
+		p = "journalistic"
+	case "4":
+		p = "monastic"
+	default:
+		fmt.Println("  No changes made.")
+		return nil
+	}
+
+	cfg.DeepWork.Philosophy = p
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("\n  Saved: Deep Work philosophy set to %s\n", p)
 	return nil
 }
