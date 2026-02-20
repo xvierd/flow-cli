@@ -60,6 +60,56 @@ func NewInlineTimer(theme *config.ThemeConfig) *Timer {
 	return &Timer{theme: theme, inline: true}
 }
 
+// TimerConfig holds all configuration for a Timer, replacing the individual Set* methods.
+type TimerConfig struct {
+	FetchState              func() *domain.CurrentState
+	CommandCallback         func(ports.TimerCommand) error
+	OnSessionComplete       func(domain.SessionType)
+	DistractionCallback     func(string, string) error
+	AccomplishmentCallback  func(string) error
+	ShutdownRitualCallback  func(domain.ShutdownRitual) error
+	FocusScoreCallback      func(int) error
+	EnergizeCallback        func(string) error
+	CompletionInfo          *domain.CompletionInfo
+	AutoBreak               bool
+	NotificationsEnabled    bool
+	NotificationToggle      func(bool)
+	Presets                 []config.SessionPreset
+	BreakInfo               string
+	OnStartSession          func(presetIndex int, taskName string) error
+	Mode                    methodology.Mode
+	ModeLocked              bool
+	OnModeSelected          func(domain.Methodology)
+	FetchRecentTasks        func(limit int) []*domain.Task
+	FetchYesterdayHighlight func() *domain.Task
+	FirstRun                bool
+}
+
+// Configure applies a TimerConfig to the timer, replacing individual Set* calls.
+func (t *Timer) Configure(cfg TimerConfig) {
+	t.fetchState = cfg.FetchState
+	t.commandCallback = cfg.CommandCallback
+	t.onSessionComplete = cfg.OnSessionComplete
+	t.distractionCallback = cfg.DistractionCallback
+	t.accomplishmentCallback = cfg.AccomplishmentCallback
+	t.shutdownRitualCallback = cfg.ShutdownRitualCallback
+	t.focusScoreCallback = cfg.FocusScoreCallback
+	t.energizeCallback = cfg.EnergizeCallback
+	t.completionInfo = cfg.CompletionInfo
+	t.autoBreak = cfg.AutoBreak
+	t.notificationsEnabled = cfg.NotificationsEnabled
+	t.notificationToggle = cfg.NotificationToggle
+	t.presets = cfg.Presets
+	t.breakInfo = cfg.BreakInfo
+	t.onStartSession = cfg.OnStartSession
+	t.mode = cfg.Mode
+	t.modeLocked = cfg.ModeLocked
+	t.onModeSelected = cfg.OnModeSelected
+	t.fetchRecentTasks = cfg.FetchRecentTasks
+	t.fetchYesterdayHighlight = cfg.FetchYesterdayHighlight
+	t.firstRun = cfg.FirstRun
+}
+
 // SetMode sets the methodology mode for mode-aware UI behavior.
 func (t *Timer) SetMode(mode methodology.Mode) {
 	t.mode = mode

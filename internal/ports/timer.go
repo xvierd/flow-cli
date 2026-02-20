@@ -68,37 +68,6 @@ type Timer interface {
 	// Stop gracefully stops the timer interface.
 	Stop()
 
-	// SetFetchState sets a function that returns the current application state.
-	// This is called asynchronously on each tick to refresh the TUI.
-	SetFetchState(fetch func() *domain.CurrentState)
-
-	// SetCommandCallback sets a function to call when commands are received.
-	SetCommandCallback(callback func(cmd TimerCommand) error)
-
-	// SetOnSessionComplete sets a callback fired when a session naturally completes.
-	SetOnSessionComplete(callback func(domain.SessionType))
-
-	// SetCompletionInfo sets pre-computed break context for the completion screen.
-	SetCompletionInfo(info *domain.CompletionInfo)
-
 	// UpdateState updates the displayed state.
 	UpdateState(state *domain.CurrentState)
-
-	// SetDistractionCallback sets a callback for logging distractions (Deep Work mode).
-	SetDistractionCallback(callback func(text string, category string) error)
-
-	// SetAccomplishmentCallback sets a callback for recording accomplishments (Deep Work shutdown ritual).
-	SetAccomplishmentCallback(callback func(text string) error)
-
-	// SetShutdownRitualCallback sets a callback for recording the 3-step shutdown ritual (Deep Work mode).
-	SetShutdownRitualCallback(callback func(domain.ShutdownRitual) error)
-
-	// SetFocusScoreCallback sets a callback for recording focus scores (Make Time).
-	SetFocusScoreCallback(callback func(score int) error)
-
-	// SetAutoBreak enables automatically starting a break when a work session completes.
-	SetAutoBreak(enabled bool)
-
-	// SetEnergizeCallback sets a callback for recording energize activities (Make Time).
-	SetEnergizeCallback(callback func(activity string) error)
 }

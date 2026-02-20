@@ -4,10 +4,10 @@ package tui
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/xvierd/flow-cli/internal/config"
@@ -16,7 +16,7 @@ import (
 	"github.com/xvierd/flow-cli/internal/ports"
 )
 
-// resolveTheme fills any empty fields in the given ThemeConfig with defaults.
+// resolveTheme fills any empty string fields in the given ThemeConfig with defaults.
 // If theme is nil, returns the full default theme.
 func resolveTheme(theme *config.ThemeConfig) config.ThemeConfig {
 	defaults := config.DefaultThemeConfig()
@@ -24,56 +24,13 @@ func resolveTheme(theme *config.ThemeConfig) config.ThemeConfig {
 		return defaults
 	}
 	resolved := *theme
-	if resolved.ColorWork == "" {
-		resolved.ColorWork = defaults.ColorWork
-	}
-	if resolved.ColorBreak == "" {
-		resolved.ColorBreak = defaults.ColorBreak
-	}
-	if resolved.ColorPaused == "" {
-		resolved.ColorPaused = defaults.ColorPaused
-	}
-	if resolved.ColorTitle == "" {
-		resolved.ColorTitle = defaults.ColorTitle
-	}
-	if resolved.ColorTask == "" {
-		resolved.ColorTask = defaults.ColorTask
-	}
-	if resolved.ColorHelp == "" {
-		resolved.ColorHelp = defaults.ColorHelp
-	}
-	if resolved.WorkGradientStart == "" {
-		resolved.WorkGradientStart = defaults.WorkGradientStart
-	}
-	if resolved.WorkGradientEnd == "" {
-		resolved.WorkGradientEnd = defaults.WorkGradientEnd
-	}
-	if resolved.BreakGradientStart == "" {
-		resolved.BreakGradientStart = defaults.BreakGradientStart
-	}
-	if resolved.BreakGradientEnd == "" {
-		resolved.BreakGradientEnd = defaults.BreakGradientEnd
-	}
-	if resolved.PausedGradientStart == "" {
-		resolved.PausedGradientStart = defaults.PausedGradientStart
-	}
-	if resolved.PausedGradientEnd == "" {
-		resolved.PausedGradientEnd = defaults.PausedGradientEnd
-	}
-	if resolved.IconApp == "" {
-		resolved.IconApp = defaults.IconApp
-	}
-	if resolved.IconTask == "" {
-		resolved.IconTask = defaults.IconTask
-	}
-	if resolved.IconStats == "" {
-		resolved.IconStats = defaults.IconStats
-	}
-	if resolved.IconGit == "" {
-		resolved.IconGit = defaults.IconGit
-	}
-	if resolved.IconPaused == "" {
-		resolved.IconPaused = defaults.IconPaused
+	rv := reflect.ValueOf(&resolved).Elem()
+	dv := reflect.ValueOf(defaults)
+	for i := 0; i < rv.NumField(); i++ {
+		f := rv.Field(i)
+		if f.Kind() == reflect.String && f.String() == "" {
+			f.SetString(dv.Field(i).String())
+		}
 	}
 	return resolved
 }
@@ -126,30 +83,7 @@ type Model struct {
 
 // NewModel creates a new TUI model.
 func NewModel(initialState *domain.CurrentState, info *domain.CompletionInfo, theme *config.ThemeConfig) Model {
-	di := textinput.New()
-	di.Placeholder = "What distracted you?"
-	di.CharLimit = 200
-	di.Width = 40
-
-	ai := textinput.New()
-	ai.Placeholder = "What did you accomplish?"
-	ai.CharLimit = 200
-	ai.Width = 40
-
-	var shutdownInputs [3]textinput.Model
-	placeholders := [3]string{
-		"Review pending tasks — anything urgent?",
-		"Plan for tomorrow",
-		"Closing phrase (e.g. 'Shutdown complete')",
-	}
-	for i := range shutdownInputs {
-		si := textinput.New()
-		si.Placeholder = placeholders[i]
-		si.CharLimit = 200
-		si.Width = 40
-		shutdownInputs[i] = si
-	}
-
+	di, ai, shutdown := newCompletionInputs(40)
 	return Model{
 		state:          initialState,
 		progress:       progress.New(progress.WithDefaultGradient()),
@@ -158,7 +92,7 @@ func NewModel(initialState *domain.CurrentState, info *domain.CompletionInfo, th
 		completionState: completionState{
 			distractionInput:    di,
 			accomplishmentInput: ai,
-			shutdownInputs:      shutdownInputs,
+			shutdownInputs:      shutdown,
 		},
 	}
 }
@@ -441,6 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
 				m.completedSessionType = m.state.ActiveSession.Type
 				m.completedElapsed = m.state.ActiveSession.Duration
+				m.completedIntendedOutcome = m.state.ActiveSession.IntendedOutcome
 				m.completed = true
 
 				// Fire notification callback once
@@ -482,187 +417,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // resetCompletionState resets mode-specific completion state.
 func (m *Model) resetCompletionState() {
 	m.completedElapsed = 0
-	m.completionState.reset()
+	m.reset()
 }
 
 // completionPromptsComplete returns true when all mode-specific completion prompts are done.
 func (m Model) completionPromptsComplete() bool {
-	return m.completionState.promptsDone(m.mode, m.completedSessionType)
+	return m.promptsDone(m.mode, m.completedSessionType)
 }
 
 // updateDistractionInput handles input while in distraction logging mode.
 func (m Model) updateDistractionInput(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Category picker sub-mode
-	if m.distractionCategoryMode {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "i":
-				m.distractions = append(m.distractions, m.distractionPendingText)
-				if m.distractionCallback != nil {
-					_ = m.distractionCallback(m.distractionPendingText, "internal")
-				}
-				m.distractionCategoryMode = false
-				m.distractionMode = false
-				return m, nil
-			case "e":
-				m.distractions = append(m.distractions, m.distractionPendingText)
-				if m.distractionCallback != nil {
-					_ = m.distractionCallback(m.distractionPendingText, "external")
-				}
-				m.distractionCategoryMode = false
-				m.distractionMode = false
-				return m, nil
-			case "enter", "esc":
-				m.distractions = append(m.distractions, m.distractionPendingText)
-				if m.distractionCallback != nil {
-					_ = m.distractionCallback(m.distractionPendingText, "")
-				}
-				m.distractionCategoryMode = false
-				m.distractionMode = false
-				return m, nil
-			case "ctrl+c":
-				return m, tea.Quit
-			}
-		}
-		return m, nil
+	cb := &completionCallbacks{
+		distractionCallback: m.distractionCallback,
+		mode:                m.mode,
 	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			text := m.distractionInput.Value()
-			if text != "" {
-				m.distractionInput.Blur()
-				if m.mode != nil && m.mode.HasDistractionLog() {
-					m.distractionPendingText = text
-					m.distractionCategoryMode = true
-					return m, nil
-				}
-				m.distractions = append(m.distractions, text)
-				if m.distractionCallback != nil {
-					_ = m.distractionCallback(text, "")
-				}
-			}
-			m.distractionMode = false
-			m.distractionInput.Blur()
-			return m, nil
-		case "esc":
-			m.distractionMode = false
-			m.distractionInput.Blur()
-			return m, nil
-		case "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-
-	var cmd tea.Cmd
-	m.distractionInput, cmd = m.distractionInput.Update(msg)
-	return m, cmd
+	return m, handleDistractionInput(&m.completionState, cb, msg, nil)
 }
 
 // updateAccomplishmentInput handles input while in accomplishment mode.
 func (m Model) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			text := m.accomplishmentInput.Value()
-			m.accomplishmentSaved = true // Always mark saved (empty = "skipped")
-			if text != "" {
-				if m.accomplishmentCallback != nil {
-					_ = m.accomplishmentCallback(text)
-				}
-			}
-			m.accomplishmentMode = false
-			m.accomplishmentInput.Blur()
-			// Auto-enter distraction review if there are distractions
-			if len(m.distractions) > 0 && !m.distractionReviewDone {
-				m.distractionReviewMode = true
-			}
-			return m, nil
-		case "esc":
-			m.accomplishmentMode = false
-			m.accomplishmentInput.Blur()
-			return m, nil
-		case "ctrl+c":
-			return m, tea.Quit
-		}
+	cb := &completionCallbacks{
+		accomplishmentCallback: m.accomplishmentCallback,
 	}
-
-	var cmd tea.Cmd
-	m.accomplishmentInput, cmd = m.accomplishmentInput.Update(msg)
-	return m, cmd
+	return m, handleAccomplishmentInput(&m.completionState, cb, msg)
 }
 
 // updateShutdownRitual handles the 3-step shutdown ritual input.
 func (m Model) updateShutdownRitual(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			// Save current step value and advance
-			m.shutdownInputs[m.shutdownStep].Blur()
-			m.shutdownStep++
-			if m.shutdownStep >= 3 {
-				return m.finishShutdownRitual()
-			}
-			m.shutdownInputs[m.shutdownStep].Focus()
-			return m, m.shutdownInputs[m.shutdownStep].Cursor.BlinkCmd()
-		case "esc":
-			// Abandon the entire ritual — return to the completion screen
-			m.shutdownRitualMode = false
-			for i := range m.shutdownInputs {
-				m.shutdownInputs[i].Blur()
-			}
-			return m, nil
-		case "ctrl+c":
-			return m, tea.Quit
-		}
+	cb := &completionCallbacks{
+		shutdownRitualCallback: m.shutdownRitualCallback,
 	}
-
-	var cmd tea.Cmd
-	m.shutdownInputs[m.shutdownStep], cmd = m.shutdownInputs[m.shutdownStep].Update(msg)
-	return m, cmd
-}
-
-// finishShutdownRitual completes the 3-step shutdown ritual.
-func (m Model) finishShutdownRitual() (tea.Model, tea.Cmd) {
-	m.shutdownRitualMode = false
-	m.shutdownComplete = true
-	m.accomplishmentSaved = true // Marks completion prompts as done
-
-	ritual := domain.ShutdownRitual{
-		PendingTasksReview: m.shutdownInputs[0].Value(),
-		TomorrowPlan:       m.shutdownInputs[1].Value(),
-		ClosingPhrase:      m.shutdownInputs[2].Value(),
-	}
-	if m.shutdownRitualCallback != nil {
-		_ = m.shutdownRitualCallback(ritual)
-	}
-
-	// Auto-enter distraction review if there are distractions
-	if len(m.distractions) > 0 && !m.distractionReviewDone {
-		m.distractionReviewMode = true
-	}
-	return m, nil
+	return m, handleShutdownRitual(&m.completionState, cb, msg)
 }
 
 // updateDistractionReview handles the distraction review overlay.
 func (m Model) updateDistractionReview(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter", "esc":
-			m.distractionReviewMode = false
-			m.distractionReviewDone = true
-			return m, nil
-		case "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
+	return m, handleDistractionReview(&m.completionState, msg)
 }
 
 // View renders the TUI.
@@ -766,41 +556,37 @@ func (m Model) viewWorkComplete(sections []string) []string {
 }
 
 func (m Model) viewDefaultWorkComplete(sections []string) []string {
+	vd := buildCompletionViewData(&m.completionState, m.mode, m.state, m.completionInfo, m.completedElapsed)
 	statusStyle := lipgloss.NewStyle().Foreground(m.getThemeColor())
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	sections = append(sections, "")
-	if m.completedElapsed > 0 {
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("Session complete — %s worked", formatDuration(m.completedElapsed))))
+	if vd.elapsed > 0 {
+		sections = append(sections, statusStyle.Render(fmt.Sprintf("Session complete — %s worked", formatDuration(vd.elapsed))))
 	} else {
 		sections = append(sections, statusStyle.Render("Session complete! Great work."))
 	}
 	sections = append(sections, m.progress.ViewAs(1.0))
 
 	// Show break info
-	if m.completionInfo != nil {
-		breakLabel := domain.GetSessionTypeLabel(m.completionInfo.NextBreakType)
-		breakDur := formatDuration(m.completionInfo.NextBreakDuration)
-
-		breakLine := fmt.Sprintf("[b] %s %s", breakDur, breakLabel)
-		if m.completionInfo.NextBreakType == domain.SessionTypeLongBreak {
+	if vd.hasBreakInfo {
+		breakLine := fmt.Sprintf("[b] %s %s", vd.breakDur, vd.breakLabel)
+		if vd.isLongBreak {
 			breakLine += " - you earned it!"
 		}
 		sections = append(sections, "")
 		sections = append(sections, statusStyle.Render(breakLine))
 
-		if m.completionInfo.NextBreakType == domain.SessionTypeShortBreak {
+		if !vd.isLongBreak {
 			countLine := fmt.Sprintf("%d of %d sessions until long break",
-				m.completionInfo.SessionsBeforeLong-m.completionInfo.SessionsUntilLong,
-				m.completionInfo.SessionsBeforeLong)
+				vd.sessionsBeforeLong-vd.sessionsUntilLong, vd.sessionsBeforeLong)
 			sections = append(sections, helpStyle.Render(countLine))
 		}
 	}
 
 	// Daily stats
-	stats := m.state.TodayStats
 	statsText := fmt.Sprintf("%s Today: %d work sessions, %d breaks, %s worked",
-		m.theme.IconStats, stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+		m.theme.IconStats, vd.statsWorkSessions, vd.statsBreaksTaken, formatDuration(vd.statsTotalWorkTime))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
 
@@ -816,43 +602,32 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 }
 
 func (m Model) viewDeepWorkComplete(sections []string) []string {
+	vd := buildCompletionViewData(&m.completionState, m.mode, m.state, m.completionInfo, m.completedElapsed)
 	statusStyle := lipgloss.NewStyle().Foreground(m.getThemeColor())
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	sections = append(sections, "")
 	sections = append(sections, statusStyle.Render("Deep Work Session Complete."))
+	if vd.intendedOutcome != "" {
+		sections = append(sections, helpStyle.Render("Goal: "+vd.intendedOutcome))
+	}
 	sections = append(sections, m.progress.ViewAs(1.0))
 
-	// Distraction count
-	if len(m.distractions) > 0 {
+	if vd.distractionCount > 0 {
 		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render(fmt.Sprintf("Distractions logged: %d", len(m.distractions))))
+		sections = append(sections, helpStyle.Render(fmt.Sprintf("Distractions logged: %d", vd.distractionCount)))
 	}
 
-	// Deep Work Score: total work time today / goal target
-	stats := m.state.TodayStats
-	deepWorkHours := stats.TotalWorkTime.Hours()
-	goalHours := 4.0
-	if m.mode != nil && m.mode.DeepWorkGoalHours() > 0 {
-		goalHours = m.mode.DeepWorkGoalHours()
-	}
 	sections = append(sections, "")
-	sections = append(sections, statusStyle.Render(fmt.Sprintf("Deep Work Score: %s today", formatDuration(stats.TotalWorkTime))))
-	sections = append(sections, helpStyle.Render(fmt.Sprintf("%.0f%% of %.0fh target", deepWorkHours/goalHours*100, goalHours)))
+	sections = append(sections, statusStyle.Render(fmt.Sprintf("Deep Work Score: %s today", formatDuration(vd.statsTotalWorkTime))))
+	sections = append(sections, helpStyle.Render(fmt.Sprintf("%.0f%% of %.0fh target", vd.deepWorkPct, vd.deepWorkGoalHours)))
 
-	// Deep Work streak
-	if m.completionInfo != nil && m.completionInfo.DeepWorkStreak > 0 {
+	if vd.deepWorkStreak > 0 {
 		sections = append(sections, "")
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("Deep Work streak: %d days", m.completionInfo.DeepWorkStreak)))
+		sections = append(sections, statusStyle.Render(fmt.Sprintf("Deep Work streak: %d days", vd.deepWorkStreak)))
 	}
 
-	// Shutdown ritual / accomplishment prompt
 	sections = append(sections, "")
-	shutdownStepLabels := [3]string{
-		"Review pending tasks — anything urgent?",
-		"Plan for tomorrow:",
-		"Closing phrase (e.g. 'Shutdown complete'):",
-	}
 	if m.shutdownRitualMode {
 		sections = append(sections, statusStyle.Render(fmt.Sprintf("Shutdown Ritual (step %d/3):", m.shutdownStep+1)))
 		sections = append(sections, helpStyle.Render(shutdownStepLabels[m.shutdownStep]))
@@ -870,9 +645,9 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 		sections = append(sections, helpStyle.Render("Consider batching these for tomorrow."))
 		sections = append(sections, helpStyle.Render("enter dismiss"))
 	} else if m.shutdownComplete || m.accomplishmentSaved {
-		if len(m.distractions) > 0 && !m.distractionReviewDone {
+		if vd.distractionCount > 0 && !m.distractionReviewDone {
 			sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
-			sections = append(sections, helpStyle.Render(fmt.Sprintf("[r]eview %d distractions", len(m.distractions))))
+			sections = append(sections, helpStyle.Render(fmt.Sprintf("[r]eview %d distractions", vd.distractionCount)))
 		} else {
 			sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
 		}
@@ -880,12 +655,9 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 		sections = append(sections, helpStyle.Render("[a] Shutdown ritual"))
 	}
 
-	// Break info
-	if m.completionInfo != nil {
-		breakLabel := domain.GetSessionTypeLabel(m.completionInfo.NextBreakType)
-		breakDur := formatDuration(m.completionInfo.NextBreakDuration)
+	if vd.hasBreakInfo {
 		sections = append(sections, "")
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("[b] %s %s", breakDur, breakLabel)))
+		sections = append(sections, statusStyle.Render(fmt.Sprintf("[b] %s %s", vd.breakDur, vd.breakLabel)))
 	}
 
 	sections = append(sections, "")
@@ -895,7 +667,7 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 		sections = append(sections, helpStyle.Render("→ [n]ew session locked: complete the shutdown ritual first"))
 		sections = append(sections, helpStyle.Render("  Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest."))
 		sections = append(sections, helpStyle.Render("[a] shutdown ritual  [b]reak  [q]uit"))
-	} else if len(m.distractions) > 0 && !m.distractionReviewDone {
+	} else if vd.distractionCount > 0 && !m.distractionReviewDone {
 		sections = append(sections, helpStyle.Render("→ [n]ew session locked: review your distractions first"))
 		sections = append(sections, helpStyle.Render("  Newport: batch distractions and schedule them — don't let them follow you into the next block."))
 		sections = append(sections, helpStyle.Render("[r]eview distractions  [b]reak  [q]uit"))
@@ -906,6 +678,7 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 }
 
 func (m Model) viewMakeTimeComplete(sections []string) []string {
+	vd := buildCompletionViewData(&m.completionState, m.mode, m.state, m.completionInfo, m.completedElapsed)
 	statusStyle := lipgloss.NewStyle().Foreground(m.getThemeColor())
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
@@ -913,13 +686,11 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 	sections = append(sections, statusStyle.Render("Session complete!"))
 	sections = append(sections, m.progress.ViewAs(1.0))
 
-	// Highlight acknowledgment
-	if m.state.ActiveTask != nil && m.state.ActiveTask.HighlightDate != nil {
+	if vd.hasHighlightTask {
 		sections = append(sections, "")
 		sections = append(sections, statusStyle.Render("You made time for your Highlight today."))
 	}
 
-	// Focus score
 	sections = append(sections, "")
 	if m.focusScoreSaved && m.focusScore != nil {
 		sections = append(sections, statusStyle.Render(fmt.Sprintf("Focus score: %d/5", *m.focusScore)))
@@ -927,7 +698,6 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 		sections = append(sections, helpStyle.Render("How focused were you? [1] [2] [3] [4] [5]"))
 	}
 
-	// Energize activity (shown after focus score is saved)
 	if m.focusScoreSaved {
 		sections = append(sections, "")
 		if m.energizeSaved {
@@ -937,19 +707,14 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 		}
 	}
 
-	// Daily stats
-	stats := m.state.TodayStats
 	statsText := fmt.Sprintf("%s Today: %d sessions, %s worked",
-		m.theme.IconStats, stats.WorkSessions, formatDuration(stats.TotalWorkTime))
+		m.theme.IconStats, vd.statsWorkSessions, formatDuration(vd.statsTotalWorkTime))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
 
-	// Break info
-	if m.completionInfo != nil {
-		breakLabel := domain.GetSessionTypeLabel(m.completionInfo.NextBreakType)
-		breakDur := formatDuration(m.completionInfo.NextBreakDuration)
+	if vd.hasBreakInfo {
 		sections = append(sections, "")
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("[b] %s %s", breakDur, breakLabel)))
+		sections = append(sections, statusStyle.Render(fmt.Sprintf("[b] %s %s", vd.breakDur, vd.breakLabel)))
 	}
 
 	sections = append(sections, "")

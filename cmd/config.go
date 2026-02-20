@@ -47,14 +47,15 @@ var configCmd = &cobra.Command{
 			fmt.Printf("    [%d] %-8s  %s\n", i+1, p.Name, formatMinutes(p.Duration))
 		}
 		fmt.Println()
-		if meth == domain.MethodologyPomodoro {
+		switch meth {
+		case domain.MethodologyPomodoro:
 			fmt.Printf("    Short break:          %s\n", formatMinutes(time.Duration(app.config.Pomodoro.ShortBreak)))
 			fmt.Printf("    Long break:           %s\n", formatMinutes(time.Duration(app.config.Pomodoro.LongBreak)))
 			fmt.Printf("    Sessions before long:  %d\n", app.config.Pomodoro.SessionsBeforeLong)
 			fmt.Printf("    Auto-break:            %v\n", app.config.Pomodoro.AutoBreak)
-		} else if meth == domain.MethodologyDeepWork {
+		case domain.MethodologyDeepWork:
 			fmt.Printf("    Break duration:        %s\n", formatMinutes(time.Duration(app.config.DeepWork.BreakDuration)))
-		} else if meth == domain.MethodologyMakeTime {
+		case domain.MethodologyMakeTime:
 			fmt.Printf("    Break duration:        %s\n", formatMinutes(time.Duration(app.config.MakeTime.BreakDuration)))
 		}
 		notifStatus := "off"

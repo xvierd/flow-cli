@@ -48,6 +48,9 @@ type completionState struct {
 	// Auto-break
 	autoBreak      bool
 	autoBreakTicks int
+
+	// Shared: intended outcome captured at session completion (Deep Work)
+	completedIntendedOutcome string
 }
 
 // reset clears all mode-specific completion state, ready for the next session.
@@ -63,6 +66,7 @@ func (c *completionState) reset() {
 	c.shutdownRitualMode = false
 	c.shutdownStep = 0
 	c.shutdownComplete = false
+	c.completedIntendedOutcome = ""
 }
 
 // promptsDone returns true when all mode-specific completion prompts are satisfied,

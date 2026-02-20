@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/spf13/viper"
@@ -121,13 +122,14 @@ func (c *DeepWorkConfig) GetPresets() []SessionPreset {
 
 // MakeTimeConfig holds make time timer settings.
 type MakeTimeConfig struct {
-	BreakDuration   Duration `mapstructure:"break_duration"`
-	Preset1Name     string   `mapstructure:"preset1_name"`
-	Preset1Duration Duration `mapstructure:"preset1_duration"`
-	Preset2Name     string   `mapstructure:"preset2_name"`
-	Preset2Duration Duration `mapstructure:"preset2_duration"`
-	Preset3Name     string   `mapstructure:"preset3_name"`
-	Preset3Duration Duration `mapstructure:"preset3_duration"`
+	BreakDuration          Duration `mapstructure:"break_duration"`
+	HighlightTargetMinutes int      `mapstructure:"highlight_target_minutes"`
+	Preset1Name            string   `mapstructure:"preset1_name"`
+	Preset1Duration        Duration `mapstructure:"preset1_duration"`
+	Preset2Name            string   `mapstructure:"preset2_name"`
+	Preset2Duration        Duration `mapstructure:"preset2_duration"`
+	Preset3Name            string   `mapstructure:"preset3_name"`
+	Preset3Duration        Duration `mapstructure:"preset3_duration"`
 }
 
 // GetPresets returns the three session presets for make time.
@@ -207,8 +209,9 @@ func DefaultConfig() *Config {
 			Preset3Duration:   Duration(25 * time.Minute),
 		},
 		MakeTime: MakeTimeConfig{
-			BreakDuration:   Duration(15 * time.Minute),
-			Preset1Name:     "Highlight",
+			BreakDuration:          Duration(15 * time.Minute),
+			HighlightTargetMinutes: 60,
+			Preset1Name:            "Highlight",
 			Preset1Duration: Duration(60 * time.Minute),
 			Preset2Name:     "Sprint",
 			Preset2Duration: Duration(25 * time.Minute),
@@ -239,7 +242,7 @@ func Load() (*Config, error) {
 
 	// Ensure config directory exists
 	configDir := filepath.Dir(configPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -287,49 +290,64 @@ func Save(cfg *Config) error {
 
 	// Ensure config directory exists
 	configDir := filepath.Dir(configPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	viper.SetConfigFile(configPath)
 	viper.SetConfigType("toml")
 
-	// Set all values
-	viper.Set("methodology", cfg.Methodology)
-	viper.Set("first_run", cfg.FirstRun)
-	viper.Set("pomodoro.work_duration", cfg.Pomodoro.WorkDuration.String())
-	viper.Set("pomodoro.short_break", cfg.Pomodoro.ShortBreak.String())
-	viper.Set("pomodoro.long_break", cfg.Pomodoro.LongBreak.String())
-	viper.Set("pomodoro.sessions_before_long", cfg.Pomodoro.SessionsBeforeLong)
-	viper.Set("pomodoro.auto_break", cfg.Pomodoro.AutoBreak)
-	viper.Set("pomodoro.preset1_name", cfg.Pomodoro.Preset1Name)
-	viper.Set("pomodoro.preset1_duration", cfg.Pomodoro.Preset1Duration.String())
-	viper.Set("pomodoro.preset2_name", cfg.Pomodoro.Preset2Name)
-	viper.Set("pomodoro.preset2_duration", cfg.Pomodoro.Preset2Duration.String())
-	viper.Set("pomodoro.preset3_name", cfg.Pomodoro.Preset3Name)
-	viper.Set("pomodoro.preset3_duration", cfg.Pomodoro.Preset3Duration.String())
-	viper.Set("deepwork.deep_work_goal_hours", cfg.DeepWork.DeepWorkGoalHours)
-	viper.Set("deepwork.break_duration", cfg.DeepWork.BreakDuration.String())
-	viper.Set("deepwork.preset1_name", cfg.DeepWork.Preset1Name)
-	viper.Set("deepwork.preset1_duration", cfg.DeepWork.Preset1Duration.String())
-	viper.Set("deepwork.preset2_name", cfg.DeepWork.Preset2Name)
-	viper.Set("deepwork.preset2_duration", cfg.DeepWork.Preset2Duration.String())
-	viper.Set("deepwork.preset3_name", cfg.DeepWork.Preset3Name)
-	viper.Set("deepwork.preset3_duration", cfg.DeepWork.Preset3Duration.String())
-	viper.Set("maketime.break_duration", cfg.MakeTime.BreakDuration.String())
-	viper.Set("maketime.preset1_name", cfg.MakeTime.Preset1Name)
-	viper.Set("maketime.preset1_duration", cfg.MakeTime.Preset1Duration.String())
-	viper.Set("maketime.preset2_name", cfg.MakeTime.Preset2Name)
-	viper.Set("maketime.preset2_duration", cfg.MakeTime.Preset2Duration.String())
-	viper.Set("maketime.preset3_name", cfg.MakeTime.Preset3Name)
-	viper.Set("maketime.preset3_duration", cfg.MakeTime.Preset3Duration.String())
-	viper.Set("notifications.enabled", cfg.Notifications.Enabled)
-	viper.Set("notifications.sound", cfg.Notifications.Sound)
-	viper.Set("mcp.enabled", cfg.MCP.Enabled)
-	viper.Set("mcp.auto_start", cfg.MCP.AutoStart)
-	viper.Set("storage.data_dir", cfg.Storage.DataDir)
+	for k, v := range flattenConfig(cfg, "") {
+		viper.Set(k, v)
+	}
 
 	return viper.WriteConfig()
+}
+
+// flattenConfig walks a struct (or pointer to struct) using mapstructure tags and
+// returns a flat map of dotted viper keys to their values. Duration fields are
+// serialised as strings via their String() method so viper writes them correctly.
+func flattenConfig(v interface{}, prefix string) map[string]interface{} {
+	result := make(map[string]interface{})
+	rv := reflect.ValueOf(v)
+	rt := reflect.TypeOf(v)
+	if rv.Kind() == reflect.Ptr {
+		rv = rv.Elem()
+		rt = rt.Elem()
+	}
+
+	durationType := reflect.TypeOf(Duration(0))
+
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		fv := rv.Field(i)
+
+		tag := field.Tag.Get("mapstructure")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		key := tag
+		if prefix != "" {
+			key = prefix + "." + tag
+		}
+
+		// Duration wrapper → serialize as string
+		if fv.Type() == durationType {
+			result[key] = fv.Interface().(Duration).String()
+			continue
+		}
+
+		// Nested struct → recurse
+		if fv.Kind() == reflect.Struct {
+			for k, val := range flattenConfig(fv.Interface(), key) {
+				result[k] = val
+			}
+			continue
+		}
+
+		result[key] = fv.Interface()
+	}
+	return result
 }
 
 // GetConfigPath returns the path to the config file.
@@ -370,6 +388,7 @@ func setDefaults() {
 	viper.SetDefault("deepwork.preset3_name", "Shallow")
 	viper.SetDefault("deepwork.preset3_duration", "25m0s")
 	viper.SetDefault("maketime.break_duration", "15m0s")
+	viper.SetDefault("maketime.highlight_target_minutes", 60)
 	viper.SetDefault("maketime.preset1_name", "Highlight")
 	viper.SetDefault("maketime.preset1_duration", "1h0m0s")
 	viper.SetDefault("maketime.preset2_name", "Sprint")

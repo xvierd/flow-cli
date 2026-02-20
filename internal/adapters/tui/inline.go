@@ -17,56 +17,6 @@ import (
 	"github.com/xvierd/flow-cli/internal/ports"
 )
 
-// inlinePhase tracks which phase the inline UI is in.
-type inlinePhase int
-
-const (
-	phaseMainMenu inlinePhase = iota
-	phasePickMode
-	phasePickDuration
-	phaseTaskSelect
-	phaseTaskName
-	phaseTimer
-	phaseWelcome
-)
-
-// MainMenuAction represents what the user selected from the main menu.
-type MainMenuAction int
-
-const (
-	// MainMenuStartSession means continue to mode picker / session start.
-	MainMenuStartSession MainMenuAction = iota
-	// MainMenuViewStats means quit TUI and show stats dashboard.
-	MainMenuViewStats
-	// MainMenuReflect means quit TUI and show weekly reflection.
-	MainMenuReflect
-)
-
-type mainMenuOption struct {
-	action MainMenuAction
-	label  string
-	desc   string
-}
-
-var mainMenuOptions = []mainMenuOption{
-	{MainMenuStartSession, "Start session", "Begin a new focus session"},
-	{MainMenuViewStats, "View stats", "Show your productivity dashboard"},
-	{MainMenuReflect, "Reflect", "Weekly reflection on your work"},
-}
-
-// modeOption describes a methodology choice in the mode picker.
-type modeOption struct {
-	methodology domain.Methodology
-	label       string
-	desc        string
-}
-
-var modeOptions = []modeOption{
-	{domain.MethodologyPomodoro, "Pomodoro", "Classic 25/5 timer"},
-	{domain.MethodologyDeepWork, "Deep Work", "Longer sessions, distraction tracking"},
-	{domain.MethodologyMakeTime, "Make Time", "Daily Highlight, focus scoring"},
-}
-
 // InlineModel is a compact timer that runs setup + timer in a single bubbletea program.
 type InlineModel struct {
 	// Phase
@@ -124,7 +74,6 @@ type InlineModel struct {
 	// Methodology mode
 	mode           methodology.Mode
 	onboardingMode bool
-	firstRun       bool
 
 	// completionState holds all mode-specific fields shared with Model.
 	completionState
@@ -159,29 +108,7 @@ func NewInlineModel(state *domain.CurrentState, info *domain.CompletionInfo, the
 	ti.CharLimit = 120
 	ti.Width = w - 10
 
-	di := textinput.New()
-	di.Placeholder = "What distracted you?"
-	di.CharLimit = 200
-	di.Width = w - 10
-
-	ai := textinput.New()
-	ai.Placeholder = "What did you accomplish?"
-	ai.CharLimit = 200
-	ai.Width = w - 10
-
-	var shutdownInputs [3]textinput.Model
-	placeholders := [3]string{
-		"Review pending tasks — anything urgent?",
-		"Plan for tomorrow",
-		"Closing phrase (e.g. 'Shutdown complete')",
-	}
-	for i := range shutdownInputs {
-		si := textinput.New()
-		si.Placeholder = placeholders[i]
-		si.CharLimit = 200
-		si.Width = w - 10
-		shutdownInputs[i] = si
-	}
+	di, ai, shutdownInputs := newCompletionInputs(w - 10)
 
 	// If there's already an active session, skip setup
 	startPhase := phasePickDuration
@@ -244,543 +171,31 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m InlineModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter", " ":
-			if m.modeLocked {
-				m.phase = phasePickDuration
-			} else {
-				m.phase = phaseMainMenu
-			}
-			return m, nil
-		case "c", "ctrl+c", "esc":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
-}
-
-func (m InlineModel) viewWelcome() string {
-	accent := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
-
-	var b strings.Builder
-	b.WriteString(accent.Render("  Welcome to Flow!"))
-	b.WriteString("\n")
-	b.WriteString(dim.Render("  Three methodologies to choose from:"))
-	b.WriteString("\n")
-	b.WriteString(accent.Render("  Pomodoro   ") + dim.Render("25m sprints, short breaks — frictionless and fast"))
-	b.WriteString("\n")
-	b.WriteString(accent.Render("  Deep Work  ") + dim.Render("long blocks, distraction tracking, shutdown ritual (Newport)"))
-	b.WriteString("\n")
-	b.WriteString(accent.Render("  Make Time  ") + dim.Render("daily Highlight, focus score, energize (Knapp)"))
-	b.WriteString("\n")
-	b.WriteString(dim.Render("  Change anytime with \"flow config\""))
-	b.WriteString("\n")
-	b.WriteString(dim.Render("  enter continue · c close"))
-	b.WriteString("\n")
-	return b.String()
-}
-
-func (m InlineModel) updateMainMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up", "k", "left", "h":
-			if m.menuCursor > 0 {
-				m.menuCursor--
-			}
-		case "down", "j", "right", "l":
-			if m.menuCursor < len(mainMenuOptions)-1 {
-				m.menuCursor++
-			}
-		case "1":
-			m.menuCursor = 0
-			return m.selectMainMenu()
-		case "2":
-			if len(mainMenuOptions) > 1 {
-				m.menuCursor = 1
-				return m.selectMainMenu()
-			}
-		case "3":
-			if len(mainMenuOptions) > 2 {
-				m.menuCursor = 2
-				return m.selectMainMenu()
-			}
-		case "enter":
-			return m.selectMainMenu()
-		case "c", "ctrl+c", "esc":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
-}
-
-func (m InlineModel) selectMainMenu() (tea.Model, tea.Cmd) {
-	selected := mainMenuOptions[m.menuCursor]
-	m.SelectedAction = selected.action
-	switch selected.action {
-	case MainMenuViewStats, MainMenuReflect:
-		return m, tea.Quit
-	default:
-		// Start session → advance to mode picker
-		if m.modeLocked {
-			m.phase = phasePickDuration
-		} else {
-			m.phase = phasePickMode
-		}
-		return m, nil
-	}
-}
-
-func (m InlineModel) viewMainMenu() string {
-	var b strings.Builder
-
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
-	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
-
-	b.WriteString(titleStyle.Render("  Flow:") + "\n")
-
-	for i, opt := range mainMenuOptions {
-		if i == m.menuCursor {
-			b.WriteString(activeStyle.Render("  ▸ "+opt.label) + "\n")
-		} else {
-			b.WriteString(dimStyle.Render("    "+opt.label) + "\n")
-		}
-	}
-
-	desc := mainMenuOptions[m.menuCursor].desc
-	b.WriteString(dimStyle.Render("  "+desc) + "\n")
-
-	b.WriteString(dimStyle.Render("  ↑/↓ select · enter confirm · c close") + "\n")
-
-	return b.String()
-}
-
-func (m InlineModel) updatePickMode(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Onboarding overlay: dismiss on Enter
-	if m.onboardingMode {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "enter":
-				m.onboardingMode = false
-				m.phase = phasePickDuration
-				m.presetCursor = 0
-				return m, nil
-			case "esc":
-				// Go back to mode picker
-				m.onboardingMode = false
-				return m, nil
-			case "ctrl+c":
-				return m, tea.Quit
-			}
-		}
-		return m, nil
-	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "left", "h":
-			if m.modeCursor > 0 {
-				m.modeCursor--
-			}
-		case "right", "l":
-			if m.modeCursor < len(modeOptions)-1 {
-				m.modeCursor++
-			}
-		case "1":
-			m.modeCursor = 0
-			return m.selectMode()
-		case "2":
-			if len(modeOptions) > 1 {
-				m.modeCursor = 1
-				return m.selectMode()
-			}
-		case "3":
-			if len(modeOptions) > 2 {
-				m.modeCursor = 2
-				return m.selectMode()
-			}
-		case "enter":
-			return m.selectMode()
-		case "esc":
-			// Go back to main menu if we came from there
-			if !m.modeLocked {
-				m.phase = phaseMainMenu
-				return m, nil
-			}
-			return m, tea.Quit
-		case "c", "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
-}
-
-func (m InlineModel) selectMode() (tea.Model, tea.Cmd) {
-	selected := modeOptions[m.modeCursor]
-	m.mode = methodology.ForMethodology(selected.methodology, nil)
-	m.presets = m.mode.Presets()
-
-	if m.onModeSelected != nil {
-		m.onModeSelected(selected.methodology)
-	}
-
-	// Show onboarding overlay with mode description
-	if m.mode.Description() != "" {
-		m.onboardingMode = true
-		return m, nil
-	}
-
-	m.phase = phasePickDuration
-	m.presetCursor = 0
-	return m, nil
-}
-
-func (m InlineModel) advanceToTaskPhase() (tea.Model, tea.Cmd) {
-	// Fetch recent tasks if callback is available
-	if m.fetchRecentTasks != nil {
-		m.recentTasks = m.fetchRecentTasks(3)
-	}
-	// Check for yesterday's highlight carry-over (Make Time mode)
-	if m.mode != nil && m.mode.HasHighlight() && m.fetchYesterdayHighlight != nil {
-		m.yesterdayHighlight = m.fetchYesterdayHighlight()
-	}
-	if len(m.recentTasks) > 0 || m.yesterdayHighlight != nil {
-		m.phase = phaseTaskSelect
-		m.taskSelectCursor = 0
-		return m, nil
-	}
-	// No recent tasks, skip to task name input
-	m.phase = phaseTaskName
-	m.taskInput.Focus()
-	return m, m.taskInput.Cursor.BlinkCmd()
-}
-
-func (m InlineModel) updatePickDuration(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "left", "h":
-			if m.presetCursor > 0 {
-				m.presetCursor--
-			}
-		case "right", "l":
-			if m.presetCursor < len(m.presets)-1 {
-				m.presetCursor++
-			}
-		case "1":
-			m.presetCursor = 0
-			return m.advanceToTaskPhase()
-		case "2":
-			if len(m.presets) > 1 {
-				m.presetCursor = 1
-				return m.advanceToTaskPhase()
-			}
-		case "3":
-			if len(m.presets) > 2 {
-				m.presetCursor = 2
-				return m.advanceToTaskPhase()
-			}
-		case "enter":
-			return m.advanceToTaskPhase()
-		case "esc":
-			if !m.modeLocked {
-				m.phase = phasePickMode
-				return m, nil
-			}
-		case "c", "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
-}
-
-func (m InlineModel) updateTaskSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
-	optionCount := m.taskSelectOptionCount()
-	recentBase := m.taskSelectRecentBaseIdx()
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up", "k":
-			if m.taskSelectCursor > 0 {
-				m.taskSelectCursor--
-			}
-		case "down", "j":
-			if m.taskSelectCursor < optionCount-1 {
-				m.taskSelectCursor++
-			}
-		case "1":
-			if len(m.recentTasks) >= 1 {
-				m.taskSelectCursor = recentBase
-				return m.selectRecentTask()
-			}
-		case "2":
-			if len(m.recentTasks) >= 2 {
-				m.taskSelectCursor = recentBase + 1
-				return m.selectRecentTask()
-			}
-		case "3":
-			if len(m.recentTasks) >= 3 {
-				m.taskSelectCursor = recentBase + 2
-				return m.selectRecentTask()
-			}
-		case "enter":
-			// Carry-over option
-			if m.taskSelectCursor == m.taskSelectCarryOverIdx() {
-				return m.selectCarryOverTask()
-			}
-			// Recent task
-			if m.taskSelectCursor >= recentBase && m.taskSelectCursor < recentBase+len(m.recentTasks) {
-				return m.selectRecentTask()
-			}
-			// "New task" selected
-			m.phase = phaseTaskName
-			m.taskInput.Focus()
-			return m, m.taskInput.Cursor.BlinkCmd()
-		case "esc":
-			m.phase = phasePickDuration
-			return m, nil
-		case "c", "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
-}
-
-func (m InlineModel) selectCarryOverTask() (tea.Model, tea.Cmd) {
-	task := m.yesterdayHighlight
-	task.SetAsHighlight() // updates to today
-	if m.onStartSession != nil {
-		if err := m.onStartSession(m.presetCursor, task.Title); err != nil {
-			m.phase = phaseTimer
-			return m, tickCmd()
-		}
-	}
-	m.phase = phaseTimer
-	return m, tickCmd()
-}
-
-func (m InlineModel) selectRecentTask() (tea.Model, tea.Cmd) {
-	recentIdx := m.taskSelectCursor - m.taskSelectRecentBaseIdx()
-	task := m.recentTasks[recentIdx]
-	// Pre-fill the task input with the selected task title
-	m.taskInput.SetValue(task.Title)
-	// Start the session immediately with the selected task name
-	if m.onStartSession != nil {
-		if err := m.onStartSession(m.presetCursor, task.Title); err != nil {
-			m.phase = phaseTimer
-			return m, tickCmd()
-		}
-	}
-	m.phase = phaseTimer
-	return m, tickCmd()
-}
-
-func (m InlineModel) updateTaskName(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			if m.onStartSession != nil {
-				taskName := strings.TrimSpace(m.taskInput.Value())
-				if err := m.onStartSession(m.presetCursor, taskName); err != nil {
-					m.phase = phaseTimer
-					return m, tickCmd()
-				}
-			}
-			m.phase = phaseTimer
-			return m, tickCmd()
-		case "ctrl+c":
-			return m, tea.Quit
-		case "esc":
-			m.taskInput.Blur()
-			if len(m.recentTasks) > 0 {
-				m.phase = phaseTaskSelect
-			} else {
-				m.phase = phasePickDuration
-			}
-			return m, nil
-		}
-	}
-
-	var cmd tea.Cmd
-	m.taskInput, cmd = m.taskInput.Update(msg)
-	return m, cmd
-}
 
 func (m InlineModel) updateDistractionInput(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Category picker sub-mode
-	if m.distractionCategoryMode {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "i":
-				m.distractions = append(m.distractions, m.distractionPendingText)
-				if m.distractionCallback != nil {
-					_ = m.distractionCallback(m.distractionPendingText, "internal")
-				}
-				m.distractionCategoryMode = false
-				m.distractionMode = false
-				return m, tickCmd()
-			case "e":
-				m.distractions = append(m.distractions, m.distractionPendingText)
-				if m.distractionCallback != nil {
-					_ = m.distractionCallback(m.distractionPendingText, "external")
-				}
-				m.distractionCategoryMode = false
-				m.distractionMode = false
-				return m, tickCmd()
-			case "enter", "esc":
-				m.distractions = append(m.distractions, m.distractionPendingText)
-				if m.distractionCallback != nil {
-					_ = m.distractionCallback(m.distractionPendingText, "")
-				}
-				m.distractionCategoryMode = false
-				m.distractionMode = false
-				return m, tickCmd()
-			case "ctrl+c":
-				return m, tea.Quit
-			}
-		}
-		return m, nil
+	cb := &completionCallbacks{
+		distractionCallback: m.distractionCallback,
+		mode:                m.mode,
 	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			text := m.distractionInput.Value()
-			if text != "" {
-				m.distractionInput.Blur()
-				if m.mode != nil && m.mode.HasDistractionLog() {
-					m.distractionPendingText = text
-					m.distractionCategoryMode = true
-					return m, nil
-				}
-				m.distractions = append(m.distractions, text)
-				if m.distractionCallback != nil {
-					_ = m.distractionCallback(text, "")
-				}
-			}
-			m.distractionMode = false
-			m.distractionInput.Blur()
-			return m, tickCmd()
-		case "esc":
-			m.distractionMode = false
-			m.distractionInput.Blur()
-			return m, tickCmd()
-		case "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-
-	var cmd tea.Cmd
-	m.distractionInput, cmd = m.distractionInput.Update(msg)
-	return m, cmd
+	return m, handleDistractionInput(&m.completionState, cb, msg, tickCmd())
 }
 
 func (m InlineModel) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			text := m.accomplishmentInput.Value()
-			m.accomplishmentSaved = true // Always mark saved (empty = "skipped")
-			if text != "" {
-				if m.accomplishmentCallback != nil {
-					_ = m.accomplishmentCallback(text)
-				}
-			}
-			m.accomplishmentMode = false
-			m.accomplishmentInput.Blur()
-			// Auto-enter distraction review if there are distractions
-			if len(m.distractions) > 0 && !m.distractionReviewDone {
-				m.distractionReviewMode = true
-			}
-			return m, nil
-		case "esc":
-			m.accomplishmentMode = false
-			m.accomplishmentInput.Blur()
-			return m, nil
-		case "ctrl+c":
-			return m, tea.Quit
-		}
+	cb := &completionCallbacks{
+		accomplishmentCallback: m.accomplishmentCallback,
 	}
-
-	var cmd tea.Cmd
-	m.accomplishmentInput, cmd = m.accomplishmentInput.Update(msg)
-	return m, cmd
+	return m, handleAccomplishmentInput(&m.completionState, cb, msg)
 }
 
 func (m InlineModel) updateShutdownRitual(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			m.shutdownInputs[m.shutdownStep].Blur()
-			m.shutdownStep++
-			if m.shutdownStep >= 3 {
-				return m.finishShutdownRitual()
-			}
-			m.shutdownInputs[m.shutdownStep].Focus()
-			return m, m.shutdownInputs[m.shutdownStep].Cursor.BlinkCmd()
-		case "esc":
-			// Abandon the entire ritual — return to the completion screen
-			m.shutdownRitualMode = false
-			for i := range m.shutdownInputs {
-				m.shutdownInputs[i].Blur()
-			}
-			return m, nil
-		case "ctrl+c":
-			return m, tea.Quit
-		}
+	cb := &completionCallbacks{
+		shutdownRitualCallback: m.shutdownRitualCallback,
 	}
-
-	var cmd tea.Cmd
-	m.shutdownInputs[m.shutdownStep], cmd = m.shutdownInputs[m.shutdownStep].Update(msg)
-	return m, cmd
-}
-
-func (m InlineModel) finishShutdownRitual() (tea.Model, tea.Cmd) {
-	m.shutdownRitualMode = false
-	m.shutdownComplete = true
-	m.accomplishmentSaved = true
-
-	ritual := domain.ShutdownRitual{
-		PendingTasksReview: m.shutdownInputs[0].Value(),
-		TomorrowPlan:       m.shutdownInputs[1].Value(),
-		ClosingPhrase:      m.shutdownInputs[2].Value(),
-	}
-	if m.shutdownRitualCallback != nil {
-		_ = m.shutdownRitualCallback(ritual)
-	}
-
-	if len(m.distractions) > 0 && !m.distractionReviewDone {
-		m.distractionReviewMode = true
-	}
-	return m, nil
+	return m, handleShutdownRitual(&m.completionState, cb, msg)
 }
 
 func (m InlineModel) updateDistractionReview(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter", "esc":
-			m.distractionReviewMode = false
-			m.distractionReviewDone = true
-			return m, nil
-		case "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
+	return m, handleDistractionReview(&m.completionState, msg)
 }
 
 func (m InlineModel) showDailySummaryOrQuit() (tea.Model, tea.Cmd) {
@@ -1020,6 +435,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
 				m.completedType = m.state.ActiveSession.Type
 				m.completedElapsed = m.state.ActiveSession.Duration
+				m.completedIntendedOutcome = m.state.ActiveSession.IntendedOutcome
 				m.completed = true
 				if !m.notified && m.onSessionComplete != nil {
 					m.onSessionComplete(m.completedType)
@@ -1061,6 +477,7 @@ func (m *InlineModel) resetCompletionState() {
 	m.shutdownRitualMode = false
 	m.shutdownStep = 0
 	m.shutdownComplete = false
+	m.completedIntendedOutcome = ""
 }
 
 // completionPromptsComplete returns true when all mode-specific completion prompts are done.
@@ -1106,178 +523,6 @@ func (m InlineModel) View() string {
 		return m.viewTimer()
 	}
 	return ""
-}
-
-func (m InlineModel) viewPickMode() string {
-	var b strings.Builder
-
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
-	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
-
-	// Onboarding overlay
-	if m.onboardingMode && m.mode != nil {
-		b.WriteString(activeStyle.Render("  "+m.mode.TUITitle()) + "\n")
-		b.WriteString(dimStyle.Render("  "+m.mode.Description()) + "\n")
-		b.WriteString(dimStyle.Render("  enter continue · esc back to mode picker") + "\n")
-		return b.String()
-	}
-
-	b.WriteString(titleStyle.Render("  Mode:") + "  ")
-
-	for i, opt := range modeOptions {
-		label := opt.label
-		if i == m.modeCursor {
-			b.WriteString(activeStyle.Render(" ▸ " + label + " "))
-		} else {
-			b.WriteString(dimStyle.Render("   " + label + " "))
-		}
-	}
-	b.WriteString("\n")
-
-	// Show description of selected mode
-	desc := modeOptions[m.modeCursor].desc
-	b.WriteString(dimStyle.Render("  "+desc) + "\n")
-
-	b.WriteString(dimStyle.Render("  ←/→ select · enter confirm · esc back · c close") + "\n")
-
-	return b.String()
-}
-
-func (m InlineModel) viewPickDuration() string {
-	var b strings.Builder
-
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
-	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
-
-	// Show selected mode
-	if m.mode != nil {
-		b.WriteString(dimStyle.Render(fmt.Sprintf("  %s mode", m.mode.Name().Label())) + "\n")
-	}
-
-	b.WriteString(titleStyle.Render("  Duration:") + "  ")
-
-	for i, p := range m.presets {
-		label := fmt.Sprintf("%s %s", p.Name, formatMinutesCompact(p.Duration))
-		if i == m.presetCursor {
-			b.WriteString(activeStyle.Render(" ▸ " + label + " "))
-		} else {
-			b.WriteString(dimStyle.Render("   " + label + " "))
-		}
-	}
-	b.WriteString("\n")
-
-	if m.breakInfo != "" {
-		b.WriteString(dimStyle.Render("  "+m.breakInfo) + "\n")
-	}
-
-	escHint := "esc back · "
-	if m.modeLocked {
-		escHint = ""
-	}
-	b.WriteString(dimStyle.Render("  ←/→ select · enter confirm · "+escHint+"c close") + "\n")
-
-	return b.String()
-}
-
-// taskSelectOptionCount returns the total number of options in the task select list.
-func (m InlineModel) taskSelectOptionCount() int {
-	count := len(m.recentTasks) + 1 // recent tasks + "New task"
-	if m.yesterdayHighlight != nil {
-		count++ // carry-over option
-	}
-	return count
-}
-
-// taskSelectCarryOverIdx returns the index of the carry-over option, or -1 if none.
-func (m InlineModel) taskSelectCarryOverIdx() int {
-	if m.yesterdayHighlight != nil {
-		return 0
-	}
-	return -1
-}
-
-// taskSelectRecentBaseIdx returns the starting index for recent tasks in the list.
-func (m InlineModel) taskSelectRecentBaseIdx() int {
-	if m.yesterdayHighlight != nil {
-		return 1
-	}
-	return 0
-}
-
-func (m InlineModel) viewTaskSelect() string {
-	var b strings.Builder
-
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
-	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
-
-	p := m.presets[m.presetCursor]
-	b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ %s %s", p.Name, formatMinutesCompact(p.Duration))))
-	b.WriteString("\n")
-
-	b.WriteString(titleStyle.Render("  Task:") + "\n")
-
-	idx := 0
-
-	// Carry-over option
-	if m.yesterdayHighlight != nil {
-		label := fmt.Sprintf("Carry forward: %s", m.yesterdayHighlight.Title)
-		if idx == m.taskSelectCursor {
-			b.WriteString(activeStyle.Render("  ▸ "+label) + "\n")
-		} else {
-			b.WriteString(dimStyle.Render("    "+label) + "\n")
-		}
-		idx++
-	}
-
-	// Recent tasks
-	for i, task := range m.recentTasks {
-		label := fmt.Sprintf("[%d] %s", i+1, task.Title)
-		if idx == m.taskSelectCursor {
-			b.WriteString(activeStyle.Render("  ▸ "+label) + "\n")
-		} else {
-			b.WriteString(dimStyle.Render("    "+label) + "\n")
-		}
-		idx++
-	}
-
-	// "New task" option
-	newLabel := "New task..."
-	if idx == m.taskSelectCursor {
-		b.WriteString(activeStyle.Render("  ▸ "+newLabel) + "\n")
-	} else {
-		b.WriteString(dimStyle.Render("    "+newLabel) + "\n")
-	}
-
-	b.WriteString(dimStyle.Render("  ↑/↓ select · enter confirm · esc back") + "\n")
-
-	return b.String()
-}
-
-func (m InlineModel) viewTaskName() string {
-	var b strings.Builder
-
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
-	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
-
-	p := m.presets[m.presetCursor]
-	b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ %s %s", p.Name, formatMinutesCompact(p.Duration))))
-	b.WriteString("\n")
-
-	taskPrompt := "Task:"
-	if m.mode != nil {
-		taskPrompt = m.mode.TaskPrompt()
-	}
-	b.WriteString(titleStyle.Render("  " + taskPrompt + " "))
-	b.WriteString(m.taskInput.View())
-	b.WriteString("\n")
-
-	b.WriteString(dimStyle.Render("  enter start · esc back · ctrl+c quit") + "\n")
-
-	return b.String()
 }
 
 func (m InlineModel) viewTimer() string {
@@ -1465,27 +710,24 @@ func (m InlineModel) viewInlineComplete(accent, dim lipgloss.Style) string {
 }
 
 func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) string {
+	vd := buildCompletionViewData(&m.completionState, m.mode, m.state, m.completionInfo, m.completedElapsed)
 	var b strings.Builder
 
-	// Header: show time worked so it's clear whether this was a full or early stop
-	if m.completedElapsed > 0 {
-		b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete — %s worked", m.theme.IconApp, formatMinutesCompact(m.completedElapsed))))
+	if vd.elapsed > 0 {
+		b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete — %s worked", m.theme.IconApp, formatMinutesCompact(vd.elapsed))))
 	} else {
 		b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete!", m.theme.IconApp)))
 	}
 	b.WriteString("\n")
 
-	stats := m.state.TodayStats
 	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s today",
-		m.theme.IconStats, stats.WorkSessions, formatMinutesCompact(stats.TotalWorkTime))))
+		m.theme.IconStats, vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime))))
 	b.WriteString("\n")
 
 	if m.autoBreakTicks > 0 {
 		b.WriteString(accent.Render(fmt.Sprintf("  Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
-	} else if m.completionInfo != nil {
-		breakLabel := domain.GetSessionTypeLabel(m.completionInfo.NextBreakType)
-		breakDur := formatDuration(m.completionInfo.NextBreakDuration)
-		b.WriteString(dim.Render(fmt.Sprintf("  [n]ew session  [b]reak %s %s  [m]ode  [q]uit", breakDur, breakLabel)))
+	} else if vd.hasBreakInfo {
+		b.WriteString(dim.Render(fmt.Sprintf("  [n]ew session  [b]reak %s %s  [m]ode  [q]uit", vd.breakDur, vd.breakLabel)))
 	} else {
 		b.WriteString(dim.Render("  [n]ew session  [b]reak  [m]ode  [q]uit"))
 	}
@@ -1494,30 +736,25 @@ func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) strin
 }
 
 func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) string {
+	vd := buildCompletionViewData(&m.completionState, m.mode, m.state, m.completionInfo, m.completedElapsed)
 	var b strings.Builder
 	b.WriteString(accent.Render(fmt.Sprintf("  %s Deep Work Session Complete.", m.theme.IconApp)))
 	b.WriteString("\n")
 
-	if len(m.distractions) > 0 {
-		b.WriteString(dim.Render(fmt.Sprintf("  Distractions: %d", len(m.distractions))))
+	if vd.intendedOutcome != "" {
+		b.WriteString(dim.Render(fmt.Sprintf("  Goal: %s", vd.intendedOutcome)))
 		b.WriteString("\n")
 	}
 
-	stats := m.state.TodayStats
-	deepWorkHours := stats.TotalWorkTime.Hours()
-	goalHours := 4.0
-	if m.mode != nil && m.mode.DeepWorkGoalHours() > 0 {
-		goalHours = m.mode.DeepWorkGoalHours()
+	if vd.distractionCount > 0 {
+		b.WriteString(dim.Render(fmt.Sprintf("  Distractions: %d", vd.distractionCount)))
+		b.WriteString("\n")
 	}
+
 	b.WriteString(dim.Render(fmt.Sprintf("  Deep Work: %s today (%.0f%% of %.0fh)",
-		formatMinutesCompact(stats.TotalWorkTime), deepWorkHours/goalHours*100, goalHours)))
+		formatMinutesCompact(vd.statsTotalWorkTime), vd.deepWorkPct, vd.deepWorkGoalHours)))
 	b.WriteString("\n")
 
-	shutdownStepLabels := [3]string{
-		"Review pending tasks — anything urgent?",
-		"Plan for tomorrow:",
-		"Closing phrase (e.g. 'Shutdown complete'):",
-	}
 	if m.shutdownRitualMode {
 		b.WriteString(accent.Render(fmt.Sprintf("  Shutdown Ritual (step %d/3):", m.shutdownStep+1)))
 		b.WriteString("\n")
@@ -1541,10 +778,10 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 		b.WriteString("\n")
 		b.WriteString(dim.Render("  enter dismiss"))
 	} else if m.shutdownComplete || m.accomplishmentSaved {
-		if len(m.distractions) > 0 && !m.distractionReviewDone {
+		if vd.distractionCount > 0 && !m.distractionReviewDone {
 			b.WriteString(accent.Render("  Shutdown ritual complete."))
 			b.WriteString("\n")
-			b.WriteString(dim.Render(fmt.Sprintf("  [r]eview %d distractions", len(m.distractions))))
+			b.WriteString(dim.Render(fmt.Sprintf("  [r]eview %d distractions", vd.distractionCount)))
 		} else {
 			b.WriteString(accent.Render("  Shutdown ritual complete."))
 		}
@@ -1560,7 +797,7 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 			b.WriteString(dim.Render("    Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest."))
 			b.WriteString("\n")
 			b.WriteString(dim.Render("  [a] shutdown ritual [b]reak [m]ode [q]uit"))
-		} else if len(m.distractions) > 0 && !m.distractionReviewDone {
+		} else if vd.distractionCount > 0 && !m.distractionReviewDone {
 			b.WriteString(dim.Render("  → [n]ew session locked: review your distractions first"))
 			b.WriteString("\n")
 			b.WriteString(dim.Render("    Newport: batch distractions and schedule them — don't let them follow you into the next block."))
@@ -1575,11 +812,12 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 }
 
 func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) string {
+	vd := buildCompletionViewData(&m.completionState, m.mode, m.state, m.completionInfo, m.completedElapsed)
 	var b strings.Builder
 	b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete!", m.theme.IconApp)))
 	b.WriteString("\n")
 
-	if m.state.ActiveTask != nil && m.state.ActiveTask.HighlightDate != nil {
+	if vd.hasHighlightTask {
 		b.WriteString(accent.Render("  You made time for your Highlight today."))
 		b.WriteString("\n")
 	}
@@ -1591,7 +829,6 @@ func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) stri
 	}
 	b.WriteString("\n")
 
-	// Energize activity (shown after focus score is saved)
 	if m.focusScoreSaved {
 		if m.energizeSaved {
 			b.WriteString(dim.Render(fmt.Sprintf("  Energize: %s", m.energizeActivity)))
@@ -1601,9 +838,8 @@ func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) stri
 		b.WriteString("\n")
 	}
 
-	stats := m.state.TodayStats
 	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s worked today",
-		m.theme.IconStats, stats.WorkSessions, formatMinutesCompact(stats.TotalWorkTime))))
+		m.theme.IconStats, vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime))))
 	b.WriteString("\n")
 
 	if m.completionPromptsComplete() {

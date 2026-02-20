@@ -209,7 +209,7 @@ func TestFindGitRepo(t *testing.T) {
 
 	// Create a subdirectory structure
 	subDir := filepath.Join(tmpDir, "level1", "level2")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0750); err != nil {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 

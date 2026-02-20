@@ -141,7 +141,7 @@ func findGitRepo(startPath string) (string, error) {
 		// Check if this is a git worktree (file containing gitdir reference)
 		if err == nil && !info.IsDir() {
 			// It's a file, likely a git worktree reference
-			content, err := os.ReadFile(gitPath)
+			content, err := os.ReadFile(gitPath) //nolint:gosec // gitPath is constructed from filepath.Join walking parent dirs
 			if err == nil && strings.HasPrefix(string(content), "gitdir: ") {
 				return currentPath, nil
 			}
