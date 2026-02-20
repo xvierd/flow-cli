@@ -39,6 +39,9 @@ type Mode interface {
 	// HasHighlight returns true if this mode uses a daily highlight concept.
 	HasHighlight() bool
 
+	// HasLaserChecklist returns true if this mode shows a pre-session laser checklist.
+	HasLaserChecklist() bool
+
 	// CompletionTitle returns the title shown on session completion.
 	CompletionTitle() string
 
@@ -87,6 +90,7 @@ func (p *pomodoroMode) HasEnergizeReminder() bool  { return false }
 func (p *pomodoroMode) HasFocusScore() bool        { return false }
 func (p *pomodoroMode) HasShutdownRitual() bool    { return false }
 func (p *pomodoroMode) HasHighlight() bool         { return false }
+func (p *pomodoroMode) HasLaserChecklist() bool    { return false }
 func (p *pomodoroMode) CompletionTitle() string    { return "Session complete! Great work." }
 func (p *pomodoroMode) DeepWorkGoalHours() float64 { return 0 }
 func (p *pomodoroMode) Description() string {
@@ -119,6 +123,7 @@ func (d *deepWorkMode) HasEnergizeReminder() bool { return false }
 func (d *deepWorkMode) HasFocusScore() bool       { return false }
 func (d *deepWorkMode) HasShutdownRitual() bool   { return true }
 func (d *deepWorkMode) HasHighlight() bool        { return false }
+func (d *deepWorkMode) HasLaserChecklist() bool   { return false }
 func (d *deepWorkMode) CompletionTitle() string   { return "Deep Work Session Complete." }
 func (d *deepWorkMode) DeepWorkGoalHours() float64 {
 	if d.cfg != nil {
@@ -156,6 +161,7 @@ func (mt *makeTimeMode) HasEnergizeReminder() bool  { return true }
 func (mt *makeTimeMode) HasFocusScore() bool        { return true }
 func (mt *makeTimeMode) HasShutdownRitual() bool    { return false }
 func (mt *makeTimeMode) HasHighlight() bool         { return true }
+func (mt *makeTimeMode) HasLaserChecklist() bool    { return true }
 func (mt *makeTimeMode) CompletionTitle() string    { return "Session Complete!" }
 func (mt *makeTimeMode) DeepWorkGoalHours() float64 { return 0 }
 func (mt *makeTimeMode) Description() string {

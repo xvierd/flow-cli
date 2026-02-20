@@ -76,6 +76,19 @@ var stopCmd = &cobra.Command{
 					}
 					_ = app.pomodoro.SetShutdownRitual(ctx, session.ID, ritual)
 				}
+
+				// Outcome review: ask if intended outcome was achieved
+				if session.IntendedOutcome != "" {
+					fmt.Println()
+					fmt.Printf("  Did you achieve your intended outcome? (y/p/n): %s\n", session.IntendedOutcome)
+					fmt.Print("  Answer [y]es/[p]artially/[n]o: ")
+					if scanner.Scan() {
+						answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+						if answer == "y" || answer == "p" || answer == "n" {
+							_ = app.pomodoro.SetOutcomeAchieved(ctx, session.ID, answer)
+						}
+					}
+				}
 				fmt.Println()
 			case domain.MethodologyMakeTime:
 				scanner := bufio.NewScanner(os.Stdin)

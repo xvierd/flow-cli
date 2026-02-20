@@ -33,6 +33,11 @@ type completionState struct {
 	distractionReviewMode bool
 	distractionReviewDone bool
 
+	// Deep Work: outcome review (did you achieve the intended outcome?)
+	outcomeReviewMode bool
+	outcomeReviewDone bool
+	outcomeAchieved   string // y/p/n
+
 	// Make Time: focus score
 	focusScore      *int
 	focusScoreSaved bool
@@ -61,6 +66,9 @@ func (c *completionState) reset() {
 	c.distractions = nil
 	c.distractionReviewMode = false
 	c.distractionReviewDone = false
+	c.outcomeReviewMode = false
+	c.outcomeReviewDone = false
+	c.outcomeAchieved = ""
 	c.energizeActivity = ""
 	c.energizeSaved = false
 	c.shutdownRitualMode = false
@@ -75,9 +83,13 @@ func (c *completionState) promptsDone(mode methodology.Mode, completedType domai
 	if mode == nil {
 		return true
 	}
-	// Deep Work: need shutdown ritual complete (or accomplishment saved) and distraction review done
+	// Deep Work: need shutdown ritual complete (or accomplishment saved), outcome review if applicable, and distraction review done
 	if mode.HasShutdownRitual() && completedType == domain.SessionTypeWork {
 		if !c.shutdownComplete && !c.accomplishmentSaved {
+			return false
+		}
+		// Outcome review: if there was an intended outcome, ask if achieved
+		if c.completedIntendedOutcome != "" && !c.outcomeReviewDone {
 			return false
 		}
 		if len(c.distractions) > 0 && !c.distractionReviewDone {

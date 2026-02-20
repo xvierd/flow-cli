@@ -29,9 +29,9 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 			id, task_id, type, status, duration_ms, started_at, paused_at,
 			completed_at, git_branch, git_commit, git_modified, notes,
 			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual
+			energize_activity, shutdown_ritual, outcome_achieved
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	modified := strings.Join(session.GitModified, ",")
@@ -68,6 +68,7 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 		tags,
 		session.EnergizeActivity,
 		nullableString(shutdownRitualJSON),
+		session.OutcomeAchieved,
 	)
 
 	if err != nil {
@@ -114,7 +115,7 @@ func (r *sessionRepository) FindByID(ctx context.Context, id string) (*domain.Po
 			id, task_id, type, status, duration_ms, started_at, paused_at,
 			completed_at, git_branch, git_commit, git_modified, notes,
 			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual
+			energize_activity, shutdown_ritual, outcome_achieved
 		FROM sessions
 		WHERE id = ?
 	`
@@ -129,7 +130,7 @@ func (r *sessionRepository) FindActive(ctx context.Context) (*domain.PomodoroSes
 			id, task_id, type, status, duration_ms, started_at, paused_at,
 			completed_at, git_branch, git_commit, git_modified, notes,
 			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual
+			energize_activity, shutdown_ritual, outcome_achieved
 		FROM sessions
 		WHERE status IN (?, ?)
 		ORDER BY started_at DESC
@@ -148,7 +149,7 @@ func (r *sessionRepository) FindRecent(ctx context.Context, since time.Time) ([]
 			id, task_id, type, status, duration_ms, started_at, paused_at,
 			completed_at, git_branch, git_commit, git_modified, notes,
 			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual
+			energize_activity, shutdown_ritual, outcome_achieved
 		FROM sessions
 		WHERE started_at >= ?
 		ORDER BY started_at DESC
@@ -170,7 +171,7 @@ func (r *sessionRepository) FindByTask(ctx context.Context, taskID string) ([]*d
 			id, task_id, type, status, duration_ms, started_at, paused_at,
 			completed_at, git_branch, git_commit, git_modified, notes,
 			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual
+			energize_activity, shutdown_ritual, outcome_achieved
 		FROM sessions
 		WHERE task_id = ?
 		ORDER BY started_at DESC
@@ -192,7 +193,7 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 		SET task_id = ?, type = ?, status = ?, duration_ms = ?, started_at = ?,
 		    paused_at = ?, completed_at = ?, git_branch = ?, git_commit = ?, git_modified = ?, notes = ?,
 		    methodology = ?, focus_score = ?, distractions = ?, accomplishment = ?, intended_outcome = ?,
-		    tags = ?, energize_activity = ?, shutdown_ritual = ?
+		    tags = ?, energize_activity = ?, shutdown_ritual = ?, outcome_achieved = ?
 		WHERE id = ?
 	`
 
@@ -229,6 +230,7 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 		tags,
 		session.EnergizeActivity,
 		nullableString(shutdownRitualJSON),
+		session.OutcomeAchieved,
 		session.ID,
 	)
 
@@ -488,6 +490,7 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 	var tagsStr sql.NullString
 	var energizeActivity sql.NullString
 	var shutdownRitualStr sql.NullString
+	var outcomeAchieved sql.NullString
 
 	err := row.Scan(
 		&session.ID,
@@ -510,6 +513,7 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 		&tagsStr,
 		&energizeActivity,
 		&shutdownRitualStr,
+		&outcomeAchieved,
 	)
 
 	if err == sql.ErrNoRows {
@@ -566,6 +570,9 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 			session.ShutdownRitual = &ritual
 		}
 	}
+	if outcomeAchieved.Valid {
+		session.OutcomeAchieved = outcomeAchieved.String
+	}
 
 	return &session, nil
 }
@@ -590,6 +597,7 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 		var tagsStr sql.NullString
 		var energizeActivity sql.NullString
 		var shutdownRitualStr sql.NullString
+		var outcomeAchieved sql.NullString
 
 		err := rows.Scan(
 			&session.ID,
@@ -612,6 +620,7 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 			&tagsStr,
 			&energizeActivity,
 			&shutdownRitualStr,
+			&outcomeAchieved,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
@@ -663,6 +672,9 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 			if err := json.Unmarshal([]byte(shutdownRitualStr.String), &ritual); err == nil {
 				session.ShutdownRitual = &ritual
 			}
+		}
+		if outcomeAchieved.Valid {
+			session.OutcomeAchieved = outcomeAchieved.String
 		}
 
 		sessions = append(sessions, &session)

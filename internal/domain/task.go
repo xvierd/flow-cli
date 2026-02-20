@@ -59,6 +59,11 @@ func (t *Task) IsHighlightForDate(date time.Time) bool {
 	return d.Equal(h)
 }
 
+// IsTodayHighlight returns true if this task is today's highlight.
+func (t *Task) IsTodayHighlight() bool {
+	return t.IsHighlightForDate(time.Now())
+}
+
 // NewTask creates a new task with the given title.
 func NewTask(title string) (*Task, error) {
 	if err := validateTaskTitle(title); err != nil {

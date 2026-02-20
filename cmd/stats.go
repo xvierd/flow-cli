@@ -54,8 +54,17 @@ var statsCmd = &cobra.Command{
 			hourly = nil // non-fatal
 		}
 
+		// Fetch energize stats — only relevant for Make Time methodology
+		var energize []domain.EnergizeStat
+		if app.methodology == domain.MethodologyMakeTime {
+			energize, err = app.storage.Sessions().GetEnergizeStats(ctx, start, end)
+			if err != nil {
+				energize = nil // non-fatal
+			}
+		}
+
 		fmt.Println()
-		renderDashboard(stats, hourly)
+		renderDashboard(stats, hourly, energize)
 		return nil
 	},
 }
@@ -65,7 +74,7 @@ func init() {
 	rootCmd.AddCommand(statsCmd)
 }
 
-func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration) {
+func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, energize []domain.EnergizeStat) {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C6FE0"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
 	valueStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A78BFA"))
@@ -139,6 +148,31 @@ func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration) {
 
 	// Hourly productivity heatmap
 	renderHourlyProductivity(hourly, dimStyle, valueStyle, barColor)
+
+	// Energize Insights (Make Time)
+	renderEnergizeInsights(energize, dimStyle, valueStyle, titleStyle)
+}
+
+// renderEnergizeInsights displays a table of energize activities vs avg focus score (Make Time).
+// Results are sorted by avg focus score descending.
+func renderEnergizeInsights(energize []domain.EnergizeStat, dimStyle, valueStyle, titleStyle lipgloss.Style) {
+	if len(energize) == 0 {
+		return
+	}
+
+	fmt.Printf("  %s\n", titleStyle.Render("Energize → Focus correlation"))
+	for _, e := range energize {
+		plural := "s"
+		if e.SessionCount == 1 {
+			plural = ""
+		}
+		fmt.Printf("  %-12s  %-15s  avg focus %s\n",
+			dimStyle.Render(e.Activity),
+			dimStyle.Render(fmt.Sprintf("%d session%s", e.SessionCount, plural)),
+			valueStyle.Render(fmt.Sprintf("%.1f/5", e.AvgFocusScore)),
+		)
+	}
+	fmt.Println()
 }
 
 // hourEntry pairs an hour with its total duration for sorting.
