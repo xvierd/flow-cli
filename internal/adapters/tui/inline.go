@@ -590,13 +590,13 @@ func (m InlineModel) viewTimer() string {
 	}
 
 	if m.state.ActiveSession == nil {
-		// Make Time: show Highlight prominently
+		// Make Time: show Highlight prominently if it's today's highlight
 		if m.mode != nil && m.mode.HasHighlight() {
 			var b strings.Builder
 			b.WriteString(accent.Render("  Make Time"))
 			b.WriteString("\n")
-			if m.state.ActiveTask != nil {
-				b.WriteString(accent.Render(fmt.Sprintf("  Today's Highlight: %s", m.state.ActiveTask.Title)))
+			if m.state.ActiveTask != nil && m.state.ActiveTask.IsTodayHighlight() {
+				b.WriteString(accent.Render(fmt.Sprintf("  ★ Today's Highlight: %s", m.state.ActiveTask.Title)))
 				b.WriteString("\n")
 			} else {
 				b.WriteString(dim.Render("  No Highlight set for today"))

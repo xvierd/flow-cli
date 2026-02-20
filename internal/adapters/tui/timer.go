@@ -23,6 +23,7 @@ type Timer struct {
 	shutdownRitualCallback  func(domain.ShutdownRitual) error
 	focusScoreCallback      func(int) error
 	energizeCallback        func(string) error
+	outcomeAchievedCallback func(string) error
 	completionInfo          *domain.CompletionInfo
 	theme                   *config.ThemeConfig
 	inline                  bool
@@ -70,6 +71,7 @@ type TimerConfig struct {
 	ShutdownRitualCallback  func(domain.ShutdownRitual) error
 	FocusScoreCallback      func(int) error
 	EnergizeCallback        func(string) error
+	OutcomeAchievedCallback func(string) error
 	CompletionInfo          *domain.CompletionInfo
 	AutoBreak               bool
 	NotificationsEnabled    bool
@@ -95,6 +97,7 @@ func (t *Timer) Configure(cfg TimerConfig) {
 	t.shutdownRitualCallback = cfg.ShutdownRitualCallback
 	t.focusScoreCallback = cfg.FocusScoreCallback
 	t.energizeCallback = cfg.EnergizeCallback
+	t.outcomeAchievedCallback = cfg.OutcomeAchievedCallback
 	t.completionInfo = cfg.CompletionInfo
 	t.autoBreak = cfg.AutoBreak
 	t.notificationsEnabled = cfg.NotificationsEnabled
@@ -140,6 +143,7 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	model.shutdownRitualCallback = t.shutdownRitualCallback
 	model.focusScoreCallback = t.focusScoreCallback
 	model.energizeCallback = t.energizeCallback
+	model.outcomeAchievedCallback = t.outcomeAchievedCallback
 	model.mode = t.mode
 	model.autoBreak = t.autoBreak
 	model.notificationsEnabled = t.notificationsEnabled
@@ -181,6 +185,7 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.shutdownRitualCallback = t.shutdownRitualCallback
 	model.focusScoreCallback = t.focusScoreCallback
 	model.energizeCallback = t.energizeCallback
+	model.outcomeAchievedCallback = t.outcomeAchievedCallback
 	model.presets = t.presets
 	model.breakInfo = t.breakInfo
 	model.onStartSession = t.onStartSession

@@ -152,6 +152,13 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			}
 			return app.pomodoro.SetEnergizeActivity(ctx, recent[0].ID, activity)
 		},
+		OutcomeAchievedCallback: func(achieved string) error {
+			recent, err := app.pomodoro.GetRecentSessions(ctx, 1)
+			if err != nil || len(recent) == 0 {
+				return nil
+			}
+			return app.pomodoro.SetOutcomeAchieved(ctx, recent[0].ID, achieved)
+		},
 		OnSessionComplete: func(sessionType domain.SessionType) {
 			if app.notifier == nil || !app.notifier.IsEnabled() {
 				return

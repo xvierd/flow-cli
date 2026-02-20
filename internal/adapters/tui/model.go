@@ -45,26 +45,27 @@ type stateMsg struct {
 
 // Model represents the TUI state.
 type Model struct {
-	state                  *domain.CurrentState
-	progress               progress.Model
-	width                  int
-	height                 int
-	completed              bool
-	completedSessionType   domain.SessionType
-	completedElapsed       time.Duration // actual time worked, captured at session end
-	notified               bool
-	confirmBreak           bool
-	confirmFinish          bool
-	fetchState             func() *domain.CurrentState
-	commandCallback        func(ports.TimerCommand) error
-	onSessionComplete      func(domain.SessionType)
-	distractionCallback    func(string, string) error
-	accomplishmentCallback func(string) error
-	focusScoreCallback     func(int) error
-	energizeCallback       func(string) error
-	completionInfo         *domain.CompletionInfo
-	theme                  config.ThemeConfig
-	mode                   methodology.Mode
+	state                   *domain.CurrentState
+	progress                progress.Model
+	width                   int
+	height                  int
+	completed               bool
+	completedSessionType    domain.SessionType
+	completedElapsed        time.Duration // actual time worked, captured at session end
+	notified                bool
+	confirmBreak            bool
+	confirmFinish           bool
+	fetchState              func() *domain.CurrentState
+	commandCallback         func(ports.TimerCommand) error
+	onSessionComplete       func(domain.SessionType)
+	distractionCallback     func(string, string) error
+	accomplishmentCallback  func(string) error
+	focusScoreCallback      func(int) error
+	energizeCallback        func(string) error
+	outcomeAchievedCallback func(string) error
+	completionInfo          *domain.CompletionInfo
+	theme                   config.ThemeConfig
+	mode                    methodology.Mode
 
 	// completionState holds all mode-specific fields shared with InlineModel.
 	completionState
@@ -168,6 +169,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.distractionReviewMode {
 		return m.updateDistractionReview(msg)
 	}
+	if m.outcomeReviewMode {
+		return m.updateOutcomeReview(msg)
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -242,6 +246,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.shutdownInputs[0].Focus()
 				return m, m.shutdownInputs[0].Cursor.BlinkCmd()
+			}
+		case "o":
+			// Deep Work: open outcome review
+			if m.mode != nil && m.mode.HasShutdownRitual() && m.completed && m.completedSessionType == domain.SessionTypeWork && m.completedIntendedOutcome != "" && !m.outcomeReviewDone {
+				m.outcomeReviewMode = true
 			}
 		case "1", "2", "3", "4", "5":
 			// Make Time: record focus score on work completion
@@ -329,6 +338,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.confirmFinish = true
 			m.confirmBreak = false
+		case "v":
+			// Void (interrupt) the current work session — not counted in stats
+			if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.Type == domain.SessionTypeWork && m.commandCallback != nil {
+				_ = m.commandCallback(ports.CmdVoid)
+				m.completed = false
+				m.notified = false
+				m.confirmBreak = false
+				m.confirmFinish = false
+				m.resetCompletionState()
+			}
 		default:
 			m.confirmBreak = false
 			m.confirmFinish = false
@@ -453,6 +472,13 @@ func (m Model) updateShutdownRitual(msg tea.Msg) (tea.Model, tea.Cmd) {
 // updateDistractionReview handles the distraction review overlay.
 func (m Model) updateDistractionReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, handleDistractionReview(&m.completionState, msg)
+}
+
+func (m Model) updateOutcomeReview(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cb := &completionCallbacks{
+		outcomeAchievedCallback: m.outcomeAchievedCallback,
+	}
+	return m, handleOutcomeReview(&m.completionState, cb, msg)
 }
 
 // View renders the TUI.
@@ -636,6 +662,11 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 	} else if m.accomplishmentMode {
 		sections = append(sections, helpStyle.Render("What did you accomplish? ")+m.accomplishmentInput.View())
 		sections = append(sections, helpStyle.Render("enter save · esc cancel"))
+	} else if m.outcomeReviewMode {
+		sections = append(sections, statusStyle.Render("Did you achieve your intended outcome?"))
+		sections = append(sections, helpStyle.Render(fmt.Sprintf("Goal: %s", vd.intendedOutcome)))
+		sections = append(sections, "")
+		sections = append(sections, helpStyle.Render("[y]es  [p]artially  [n]o  [enter] skip"))
 	} else if m.distractionReviewMode {
 		sections = append(sections, statusStyle.Render("Distraction Review:"))
 		for i, d := range m.distractions {
@@ -645,7 +676,10 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 		sections = append(sections, helpStyle.Render("Consider batching these for tomorrow."))
 		sections = append(sections, helpStyle.Render("enter dismiss"))
 	} else if m.shutdownComplete || m.accomplishmentSaved {
-		if vd.distractionCount > 0 && !m.distractionReviewDone {
+		if vd.intendedOutcome != "" && !m.outcomeReviewDone {
+			sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
+			sections = append(sections, helpStyle.Render("[o]utcome review"))
+		} else if vd.distractionCount > 0 && !m.distractionReviewDone {
 			sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
 			sections = append(sections, helpStyle.Render(fmt.Sprintf("[r]eview %d distractions", vd.distractionCount)))
 		} else {
@@ -667,6 +701,10 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 		sections = append(sections, helpStyle.Render("→ [n]ew session locked: complete the shutdown ritual first"))
 		sections = append(sections, helpStyle.Render("  Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest."))
 		sections = append(sections, helpStyle.Render("[a] shutdown ritual  [b]reak  [q]uit"))
+	} else if vd.intendedOutcome != "" && !m.outcomeReviewDone {
+		sections = append(sections, helpStyle.Render("→ [n]ew session locked: review your outcome first"))
+		sections = append(sections, helpStyle.Render("  Did you achieve what you set out to do?"))
+		sections = append(sections, helpStyle.Render("[o]utcome review  [b]reak  [q]uit"))
 	} else if vd.distractionCount > 0 && !m.distractionReviewDone {
 		sections = append(sections, helpStyle.Render("→ [n]ew session locked: review your distractions first"))
 		sections = append(sections, helpStyle.Render("  Newport: batch distractions and schedule them — don't let them follow you into the next block."))
@@ -844,12 +882,12 @@ func (m Model) viewActiveSession(sections []string) []string {
 		if session.Status == domain.SessionStatusPaused {
 			pauseAction = "[p]resume"
 		}
-		helpText := fmt.Sprintf("%s  [f]inish  [b]reak  [c]lose", pauseAction)
+		helpText := fmt.Sprintf("%s  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction)
 		if m.mode != nil && m.mode.HasDistractionLog() && session.Status == domain.SessionStatusRunning {
 			if len(m.distractions) > 0 {
-				helpText = fmt.Sprintf("%s  [d]istraction(%d)  [f]inish  [b]reak  [c]lose", pauseAction, len(m.distractions))
+				helpText = fmt.Sprintf("%s  [d]istraction(%d)  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction, len(m.distractions))
 			} else {
-				helpText = fmt.Sprintf("%s  [d]istraction  [f]inish  [b]reak  [c]lose", pauseAction)
+				helpText = fmt.Sprintf("%s  [d]istraction  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction)
 			}
 		}
 		helpText += fmt.Sprintf("  tab:notify %s", notifLabel)
