@@ -183,6 +183,21 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 
 	fmt.Printf("  %s  %s\n", dimStyle.Render("Sessions:"), valueStyle.Render(fmt.Sprintf("%d", stats.WorkSessions)))
 	fmt.Printf("  %s  %s\n", dimStyle.Render("Work time:"), valueStyle.Render(formatMinutes(stats.TotalWorkTime)))
+	if app.config.MakeTime.HighlightTargetMinutes > 0 {
+		target := time.Duration(app.config.MakeTime.HighlightTargetMinutes) * time.Minute
+		pct := 0
+		if target > 0 {
+			pct = int(stats.TotalWorkTime * 100 / target)
+		}
+		if pct > 100 {
+			pct = 100
+		}
+		fmt.Printf("  %s  %s %s\n",
+			dimStyle.Render("Highlight target:"),
+			valueStyle.Render(formatMinutes(target)),
+			dimStyle.Render(fmt.Sprintf("(%d%% complete)", pct)),
+		)
+	}
 	fmt.Println()
 
 	// Today's highlight
