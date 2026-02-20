@@ -48,6 +48,10 @@ type Mode interface {
 	// DeepWorkGoalHours returns the daily deep work goal in hours (0 for non-deep-work modes).
 	DeepWorkGoalHours() float64
 
+	// DeepWorkPhilosophy returns the Deep Work philosophy (rhythmic, bimodal, journalistic, monastic).
+	// Returns empty string for non-deep-work modes.
+	DeepWorkPhilosophy() string
+
 	// Description returns a short onboarding description for this methodology.
 	Description() string
 
@@ -93,6 +97,7 @@ func (p *pomodoroMode) HasHighlight() bool         { return false }
 func (p *pomodoroMode) HasLaserChecklist() bool    { return false }
 func (p *pomodoroMode) CompletionTitle() string    { return "Session complete! Great work." }
 func (p *pomodoroMode) DeepWorkGoalHours() float64 { return 0 }
+func (p *pomodoroMode) DeepWorkPhilosophy() string { return "" }
 func (p *pomodoroMode) Description() string {
 	return "The Pomodoro Technique: 25-minute focused sprints with short breaks to maintain sustainable productivity."
 }
@@ -131,6 +136,12 @@ func (d *deepWorkMode) DeepWorkGoalHours() float64 {
 	}
 	return 4.0
 }
+func (d *deepWorkMode) DeepWorkPhilosophy() string {
+	if d.cfg != nil {
+		return d.cfg.Philosophy
+	}
+	return "rhythmic"
+}
 func (d *deepWorkMode) Description() string {
 	return "Cal Newport's Deep Work: distraction-free blocks of cognitively demanding work that push your abilities to their limit."
 }
@@ -164,6 +175,7 @@ func (mt *makeTimeMode) HasHighlight() bool         { return true }
 func (mt *makeTimeMode) HasLaserChecklist() bool    { return true }
 func (mt *makeTimeMode) CompletionTitle() string    { return "Session Complete!" }
 func (mt *makeTimeMode) DeepWorkGoalHours() float64 { return 0 }
+func (mt *makeTimeMode) DeepWorkPhilosophy() string { return "" }
 func (mt *makeTimeMode) Description() string {
 	return "Jake Knapp's Make Time: choose a daily Highlight and laser focus on it. Energize your body to fuel your mind."
 }

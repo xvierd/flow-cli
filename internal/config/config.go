@@ -103,6 +103,7 @@ func (c *PomodoroConfig) GetPresets() []SessionPreset {
 type DeepWorkConfig struct {
 	DeepWorkGoalHours float64  `mapstructure:"deep_work_goal_hours"`
 	BreakDuration     Duration `mapstructure:"break_duration"`
+	Philosophy        string   `mapstructure:"philosophy"`
 	Preset1Name       string   `mapstructure:"preset1_name"`
 	Preset1Duration   Duration `mapstructure:"preset1_duration"`
 	Preset2Name       string   `mapstructure:"preset2_name"`
@@ -201,6 +202,7 @@ func DefaultConfig() *Config {
 		DeepWork: DeepWorkConfig{
 			DeepWorkGoalHours: 4.0,
 			BreakDuration:     Duration(20 * time.Minute),
+			Philosophy:        "rhythmic",
 			Preset1Name:       "Deep",
 			Preset1Duration:   Duration(90 * time.Minute),
 			Preset2Name:       "Focus",
@@ -381,6 +383,7 @@ func setDefaults() {
 	viper.SetDefault("pomodoro.preset3_duration", "50m0s")
 	viper.SetDefault("deepwork.deep_work_goal_hours", 4.0)
 	viper.SetDefault("deepwork.break_duration", "20m0s")
+	viper.SetDefault("deepwork.philosophy", "rhythmic")
 	viper.SetDefault("deepwork.preset1_name", "Deep")
 	viper.SetDefault("deepwork.preset1_duration", "1h30m0s")
 	viper.SetDefault("deepwork.preset2_name", "Focus")

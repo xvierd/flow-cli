@@ -118,6 +118,28 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 	mode := app.mode
 
+	// Deep Work: check if philosophy needs to be configured
+	if mode.Name() == domain.MethodologyDeepWork {
+		if app.config.DeepWork.Philosophy == "" {
+			philosophyItems := []tui.PickerItem{
+				{Label: "Rhythmic", Desc: "Daily habit, same time each day"},
+				{Label: "Bimodal", Desc: "Alternate deep/shallow periods"},
+				{Label: "Journalistic", Desc: "Grab depth whenever possible"},
+				{Label: "Monastic", Desc: "Deep work is your primary work"},
+			}
+			result := tui.RunPicker("Deep Work philosophy:", philosophyItems, "", &app.config.Theme)
+			if !result.Aborted {
+				philosophies := []string{"rhythmic", "bimodal", "journalistic", "monastic"}
+				app.config.DeepWork.Philosophy = philosophies[result.Index]
+				_ = config.Save(app.config)
+				// Refresh mode to pick up new philosophy
+				app.mode = methodology.ForMethodology(app.methodology, app.config)
+				mode = app.mode
+			}
+			fmt.Println()
+		}
+	}
+
 	// Session chaining loop: runs once normally, then repeats if user selects "new session"
 	for {
 		// Make Time: check for existing highlight or carry-over from yesterday

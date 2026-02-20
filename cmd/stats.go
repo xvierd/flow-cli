@@ -63,8 +63,39 @@ var statsCmd = &cobra.Command{
 			}
 		}
 
+		// Fetch Deep Work philosophy-specific stats
+		var philosophy string
+		var streak int
+		var prevWeekHours time.Duration
+		var monthHours time.Duration
+		if app.methodology == domain.MethodologyDeepWork {
+			philosophy = app.config.DeepWork.Philosophy
+			if philosophy == "" {
+				philosophy = "rhythmic"
+			}
+
+			switch philosophy {
+			case "rhythmic":
+				// Get streak (consecutive days with deep work)
+				streak, _ = app.storage.Sessions().GetDeepWorkStreak(ctx, 1*time.Minute)
+			case "bimodal":
+				// Get previous week hours for comparison
+				prevWeekStart := start.AddDate(0, 0, -7)
+				prevWeekEnd := start
+				prevWeekHours, _ = app.storage.Sessions().GetDeepWorkHours(ctx, prevWeekStart, prevWeekEnd)
+			case "journalistic":
+				// Get current week hours (already in stats)
+				// No additional data needed
+			case "monastic":
+				// Get current month hours
+				monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+				monthEnd := monthStart.AddDate(0, 1, 0)
+				monthHours, _ = app.storage.Sessions().GetDeepWorkHours(ctx, monthStart, monthEnd)
+			}
+		}
+
 		fmt.Println()
-		renderDashboard(stats, hourly, energize)
+		renderDashboard(stats, hourly, energize, philosophy, streak, prevWeekHours, monthHours)
 		return nil
 	},
 }
@@ -74,7 +105,7 @@ func init() {
 	rootCmd.AddCommand(statsCmd)
 }
 
-func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, energize []domain.EnergizeStat) {
+func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, energize []domain.EnergizeStat, philosophy string, streak int, prevWeekHours, monthHours time.Duration) {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C6FE0"))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
 	valueStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A78BFA"))
@@ -94,6 +125,11 @@ func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, en
 	if stats.TotalSessions == 0 {
 		fmt.Printf("  %s\n\n", dimStyle.Render("No completed sessions in this period."))
 		return
+	}
+
+	// Philosophy-specific context for Deep Work
+	if philosophy != "" {
+		renderPhilosophyContext(philosophy, stats, streak, prevWeekHours, monthHours, dimStyle, valueStyle)
 	}
 
 	// Bar chart: sessions per methodology
@@ -208,6 +244,83 @@ func renderHourlyProductivity(hourly map[int]time.Duration, dimStyle, valueStyle
 		)
 	}
 	fmt.Println()
+}
+
+// renderPhilosophyContext displays Deep Work philosophy-specific stats.
+func renderPhilosophyContext(philosophy string, stats *domain.PeriodStats, streak int, prevWeekHours, monthHours time.Duration, dimStyle, valueStyle lipgloss.Style) {
+	// Find Deep Work hours in this period
+	var dwHours float64
+	for _, m := range stats.ByMethodology {
+		if m.Methodology == domain.MethodologyDeepWork {
+			dwHours = m.TotalTime.Hours()
+			break
+		}
+	}
+
+	switch philosophy {
+	case "rhythmic":
+		// Show streak and daily goal progress
+		goalHours := app.config.DeepWork.DeepWorkGoalHours
+		if goalHours == 0 {
+			goalHours = 4.0
+		}
+		now := time.Now()
+		weekday := int(now.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		// Days passed this week (Monday = 1)
+		daysPassed := weekday
+		expectedHours := goalHours * float64(daysPassed) / 7.0
+		progress := 0.0
+		if expectedHours > 0 {
+			progress = (dwHours / expectedHours) * 100
+		}
+
+		fmt.Printf("  %s  %s", dimStyle.Render("Streak:"), valueStyle.Render(fmt.Sprintf("%d days", streak)))
+		if progress > 0 {
+			fmt.Printf("  %s  %s", dimStyle.Render("Weekly progress:"), valueStyle.Render(fmt.Sprintf("%.0f%%", progress)))
+		}
+		fmt.Println()
+		fmt.Println()
+
+	case "journalistic":
+		// Show weekly hours without daily pressure
+		fmt.Printf("  %s  %s  %s\n\n",
+			dimStyle.Render("Philosophy:"),
+			valueStyle.Render("Journalistic"),
+			dimStyle.Render("(weekly hours, no daily pressure)"),
+		)
+
+	case "bimodal":
+		// Show this week vs last week
+		fmt.Printf("  %s  %s", dimStyle.Render("This week:"), valueStyle.Render(formatHours(dwHours)))
+		if prevWeekHours > 0 {
+			change := ""
+			if dwHours > prevWeekHours.Hours() {
+				change = fmt.Sprintf("↑ %.0f%%", ((dwHours-prevWeekHours.Hours())/prevWeekHours.Hours())*100)
+			} else if dwHours < prevWeekHours.Hours() {
+				change = fmt.Sprintf("↓ %.0f%%", ((prevWeekHours.Hours()-dwHours)/prevWeekHours.Hours())*100)
+			} else {
+				change = "—"
+			}
+			fmt.Printf("  %s  %s  %s",
+				dimStyle.Render("Last week:"),
+				valueStyle.Render(formatHours(prevWeekHours.Hours())),
+				valueStyle.Render(change),
+			)
+		}
+		fmt.Println()
+		fmt.Println()
+
+	case "monastic":
+		// Show monthly hours
+		fmt.Printf("  %s  %s  %s\n\n",
+			dimStyle.Render("Monthly Deep Work:"),
+			valueStyle.Render(formatHours(monthHours.Hours())),
+			dimStyle.Render("(monastic view)"),
+		)
+	}
 }
 
 // buildBar creates a horizontal bar using block characters.
