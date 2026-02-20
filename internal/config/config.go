@@ -202,7 +202,7 @@ func DefaultConfig() *Config {
 		DeepWork: DeepWorkConfig{
 			DeepWorkGoalHours: 4.0,
 			BreakDuration:     Duration(20 * time.Minute),
-			Philosophy:        "rhythmic",
+			Philosophy:        "", // empty triggers first-run philosophy picker
 			Preset1Name:       "Deep",
 			Preset1Duration:   Duration(90 * time.Minute),
 			Preset2Name:       "Focus",
@@ -383,7 +383,8 @@ func setDefaults() {
 	viper.SetDefault("pomodoro.preset3_duration", "50m0s")
 	viper.SetDefault("deepwork.deep_work_goal_hours", 4.0)
 	viper.SetDefault("deepwork.break_duration", "20m0s")
-	viper.SetDefault("deepwork.philosophy", "rhythmic")
+	// deepwork.philosophy intentionally has no default — empty string triggers
+	// the first-run philosophy picker in the wizard.
 	viper.SetDefault("deepwork.preset1_name", "Deep")
 	viper.SetDefault("deepwork.preset1_duration", "1h30m0s")
 	viper.SetDefault("deepwork.preset2_name", "Focus")

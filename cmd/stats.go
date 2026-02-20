@@ -259,19 +259,22 @@ func renderPhilosophyContext(philosophy string, stats *domain.PeriodStats, strea
 
 	switch philosophy {
 	case "rhythmic":
-		// Show streak and daily goal progress
+		// Show streak and daily goal progress.
+		// goalHours is a daily target (e.g. 4h/day). Expected hours = goalHours × workdays elapsed.
 		goalHours := app.config.DeepWork.DeepWorkGoalHours
 		if goalHours == 0 {
 			goalHours = 4.0
 		}
 		now := time.Now()
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
+		weekday := int(now.Weekday()) // 0=Sun, 1=Mon, ..., 6=Sat
+		// Workdays elapsed this week (Mon–Fri). Cap at 5 on weekends.
+		workdaysPassed := weekday
+		if workdaysPassed == 0 {
+			workdaysPassed = 5 // Sunday — full week elapsed
+		} else if workdaysPassed > 5 {
+			workdaysPassed = 5 // Saturday — full week elapsed
 		}
-		// Days passed this week (Monday = 1)
-		daysPassed := weekday
-		expectedHours := goalHours * float64(daysPassed) / 7.0
+		expectedHours := goalHours * float64(workdaysPassed)
 		progress := 0.0
 		if expectedHours > 0 {
 			progress = (dwHours / expectedHours) * 100
@@ -285,12 +288,24 @@ func renderPhilosophyContext(philosophy string, stats *domain.PeriodStats, strea
 		fmt.Println()
 
 	case "journalistic":
-		// Show weekly hours without daily pressure
-		fmt.Printf("  %s  %s  %s\n\n",
-			dimStyle.Render("Philosophy:"),
-			valueStyle.Render("Journalistic"),
-			dimStyle.Render("(weekly hours, no daily pressure)"),
-		)
+		// Show this week vs last week — no daily pressure, just totals.
+		fmt.Printf("  %s  %s", dimStyle.Render("This week:"), valueStyle.Render(formatHours(dwHours)))
+		if prevWeekHours > 0 {
+			change := ""
+			if dwHours > prevWeekHours.Hours() {
+				change = fmt.Sprintf("↑ %.0f%%", ((dwHours-prevWeekHours.Hours())/prevWeekHours.Hours())*100)
+			} else if dwHours < prevWeekHours.Hours() {
+				change = fmt.Sprintf("↓ %.0f%%", ((prevWeekHours.Hours()-dwHours)/prevWeekHours.Hours())*100)
+			} else {
+				change = "—"
+			}
+			fmt.Printf("  %s  %s  %s",
+				dimStyle.Render("Last week:"),
+				valueStyle.Render(formatHours(prevWeekHours.Hours())),
+				valueStyle.Render(change),
+			)
+		}
+		fmt.Printf("  %s\n\n", dimStyle.Render("(grab depth when you can)"))
 
 	case "bimodal":
 		// Show this week vs last week

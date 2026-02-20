@@ -491,26 +491,6 @@ func (r *sessionRepository) GetDeepWorkHours(ctx context.Context, start, end tim
 	return time.Duration(totalMs) * time.Millisecond, nil
 }
 
-// GetDeepWorkDays returns the number of days with at least one deep work session in the range.
-func (r *sessionRepository) GetDeepWorkDays(ctx context.Context, start, end time.Time) (int, error) {
-	// Extract date from started_at (RFC3339 format: 2006-01-02T15:04:05Z)
-	// Use substr to get YYYY-MM-DD part and count distinct dates
-	query := `
-		SELECT COUNT(DISTINCT substr(started_at, 1, 10))
-		FROM sessions
-		WHERE type = 'work' AND status = 'completed'
-		  AND methodology = 'deepwork'
-		  AND started_at >= ? AND started_at < ?
-	`
-
-	var days int
-	if err := r.db.QueryRowContext(ctx, query, start, end).Scan(&days); err != nil {
-		return 0, fmt.Errorf("failed to get deep work days: %w", err)
-	}
-
-	return days, nil
-}
-
 // scanSession scans a single session row.
 func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, error) {
 	var session domain.PomodoroSession

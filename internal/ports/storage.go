@@ -87,9 +87,6 @@ type SessionRepository interface {
 
 	// GetDeepWorkHours returns total deep work hours for a date range.
 	GetDeepWorkHours(ctx context.Context, start, end time.Time) (time.Duration, error)
-
-	// GetDeepWorkDays returns the number of days with at least one deep work session in the range.
-	GetDeepWorkDays(ctx context.Context, start, end time.Time) (int, error)
 }
 
 // Storage is the combined repository interface.
