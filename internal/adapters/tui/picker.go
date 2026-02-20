@@ -74,7 +74,7 @@ func (m pickerModel) View() string {
 		if i == m.cursor {
 			arrow := arrowStyle.Render("▸")
 			line := activeStyle.Render(fmt.Sprintf(" %-10s %s", item.Label, item.Desc))
-			b.WriteString(fmt.Sprintf("  %s%s\n", arrow, line))
+			fmt.Fprintf(&b, "  %s%s\n", arrow, line)
 		} else {
 			b.WriteString(dimStyle.Render(fmt.Sprintf("    %-10s %s", item.Label, item.Desc)) + "\n")
 		}

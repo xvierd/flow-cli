@@ -94,9 +94,9 @@ func renderBigTime(timeStr string, color lipgloss.Color, width int) string {
 	}
 
 	style := lipgloss.NewStyle().Bold(true).Foreground(color)
-	styled := make([]string, 3)
-	for i, line := range lines {
-		styled[i] = style.Render(line)
+	styled := make([]string, 0, len(lines))
+	for _, line := range lines {
+		styled = append(styled, style.Render(line))
 	}
 
 	return strings.Join(styled, "\n")

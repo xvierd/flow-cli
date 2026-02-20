@@ -203,19 +203,17 @@ func newCompletionInputs(width int) (distraction, accomplishment textinput.Model
 	accomplishment.CharLimit = 200
 	accomplishment.Width = width
 
-	// Cal Newport's 4-step shutdown ritual
-	placeholders := [4]string{
-		"Review pending tasks — anything urgent?",
-		"Review tomorrow's calendar — any conflicts?",
-		"Plan for tomorrow",
-		"Closing phrase (e.g. 'Shutdown complete')",
-	}
-	for i := range shutdown {
+	// Cal Newport's 4-step shutdown ritual — explicit init avoids false-positive G602 warnings.
+	newShutdownInput := func(placeholder string) textinput.Model {
 		si := textinput.New()
-		si.Placeholder = placeholders[i]
+		si.Placeholder = placeholder
 		si.CharLimit = 200
 		si.Width = width
-		shutdown[i] = si
+		return si
 	}
+	shutdown[0] = newShutdownInput("Review pending tasks — anything urgent?")
+	shutdown[1] = newShutdownInput("Review tomorrow's calendar — any conflicts?")
+	shutdown[2] = newShutdownInput("Plan for tomorrow")
+	shutdown[3] = newShutdownInput("Closing phrase (e.g. 'Shutdown complete')")
 	return
 }
