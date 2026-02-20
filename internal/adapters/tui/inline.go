@@ -561,6 +561,24 @@ func (m InlineModel) viewTimer() string {
 	}
 
 	if m.state.ActiveSession == nil {
+		// Make Time: show Highlight prominently
+		if m.mode != nil && m.mode.HasHighlight() {
+			var b strings.Builder
+			b.WriteString(accent.Render("  Make Time"))
+			b.WriteString("\n")
+			if m.state.ActiveTask != nil {
+				b.WriteString(accent.Render(fmt.Sprintf("  Today's Highlight: %s", m.state.ActiveTask.Title)))
+				b.WriteString("\n")
+			} else {
+				b.WriteString(dim.Render("  No Highlight set for today"))
+				b.WriteString("\n")
+				b.WriteString(dim.Render("  Start a session to choose your Highlight"))
+				b.WriteString("\n")
+			}
+			b.WriteString(dim.Render("  [s]tart  [c]lose"))
+			b.WriteString("\n")
+			return b.String()
+		}
 		return dim.Render("  No active session") + "\n" +
 			dim.Render("  [s]tart  [c]lose") + "\n"
 	}
