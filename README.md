@@ -262,6 +262,14 @@ go vet ./...         # lint
 go build -o flow .   # build
 ```
 
+### Git hooks
+
+Install the pre-commit hook (runs `gofmt` + `go vet` before every commit):
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## License
 
 MIT
