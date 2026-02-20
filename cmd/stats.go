@@ -78,14 +78,10 @@ var statsCmd = &cobra.Command{
 			case "rhythmic":
 				// Get streak (consecutive days with deep work)
 				streak, _ = app.storage.Sessions().GetDeepWorkStreak(ctx, 1*time.Minute)
-			case "bimodal":
+			case "bimodal", "journalistic":
 				// Get previous week hours for comparison
 				prevWeekStart := start.AddDate(0, 0, -7)
-				prevWeekEnd := start
-				prevWeekHours, _ = app.storage.Sessions().GetDeepWorkHours(ctx, prevWeekStart, prevWeekEnd)
-			case "journalistic":
-				// Get current week hours (already in stats)
-				// No additional data needed
+				prevWeekHours, _ = app.storage.Sessions().GetDeepWorkHours(ctx, prevWeekStart, start)
 			case "monastic":
 				// Get current month hours
 				monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
