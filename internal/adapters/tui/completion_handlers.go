@@ -121,7 +121,7 @@ func handleAccomplishmentInput(cs *completionState, cb *completionCallbacks, msg
 	return cmd
 }
 
-// handleShutdownRitual processes messages during the 3-step shutdown ritual.
+// handleShutdownRitual processes messages during the 4-step shutdown ritual (Cal Newport).
 func handleShutdownRitual(cs *completionState, cb *completionCallbacks, msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -151,7 +151,7 @@ func handleShutdownRitual(cs *completionState, cb *completionCallbacks, msg tea.
 	return cmd
 }
 
-// finishShutdownRitual completes the 3-step shutdown ritual and fires the callback.
+// finishShutdownRitual completes the 4-step shutdown ritual and fires the callback.
 func finishShutdownRitual(cs *completionState, cb *completionCallbacks) tea.Cmd {
 	cs.shutdownRitualMode = false
 	cs.shutdownComplete = true

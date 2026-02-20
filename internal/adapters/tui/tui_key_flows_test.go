@@ -456,7 +456,7 @@ func TestInlineModel_DistractionCategory_InternalKey(t *testing.T) {
 // 3-step Shutdown Ritual — Model
 // ---------------------------------------------------------------------------
 
-func TestModel_ShutdownRitual_ThreeStepsAdvanceOnEnter(t *testing.T) {
+func TestModel_ShutdownRitual_FourStepsAdvanceOnEnter(t *testing.T) {
 	m := NewModel(stateWithSession(), nil, nil)
 	m.mode = methodology.ForMethodology(domain.MethodologyDeepWork, nil)
 	m.shutdownRitualMode = true
@@ -527,7 +527,7 @@ func TestModel_ShutdownRitual_CallsCallback(t *testing.T) {
 	_ = gotRitual // just verify it was called without panic
 }
 
-func TestInlineModel_ShutdownRitual_ThreeStepsAdvanceOnEnter(t *testing.T) {
+func TestInlineModel_ShutdownRitual_FourStepsAdvanceOnEnter(t *testing.T) {
 	m := baseInlineModel()
 	m.mode = methodology.ForMethodology(domain.MethodologyDeepWork, nil)
 	m.shutdownRitualMode = true

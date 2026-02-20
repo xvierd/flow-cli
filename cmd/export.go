@@ -89,11 +89,14 @@ func exportMarkdown(sessions []*domain.PomodoroSession) error {
 			}
 		}
 		if s.ShutdownRitual != nil {
-			if s.ShutdownRitual.TomorrowPlan != "" {
-				fmt.Printf("- Tomorrow: %s\n", s.ShutdownRitual.TomorrowPlan)
-			}
 			if s.ShutdownRitual.PendingTasksReview != "" {
 				fmt.Printf("- Pending review: %s\n", s.ShutdownRitual.PendingTasksReview)
+			}
+			if s.ShutdownRitual.CalendarReview != "" {
+				fmt.Printf("- Calendar review: %s\n", s.ShutdownRitual.CalendarReview)
+			}
+			if s.ShutdownRitual.TomorrowPlan != "" {
+				fmt.Printf("- Tomorrow: %s\n", s.ShutdownRitual.TomorrowPlan)
 			}
 			if s.ShutdownRitual.ClosingPhrase != "" {
 				fmt.Printf("- Closing: %s\n", s.ShutdownRitual.ClosingPhrase)
@@ -111,7 +114,7 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 	_ = w.Write([]string{
 		"date", "methodology", "duration_min", "goal", "accomplished",
 		"focus_score", "tags", "energize_activity", "distraction_count",
-		"distractions", "tomorrow_plan",
+		"distractions", "pending_tasks_review", "calendar_review", "tomorrow_plan",
 	})
 
 	for _, s := range sessions {
@@ -127,8 +130,10 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 		for _, d := range s.Distractions {
 			distractionTexts = append(distractionTexts, d.Text)
 		}
-		tomorrowPlan := ""
+		pendingTasksReview, calendarReview, tomorrowPlan := "", "", ""
 		if s.ShutdownRitual != nil {
+			pendingTasksReview = s.ShutdownRitual.PendingTasksReview
+			calendarReview = s.ShutdownRitual.CalendarReview
 			tomorrowPlan = s.ShutdownRitual.TomorrowPlan
 		}
 		_ = w.Write([]string{
@@ -142,6 +147,8 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 			s.EnergizeActivity,
 			distractionCount,
 			strings.Join(distractionTexts, "; "),
+			pendingTasksReview,
+			calendarReview,
 			tomorrowPlan,
 		})
 	}
