@@ -64,7 +64,7 @@ func viewIdleDeepWork(state *domain.CurrentState, mode methodology.Mode, complet
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("  %s  %.1fh / %.1fh  (%d%%)", bar, currentHours, goalHours, int(pct*100)))
+	fmt.Fprintf(&b, "  %s  %.1fh / %.1fh  (%d%%)", bar, currentHours, goalHours, int(pct*100))
 
 	// Streak and philosophy
 	streak := 0
