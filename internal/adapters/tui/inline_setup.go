@@ -17,6 +17,7 @@ const (
 	phaseMainMenu inlinePhase = iota
 	phasePickMode
 	phasePickDuration
+	phaseLaserChecklist
 	phaseTaskSelect
 	phaseTaskName
 	phaseOutcome // Deep Work: intended outcome (shown after task, before timer)
@@ -296,6 +297,15 @@ func (m InlineModel) viewPickMode() string {
 }
 
 func (m InlineModel) advanceToTaskPhase() (tea.Model, tea.Cmd) {
+	// Check for laser checklist first (Make Time mode)
+	if m.mode != nil && m.mode.HasLaserChecklist() {
+		m.laserChecklistCursor = 0
+		m.laserChecklist = [3]bool{false, false, false}
+		m.laserChecklistDone = false
+		m.phase = phaseLaserChecklist
+		return m, nil
+	}
+
 	// Fetch recent tasks if callback is available
 	if m.fetchRecentTasks != nil {
 		m.recentTasks = m.fetchRecentTasks(3)
@@ -314,7 +324,6 @@ func (m InlineModel) advanceToTaskPhase() (tea.Model, tea.Cmd) {
 	m.taskInput.Focus()
 	return m, m.taskInput.Cursor.BlinkCmd()
 }
-
 func (m InlineModel) updatePickDuration(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -664,6 +673,116 @@ func (m InlineModel) viewPickOutcome() string {
 	b.WriteString("\n")
 
 	b.WriteString(dimStyle.Render("  enter start · esc back · ctrl+c quit") + "\n")
+
+	return b.String()
+}
+
+// laserChecklistItems defines the items in the laser checklist.
+var laserChecklistItems = []string{
+	"Phone on Do Not Disturb?",
+	"Notifications off?",
+	"Distracting tabs/apps closed?",
+}
+
+// updateLaserChecklist handles the laser checklist phase (Make Time only).
+func (m InlineModel) updateLaserChecklist(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.laserChecklistCursor > 0 {
+				m.laserChecklistCursor--
+			}
+		case "down", "j":
+			if m.laserChecklistCursor < len(laserChecklistItems) {
+				m.laserChecklistCursor++
+			}
+		case "y":
+			if m.laserChecklistCursor < len(laserChecklistItems) {
+				m.laserChecklist[m.laserChecklistCursor] = true
+				if m.laserChecklistCursor < len(laserChecklistItems)-1 {
+					m.laserChecklistCursor++
+				}
+			}
+		case "n":
+			if m.laserChecklistCursor < len(laserChecklistItems) {
+				m.laserChecklist[m.laserChecklistCursor] = false
+				if m.laserChecklistCursor < len(laserChecklistItems)-1 {
+					m.laserChecklistCursor++
+				}
+			}
+		case "enter":
+			// Skip remaining items and proceed
+			return m.advanceFromLaserChecklist()
+		case "esc":
+			m.phase = phasePickDuration
+			return m, nil
+		case "c", "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+// advanceFromLaserChecklist proceeds to task selection after the checklist.
+func (m InlineModel) advanceFromLaserChecklist() (tea.Model, tea.Cmd) {
+	m.laserChecklistDone = true
+	// Fetch recent tasks if callback is available
+	if m.fetchRecentTasks != nil {
+		m.recentTasks = m.fetchRecentTasks(3)
+	}
+	// Check for yesterday's highlight carry-over (Make Time mode)
+	if m.mode != nil && m.mode.HasHighlight() && m.fetchYesterdayHighlight != nil {
+		m.yesterdayHighlight = m.fetchYesterdayHighlight()
+	}
+	if len(m.recentTasks) > 0 || m.yesterdayHighlight != nil {
+		m.phase = phaseTaskSelect
+		m.taskSelectCursor = 0
+		return m, nil
+	}
+	// No recent tasks, skip to task name input
+	m.phase = phaseTaskName
+	m.taskInput.Focus()
+	return m, m.taskInput.Cursor.BlinkCmd()
+}
+
+// viewLaserChecklist renders the laser checklist (Make Time only).
+func (m InlineModel) viewLaserChecklist() string {
+	var b strings.Builder
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTitle))
+	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+	checkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")) // Green check
+	crossStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")) // Red cross
+
+	p := m.presets[m.presetCursor]
+	b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ %s %s", p.Name, formatMinutesCompact(p.Duration))))
+	b.WriteString("\n")
+
+	b.WriteString(titleStyle.Render("  Laser Checklist:"))
+	b.WriteString("\n")
+
+	for i, item := range laserChecklistItems {
+		var status string
+		if m.laserChecklist[i] {
+			status = checkStyle.Render("✓")
+		} else if i < m.laserChecklistCursor || (m.laserChecklistCursor == i && m.laserChecklist[i]) {
+			status = crossStyle.Render("✗")
+		} else {
+			status = " "
+		}
+
+		if i == m.laserChecklistCursor {
+			b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ [%s] %s", status, item)))
+		} else {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("    [%s] %s", status, item)))
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString(dimStyle.Render("  [y]es [n]o [enter] skip all · esc back"))
+	b.WriteString("\n")
 
 	return b.String()
 }

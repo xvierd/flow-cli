@@ -48,6 +48,11 @@ type InlineModel struct {
 	// Setup: task name
 	taskInput textinput.Model
 
+	// Setup: laser checklist (Make Time only)
+	laserChecklistCursor int
+	laserChecklist       [3]bool // Phone DND, Notifications off, Tabs closed
+	laserChecklistDone   bool
+
 	// Setup: intended outcome (Deep Work only)
 	outcomeInput    textinput.Model
 	intendedOutcome string
@@ -159,6 +164,8 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updatePickMode(msg)
 	case phasePickDuration:
 		return m.updatePickDuration(msg)
+	case phaseLaserChecklist:
+		return m.updateLaserChecklist(msg)
 	case phaseTaskSelect:
 		return m.updateTaskSelect(msg)
 	case phaseTaskName:
@@ -526,6 +533,8 @@ func (m InlineModel) View() string {
 		return m.viewPickMode()
 	case phasePickDuration:
 		return m.viewPickDuration()
+	case phaseLaserChecklist:
+		return m.viewLaserChecklist()
 	case phaseTaskSelect:
 		return m.viewTaskSelect()
 	case phaseTaskName:

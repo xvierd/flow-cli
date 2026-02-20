@@ -169,6 +169,28 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 		customDuration := presets[result.Index].Duration
 
+		// Laser checklist (Make Time only)
+		if mode.HasLaserChecklist() {
+			fmt.Println()
+			fmt.Println("  Laser Checklist:")
+			checklistItems := []string{
+				"Phone on Do Not Disturb?",
+				"Notifications off?",
+				"Distracting tabs/apps closed?",
+			}
+			for _, item := range checklistItems {
+				checkResult := tui.RunPicker(item, []tui.PickerItem{
+					{Label: "Yes", Desc: "Ready to focus"},
+					{Label: "No", Desc: "Skip for now"},
+				}, "", &app.config.Theme)
+				if checkResult.Aborted {
+					return nil
+				}
+				// User can skip with "No" and still proceed
+			}
+			fmt.Println()
+		}
+
 		// 2. Task selection via styled picker
 		var taskName string
 		var sessionTags []string
