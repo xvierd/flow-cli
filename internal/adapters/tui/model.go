@@ -536,10 +536,15 @@ func (m Model) View() string {
 	} else if m.state.ActiveSession != nil {
 		sections = m.viewActiveSession(sections)
 	} else {
-		idleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused))
-		sections = append(sections, idleStyle.Render("No active session"))
-		sections = append(sections, "")
 		helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
+		info := viewIdleMethodologyInfo(m.state, m.mode, m.completionInfo)
+		if info != "" {
+			sections = append(sections, helpStyle.Render(info))
+		} else {
+			idleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused))
+			sections = append(sections, idleStyle.Render("No active session"))
+		}
+		sections = append(sections, "")
 		sections = append(sections, helpStyle.Render("[s]tart  [c]lose"))
 	}
 
@@ -615,6 +620,10 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 		m.theme.IconStats, vd.statsWorkSessions, vd.statsBreaksTaken, formatDuration(vd.statsTotalWorkTime))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
+
+	if m.mode != nil && m.mode.Name() == domain.MethodologyPomodoro {
+		sections = append(sections, helpStyle.Render(fmt.Sprintf("\U0001F345 %d sessions today", vd.statsWorkSessions)))
+	}
 
 	sections = append(sections, "")
 	if m.autoBreakTicks > 0 {

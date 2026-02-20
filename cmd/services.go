@@ -75,6 +75,10 @@ func initializeServices() error {
 	// Configure pomodoro service from config
 	workDur, _, _, sessionsBeforeLong := app.config.ToPomodoroDomainConfig()
 	shortBreakDur, longBreakDur := app.config.GetBreakDurations(app.methodology)
+	// Pomodoro Technique rule: long break always after every 4 work sessions.
+	if app.methodology == domain.MethodologyPomodoro {
+		sessionsBeforeLong = 4
+	}
 	app.pomodoro.SetConfig(domain.PomodoroConfig{
 		WorkDuration:       workDur,
 		ShortBreakDuration: shortBreakDur,
