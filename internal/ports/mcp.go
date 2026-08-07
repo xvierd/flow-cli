@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
 )
@@ -17,6 +18,16 @@ type MCPHandler interface {
 
 	// IsRunning returns true if the server is active.
 	IsRunning() bool
+}
+
+// StartSessionRequest captures the inputs for starting a session via MCP.
+type StartSessionRequest struct {
+	TaskID          *string
+	TaskTitle       string
+	Methodology     domain.Methodology
+	DurationMinutes *int
+	Tags            []string
+	IntendedOutcome string
 }
 
 // MCPStateProvider provides state information to the MCP server.
@@ -35,7 +46,14 @@ type MCPStateProvider interface {
 	GetRecentSessions(ctx context.Context, limit int) ([]*domain.PomodoroSession, error)
 
 	// StartPomodoro starts a new pomodoro session.
+	// Deprecated: prefer StartSession, which supports methodology, tags, and intended outcome.
 	StartPomodoro(ctx context.Context, taskID *string, durationMinutes *int) (*domain.PomodoroSession, error)
+
+	// StartSession starts a session with full metadata (methodology, tags, intended outcome).
+	StartSession(ctx context.Context, req StartSessionRequest) (*domain.PomodoroSession, error)
+
+	// StartBreak starts a new break session.
+	StartBreak(ctx context.Context) (*domain.PomodoroSession, error)
 
 	// StopPomodoro completes the current pomodoro session.
 	StopPomodoro(ctx context.Context) (*domain.PomodoroSession, error)
@@ -46,24 +64,60 @@ type MCPStateProvider interface {
 	// ResumePomodoro resumes a paused pomodoro session.
 	ResumePomodoro(ctx context.Context) (*domain.PomodoroSession, error)
 
+	// CancelSession cancels the active session.
+	CancelSession(ctx context.Context) error
+
+	// VoidSession voids (invalidates) the active session.
+	VoidSession(ctx context.Context) (*domain.PomodoroSession, error)
+
 	// CreateTask creates a new task.
 	CreateTask(ctx context.Context, title string, description *string, tags []string) (*domain.Task, error)
 
 	// CompleteTask marks a task as completed.
 	CompleteTask(ctx context.Context, taskID string) (*domain.Task, error)
 
+	// GetTask retrieves a single task by ID.
+	GetTask(ctx context.Context, taskID string) (*domain.Task, error)
+
+	// DeleteTask removes a task by ID.
+	DeleteTask(ctx context.Context, taskID string) error
+
+	// StartTask marks a task as in progress.
+	StartTask(ctx context.Context, taskID string) error
+
 	// AddSessionNotes adds notes to a pomodoro session.
 	AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error)
 
 	// LogDistraction logs a distraction for a session (Deep Work mode).
-	LogDistraction(ctx context.Context, sessionID string, text string) error
+	LogDistraction(ctx context.Context, sessionID string, text string, category string) error
 
 	// SetFocusScore sets the focus score for a session (Make Time mode).
 	SetFocusScore(ctx context.Context, sessionID string, score int) error
+
+	// SetAccomplishment records the accomplishment text on a session (Deep Work shutdown ritual).
+	SetAccomplishment(ctx context.Context, sessionID string, text string) error
+
+	// SetShutdownRitual records the 4-step shutdown ritual on a session (Deep Work).
+	SetShutdownRitual(ctx context.Context, sessionID string, ritual domain.ShutdownRitual) error
+
+	// SetEnergizeActivity records the energize activity on a session (Make Time).
+	SetEnergizeActivity(ctx context.Context, sessionID string, activity string) error
+
+	// SetOutcomeAchieved records the outcome review (y/p/n) on a session (Deep Work).
+	SetOutcomeAchieved(ctx context.Context, sessionID string, achieved string) error
 
 	// GetTodayHighlight returns today's highlight task (Make Time mode).
 	GetTodayHighlight(ctx context.Context) (*domain.Task, error)
 
 	// SetHighlight marks a task as today's highlight (Make Time mode).
 	SetHighlight(ctx context.Context, taskID string) (*domain.Task, error)
+
+	// GetDailySummary returns aggregated statistics for a specific date.
+	GetDailySummary(ctx context.Context, date time.Time) (*domain.DailyStats, error)
+
+	// GetPeriodStats returns aggregated statistics for a time range.
+	GetPeriodStats(ctx context.Context, start, end time.Time) (*domain.PeriodStats, error)
+
+	// GetFocusReport summarizes a day of sessions for AI consumers.
+	GetFocusReport(ctx context.Context) (*domain.FocusReport, error)
 }

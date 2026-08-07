@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/ports"
+	"github.com/xvierd/flow-cli/internal/services"
 )
 
 // Server implements the MCP server using mark3labs/mcp-go.
@@ -22,15 +25,18 @@ type Server struct {
 }
 
 // NewServer creates a new MCP server instance.
-func NewServer(stateProvider ports.MCPStateProvider) *Server {
+func NewServer(stateProvider ports.MCPStateProvider, version string) *Server {
+	if version == "" {
+		version = "dev"
+	}
 	s := &Server{
 		stateProvider: stateProvider,
 	}
 
 	// Create the MCP server
 	s.server = server.NewMCPServer(
-		"flow-pomodoro",
-		"1.0.0",
+		"flow",
+		version,
 		server.WithLogging(),
 	)
 
@@ -75,10 +81,10 @@ func (s *Server) registerTools() {
 	)
 	s.server.AddTool(taskHistoryTool, s.handleGetTaskHistory)
 
-	// Tool: start_pomodoro
+	// Tool: start_pomodoro (deprecated alias of start_session)
 	startPomodoroTool := mcp.NewTool(
 		"start_pomodoro",
-		mcp.WithDescription("Start a new pomodoro work session"),
+		mcp.WithDescription("Start a work session. Deprecated alias for start_session; use start_session to set methodology, tags, task title, and intended outcome."),
 		mcp.WithString(
 			"task_id",
 			mcp.Description("Optional task ID to associate with the session"),
@@ -163,6 +169,11 @@ func (s *Server) registerTools() {
 			mcp.Required(),
 			mcp.Description("Description of the distraction"),
 		),
+		mcp.WithString(
+			"category",
+			mcp.Description("Category of the distraction: internal or external"),
+			mcp.Enum("internal", "external"),
+		),
 	)
 	s.server.AddTool(logDistractionTool, s.handleLogDistraction)
 
@@ -220,6 +231,225 @@ func (s *Server) registerTools() {
 		),
 	)
 	s.server.AddTool(addNotesTool, s.handleAddSessionNotes)
+
+	// Tool: start_session
+	startSessionTool := mcp.NewTool(
+		"start_session",
+		mcp.WithDescription("Start a work session with optional methodology, task title, duration, tags, and intended outcome"),
+		mcp.WithString(
+			"methodology",
+			mcp.Description("Methodology for the session"),
+			mcp.Enum("pomodoro", "deepwork", "maketime"),
+		),
+		mcp.WithString(
+			"task_id",
+			mcp.Description("Existing task ID (mutually exclusive with task_title)"),
+		),
+		mcp.WithString(
+			"task_title",
+			mcp.Description("Task title; matched against existing tasks or created if not found"),
+		),
+		mcp.WithNumber(
+			"duration_minutes",
+			mcp.Description("Optional custom duration in minutes"),
+		),
+		mcp.WithArray(
+			"tags",
+			mcp.Description("Optional session tags (array or comma-separated string)"),
+		),
+		mcp.WithString(
+			"intended_outcome",
+			mcp.Description("Intended outcome for Deep Work sessions"),
+		),
+	)
+	s.server.AddTool(startSessionTool, s.handleStartSession)
+
+	// Tool: start_break
+	s.server.AddTool(
+		mcp.NewTool(
+			"start_break",
+			mcp.WithDescription("Start a short or long break session"),
+		),
+		s.handleStartBreak,
+	)
+
+	// Tool: cancel_session
+	s.server.AddTool(
+		mcp.NewTool(
+			"cancel_session",
+			mcp.WithDescription("Cancel the active session"),
+		),
+		s.handleCancelSession,
+	)
+
+	// Tool: void_session
+	s.server.AddTool(
+		mcp.NewTool(
+			"void_session",
+			mcp.WithDescription("Void (invalidate) the active session due to interruption"),
+		),
+		s.handleVoidSession,
+	)
+
+	// Tool: set_accomplishment
+	setAccomplishmentTool := mcp.NewTool(
+		"set_accomplishment",
+		mcp.WithDescription("Record what you accomplished in a session (Deep Work shutdown ritual)"),
+		mcp.WithString(
+			"session_id",
+			mcp.Required(),
+			mcp.Description("The ID of the session"),
+		),
+		mcp.WithString(
+			"text",
+			mcp.Required(),
+			mcp.Description("Accomplishment text"),
+		),
+	)
+	s.server.AddTool(setAccomplishmentTool, s.handleSetAccomplishment)
+
+	// Tool: set_shutdown_ritual
+	setRitualTool := mcp.NewTool(
+		"set_shutdown_ritual",
+		mcp.WithDescription("Record the 4-step Deep Work shutdown ritual for a session"),
+		mcp.WithString(
+			"session_id",
+			mcp.Required(),
+			mcp.Description("The ID of the session"),
+		),
+		mcp.WithString(
+			"pending_tasks_review",
+			mcp.Description("Review pending tasks"),
+		),
+		mcp.WithString(
+			"calendar_review",
+			mcp.Description("Review tomorrow's calendar"),
+		),
+		mcp.WithString(
+			"tomorrow_plan",
+			mcp.Description("Plan for tomorrow"),
+		),
+		mcp.WithString(
+			"closing_phrase",
+			mcp.Description("Closing phrase (e.g. 'Shutdown complete')"),
+		),
+	)
+	s.server.AddTool(setRitualTool, s.handleSetShutdownRitual)
+
+	// Tool: set_energize_activity
+	setEnergizeTool := mcp.NewTool(
+		"set_energize_activity",
+		mcp.WithDescription("Record how you will recharge after a Make Time session"),
+		mcp.WithString(
+			"session_id",
+			mcp.Required(),
+			mcp.Description("The ID of the session"),
+		),
+		mcp.WithString(
+			"activity",
+			mcp.Required(),
+			mcp.Description("Energize activity"),
+			mcp.Enum("walk", "stretch", "exercise", "none"),
+		),
+	)
+	s.server.AddTool(setEnergizeTool, s.handleSetEnergizeActivity)
+
+	// Tool: set_outcome_achieved
+	setOutcomeTool := mcp.NewTool(
+		"set_outcome_achieved",
+		mcp.WithDescription("Record whether a Deep Work session's intended outcome was achieved"),
+		mcp.WithString(
+			"session_id",
+			mcp.Required(),
+			mcp.Description("The ID of the session"),
+		),
+		mcp.WithString(
+			"outcome",
+			mcp.Required(),
+			mcp.Description("Achievement status"),
+			mcp.Enum("y", "n", "p"),
+		),
+	)
+	s.server.AddTool(setOutcomeTool, s.handleSetOutcomeAchieved)
+
+	// Tool: get_recent_sessions
+	getRecentTool := mcp.NewTool(
+		"get_recent_sessions",
+		mcp.WithDescription("Get recent pomodoro sessions"),
+		mcp.WithNumber(
+			"limit",
+			mcp.Description("Maximum number of sessions to return (default: 10)"),
+		),
+	)
+	s.server.AddTool(getRecentTool, s.handleGetRecentSessions)
+
+	// Tool: get_daily_summary
+	getDailySummaryTool := mcp.NewTool(
+		"get_daily_summary",
+		mcp.WithDescription("Get aggregated statistics for a date"),
+		mcp.WithString(
+			"date",
+			mcp.Description("Date in YYYY-MM-DD or RFC3339 format (default: today)"),
+		),
+	)
+	s.server.AddTool(getDailySummaryTool, s.handleGetDailySummary)
+
+	// Tool: get_period_stats
+	getPeriodTool := mcp.NewTool(
+		"get_period_stats",
+		mcp.WithDescription("Get aggregated statistics for a period (current week or month)"),
+		mcp.WithString(
+			"period",
+			mcp.Description("Time period"),
+			mcp.Enum("week", "month"),
+		),
+	)
+	s.server.AddTool(getPeriodTool, s.handleGetPeriodStats)
+
+	// Tool: get_focus_report
+	s.server.AddTool(
+		mcp.NewTool(
+			"get_focus_report",
+			mcp.WithDescription("Get a daily focus summary: sessions, focus scores, distractions, strength, and today's highlight"),
+		),
+		s.handleGetFocusReport,
+	)
+
+	// Tool: get_task
+	getTaskTool := mcp.NewTool(
+		"get_task",
+		mcp.WithDescription("Get a single task by ID"),
+		mcp.WithString(
+			"task_id",
+			mcp.Required(),
+			mcp.Description("The ID of the task"),
+		),
+	)
+	s.server.AddTool(getTaskTool, s.handleGetTask)
+
+	// Tool: delete_task
+	deleteTaskTool := mcp.NewTool(
+		"delete_task",
+		mcp.WithDescription("Delete a task by ID"),
+		mcp.WithString(
+			"task_id",
+			mcp.Required(),
+			mcp.Description("The ID of the task to delete"),
+		),
+	)
+	s.server.AddTool(deleteTaskTool, s.handleDeleteTask)
+
+	// Tool: start_task
+	startTaskTool := mcp.NewTool(
+		"start_task",
+		mcp.WithDescription("Mark a task as in progress"),
+		mcp.WithString(
+			"task_id",
+			mcp.Required(),
+			mcp.Description("The ID of the task to start"),
+		),
+	)
+	s.server.AddTool(startTaskTool, s.handleStartTask)
 }
 
 // Start begins serving MCP requests via stdio.
@@ -285,7 +515,7 @@ func (s *Server) handleGetCurrentState(ctx context.Context, request mcp.CallTool
 			"duration":         session.Duration.String(),
 			"remaining_time":   session.RemainingTime().String(),
 			"progress":         session.Progress(),
-			"started_at":       session.StartedAt.Format("2006-01-02T15:04:05"),
+			"started_at":       session.StartedAt.Format(time.RFC3339),
 			"git_branch":       session.GitBranch,
 			"git_commit":       session.GitCommit,
 			"notes":            session.Notes,
@@ -333,7 +563,7 @@ func (s *Server) handleListTasks(ctx context.Context, request mcp.CallToolReques
 			"description": task.Description,
 			"status":      string(task.Status),
 			"tags":        task.Tags,
-			"created_at":  task.CreatedAt.Format("2006-01-02T15:04:05"),
+			"created_at":  task.CreatedAt.Format(time.RFC3339),
 		})
 	}
 
@@ -375,12 +605,12 @@ func (s *Server) handleGetTaskHistory(ctx context.Context, request mcp.CallToolR
 			"type":       string(session.Type),
 			"status":     string(session.Status),
 			"duration":   session.Duration.String(),
-			"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+			"started_at": session.StartedAt.Format(time.RFC3339),
 			"notes":      session.Notes,
 		}
 
 		if session.CompletedAt != nil {
-			sessionData["completed_at"] = session.CompletedAt.Format("2006-01-02T15:04:05")
+			sessionData["completed_at"] = session.CompletedAt.Format(time.RFC3339)
 		}
 		if session.GitBranch != "" {
 			sessionData["git_branch"] = session.GitBranch
@@ -457,7 +687,7 @@ func (s *Server) handleStartPomodoro(ctx context.Context, request mcp.CallToolRe
 		"type":       string(session.Type),
 		"status":     string(session.Status),
 		"duration":   session.Duration.String(),
-		"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+		"started_at": session.StartedAt.Format(time.RFC3339),
 	}
 
 	if session.TaskID != nil {
@@ -484,14 +714,14 @@ func (s *Server) handleStopPomodoro(ctx context.Context, request mcp.CallToolReq
 		"type":       string(session.Type),
 		"status":     string(session.Status),
 		"duration":   session.Duration.String(),
-		"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+		"started_at": session.StartedAt.Format(time.RFC3339),
 	}
 
 	if session.TaskID != nil {
 		result["task_id"] = *session.TaskID
 	}
 	if session.CompletedAt != nil {
-		result["completed_at"] = session.CompletedAt.Format("2006-01-02T15:04:05")
+		result["completed_at"] = session.CompletedAt.Format(time.RFC3339)
 	}
 
 	jsonData, err := json.MarshalIndent(result, "", "  ")
@@ -560,16 +790,7 @@ func (s *Server) handleCreateTask(ctx context.Context, request mcp.CallToolReque
 		description = &d
 	}
 
-	var tags []string
-	if rawTags := request.GetString("tags", ""); rawTags != "" {
-		// Parse comma-separated tags
-		for _, tag := range strings.Split(rawTags, ",") {
-			tag = strings.TrimSpace(tag)
-			if tag != "" {
-				tags = append(tags, tag)
-			}
-		}
-	}
+	tags := parseTagsArg(request, "tags")
 
 	task, err := s.stateProvider.CreateTask(ctx, title, description, tags)
 	if err != nil {
@@ -582,7 +803,7 @@ func (s *Server) handleCreateTask(ctx context.Context, request mcp.CallToolReque
 		"description": task.Description,
 		"status":      string(task.Status),
 		"tags":        task.Tags,
-		"created_at":  task.CreatedAt.Format("2006-01-02T15:04:05"),
+		"created_at":  task.CreatedAt.Format(time.RFC3339),
 	}
 
 	jsonData, err := json.MarshalIndent(result, "", "  ")
@@ -611,7 +832,7 @@ func (s *Server) handleCompleteTask(ctx context.Context, request mcp.CallToolReq
 		"description":  task.Description,
 		"status":       string(task.Status),
 		"tags":         task.Tags,
-		"completed_at": task.CompletedAt.Format("2006-01-02T15:04:05"),
+		"completed_at": task.CompletedAt.Format(time.RFC3339),
 	}
 
 	jsonData, err := json.MarshalIndent(result, "", "  ")
@@ -634,13 +855,22 @@ func (s *Server) handleLogDistraction(ctx context.Context, request mcp.CallToolR
 		return mcp.NewToolResultError("text is required: " + err.Error()), nil
 	}
 
-	if err := s.stateProvider.LogDistraction(ctx, sessionID, text); err != nil {
+	category := request.GetString("category", "")
+	if category != "" && category != "internal" && category != "external" {
+		return mcp.NewToolResultError("category must be 'internal' or 'external'"), nil
+	}
+
+	if err := s.stateProvider.LogDistraction(ctx, sessionID, text, category); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to log distraction: %v", err)), nil
 	}
 
 	result := map[string]interface{}{
 		"session_id": sessionID,
 		"logged":     text,
+	}
+
+	if category != "" {
+		result["category"] = category
 	}
 
 	jsonData, err := json.MarshalIndent(result, "", "  ")
@@ -763,7 +993,7 @@ func (s *Server) handleAddSessionNotes(ctx context.Context, request mcp.CallTool
 		"type":       string(session.Type),
 		"status":     string(session.Status),
 		"duration":   session.Duration.String(),
-		"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+		"started_at": session.StartedAt.Format(time.RFC3339),
 		"notes":      session.Notes,
 	}
 
@@ -773,4 +1003,438 @@ func (s *Server) handleAddSessionNotes(ctx context.Context, request mcp.CallTool
 	}
 
 	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// ---- helpers ----
+
+// parseTagsArg reads a tags argument accepting either an array or a comma-separated string.
+func parseTagsArg(request mcp.CallToolRequest, key string) []string {
+	raw, ok := request.GetArguments()[key]
+	if !ok || raw == nil {
+		return nil
+	}
+
+	switch v := raw.(type) {
+	case []any:
+		tags := make([]string, 0, len(v))
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				if s := strings.TrimSpace(str); s != "" {
+					tags = append(tags, s)
+				}
+			}
+		}
+		return tags
+	case []string:
+		return v
+	case string:
+		var tags []string
+		for _, tag := range strings.Split(v, ",") {
+			if s := strings.TrimSpace(tag); s != "" {
+				tags = append(tags, s)
+			}
+		}
+		return tags
+	default:
+		return nil
+	}
+}
+
+// parseOptionalDate parses an optional YYYY-MM-DD or RFC3339 date argument.
+func parseOptionalDate(request mcp.CallToolRequest, key string) (time.Time, bool, error) {
+	raw := strings.TrimSpace(request.GetString(key, ""))
+	if raw == "" {
+		return time.Time{}, false, nil
+	}
+	now := time.Now()
+	if t, err := time.ParseInLocation("2006-01-02", raw, now.Location()); err == nil {
+		return t, true, nil
+	}
+	if t, err := time.ParseInLocation(time.RFC3339, raw, now.Location()); err == nil {
+		return t, true, nil
+	}
+	return time.Time{}, false, fmt.Errorf("invalid date %q: expected YYYY-MM-DD or RFC3339", raw)
+}
+
+// sessionSummary builds a JSON-friendly map for a session.
+func sessionSummary(s *domain.PomodoroSession) map[string]interface{} {
+	sd := map[string]interface{}{
+		"id":         s.ID,
+		"type":       string(s.Type),
+		"status":     string(s.Status),
+		"duration":   s.Duration.String(),
+		"started_at": s.StartedAt.Format(time.RFC3339),
+	}
+	if s.CompletedAt != nil {
+		sd["completed_at"] = s.CompletedAt.Format(time.RFC3339)
+	}
+	if s.TaskID != nil {
+		sd["task_id"] = *s.TaskID
+	}
+	if s.Methodology != "" {
+		sd["methodology"] = string(s.Methodology)
+	}
+	if s.FocusScore != nil {
+		sd["focus_score"] = *s.FocusScore
+	}
+	if len(s.Distractions) > 0 {
+		ds := make([]map[string]interface{}, 0, len(s.Distractions))
+		for _, d := range s.Distractions {
+			dm := map[string]interface{}{"text": d.Text}
+			if d.Category != "" {
+				dm["category"] = d.Category
+			}
+			ds = append(ds, dm)
+		}
+		sd["distractions"] = ds
+	}
+	if s.ShutdownRitual != nil {
+		sd["shutdown_ritual"] = map[string]interface{}{
+			"pending_tasks_review": s.ShutdownRitual.PendingTasksReview,
+			"calendar_review":      s.ShutdownRitual.CalendarReview,
+			"tomorrow_plan":        s.ShutdownRitual.TomorrowPlan,
+			"closing_phrase":       s.ShutdownRitual.ClosingPhrase,
+		}
+	}
+	if s.Accomplishment != "" {
+		sd["accomplishment"] = s.Accomplishment
+	}
+	if s.IntendedOutcome != "" {
+		sd["intended_outcome"] = s.IntendedOutcome
+	}
+	if s.OutcomeAchieved != "" {
+		sd["outcome_achieved"] = s.OutcomeAchieved
+	}
+	if s.EnergizeActivity != "" {
+		sd["energize_activity"] = s.EnergizeActivity
+	}
+	if len(s.Tags) > 0 {
+		sd["tags"] = s.Tags
+	}
+	return sd
+}
+
+// jsonResult marshals data into an MCP tool result.
+func jsonResult(data map[string]interface{}) (*mcp.CallToolResult, error) {
+	b, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %w", err)
+	}
+	return mcp.NewToolResultText(string(b)), nil
+}
+
+// toolError returns a consistent error tool result.
+func toolError(msg string, err error) (*mcp.CallToolResult, error) {
+	return mcp.NewToolResultError(fmt.Sprintf("%s: %v", msg, err)), nil
+}
+
+// ---- new tool handlers ----
+
+// handleStartSession handles the start_session tool.
+func (s *Server) handleStartSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	req := ports.StartSessionRequest{
+		Methodology:     domain.Methodology(request.GetString("methodology", "")),
+		TaskTitle:       request.GetString("task_title", ""),
+		IntendedOutcome: request.GetString("intended_outcome", ""),
+		Tags:            parseTagsArg(request, "tags"),
+	}
+	if t := request.GetString("task_id", ""); t != "" {
+		req.TaskID = &t
+	}
+	if d := request.GetFloat("duration_minutes", 0); d > 0 {
+		m := int(d)
+		req.DurationMinutes = &m
+	} else if rawDur := request.GetString("duration_minutes", ""); rawDur != "" {
+		if m, err := strconv.Atoi(rawDur); err == nil && m > 0 {
+			req.DurationMinutes = &m
+		}
+	}
+
+	session, err := s.stateProvider.StartSession(ctx, req)
+	if err != nil {
+		return toolError("failed to start session", err)
+	}
+	return jsonResult(sessionSummary(session))
+}
+
+// handleStartBreak handles the start_break tool.
+func (s *Server) handleStartBreak(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	session, err := s.stateProvider.StartBreak(ctx)
+	if err != nil {
+		return toolError("failed to start break", err)
+	}
+	return jsonResult(sessionSummary(session))
+}
+
+// handleCancelSession handles the cancel_session tool.
+func (s *Server) handleCancelSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := s.stateProvider.CancelSession(ctx); err != nil {
+		return toolError("failed to cancel session", err)
+	}
+	return jsonResult(map[string]interface{}{"cancelled": true})
+}
+
+// handleVoidSession handles the void_session tool.
+func (s *Server) handleVoidSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	session, err := s.stateProvider.VoidSession(ctx)
+	if err != nil {
+		return toolError("failed to void session", err)
+	}
+	return jsonResult(sessionSummary(session))
+}
+
+// handleSetAccomplishment handles the set_accomplishment tool.
+func (s *Server) handleSetAccomplishment(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("session_id is required: " + err.Error()), nil
+	}
+	text, err := request.RequireString("text")
+	if err != nil {
+		return mcp.NewToolResultError("text is required: " + err.Error()), nil
+	}
+
+	if err := s.stateProvider.SetAccomplishment(ctx, sessionID, text); err != nil {
+		return toolError("failed to set accomplishment", err)
+	}
+	return jsonResult(map[string]interface{}{
+		"session_id":     sessionID,
+		"accomplishment": text,
+	})
+}
+
+// handleSetShutdownRitual handles the set_shutdown_ritual tool.
+func (s *Server) handleSetShutdownRitual(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("session_id is required: " + err.Error()), nil
+	}
+
+	ritual := domain.ShutdownRitual{
+		PendingTasksReview: request.GetString("pending_tasks_review", ""),
+		CalendarReview:     request.GetString("calendar_review", ""),
+		TomorrowPlan:       request.GetString("tomorrow_plan", ""),
+		ClosingPhrase:      request.GetString("closing_phrase", ""),
+	}
+
+	if err := s.stateProvider.SetShutdownRitual(ctx, sessionID, ritual); err != nil {
+		return toolError("failed to set shutdown ritual", err)
+	}
+	return jsonResult(map[string]interface{}{
+		"session_id":           sessionID,
+		"pending_tasks_review": ritual.PendingTasksReview,
+		"calendar_review":      ritual.CalendarReview,
+		"tomorrow_plan":        ritual.TomorrowPlan,
+		"closing_phrase":       ritual.ClosingPhrase,
+	})
+}
+
+// handleSetEnergizeActivity handles the set_energize_activity tool.
+func (s *Server) handleSetEnergizeActivity(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("session_id is required: " + err.Error()), nil
+	}
+	activity, err := request.RequireString("activity")
+	if err != nil {
+		return mcp.NewToolResultError("activity is required: " + err.Error()), nil
+	}
+	switch activity {
+	case "walk", "stretch", "exercise", "none":
+	default:
+		return mcp.NewToolResultError("activity must be one of: walk, stretch, exercise, none"), nil
+	}
+
+	if err := s.stateProvider.SetEnergizeActivity(ctx, sessionID, activity); err != nil {
+		return toolError("failed to set energize activity", err)
+	}
+	return jsonResult(map[string]interface{}{
+		"session_id": sessionID,
+		"activity":   activity,
+	})
+}
+
+// handleSetOutcomeAchieved handles the set_outcome_achieved tool.
+func (s *Server) handleSetOutcomeAchieved(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("session_id is required: " + err.Error()), nil
+	}
+	outcome, err := request.RequireString("outcome")
+	if err != nil {
+		return mcp.NewToolResultError("outcome is required: " + err.Error()), nil
+	}
+	switch outcome {
+	case "y", "n", "p":
+	default:
+		return mcp.NewToolResultError("outcome must be 'y', 'n', or 'p'"), nil
+	}
+
+	if err := s.stateProvider.SetOutcomeAchieved(ctx, sessionID, outcome); err != nil {
+		return toolError("failed to set outcome achieved", err)
+	}
+	return jsonResult(map[string]interface{}{
+		"session_id": sessionID,
+		"outcome":    outcome,
+	})
+}
+
+// handleGetRecentSessions handles the get_recent_sessions tool.
+func (s *Server) handleGetRecentSessions(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	limit := int(request.GetFloat("limit", 10))
+	if limit <= 0 {
+		limit = 10
+	}
+
+	sessions, err := s.stateProvider.GetRecentSessions(ctx, limit)
+	if err != nil {
+		return toolError("failed to get recent sessions", err)
+	}
+
+	summaries := make([]map[string]interface{}, 0, len(sessions))
+	for _, sess := range sessions {
+		summaries = append(summaries, sessionSummary(sess))
+	}
+	return jsonResult(map[string]interface{}{
+		"sessions":     summaries,
+		"total_count":  len(summaries),
+		"requested_at": time.Now().Format(time.RFC3339),
+	})
+}
+
+// handleGetDailySummary handles the get_daily_summary tool.
+func (s *Server) handleGetDailySummary(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	date, has, err := parseOptionalDate(request, "date")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if !has {
+		date = time.Now()
+	}
+
+	stats, err := s.stateProvider.GetDailySummary(ctx, date)
+	if err != nil {
+		return toolError("failed to get daily summary", err)
+	}
+	return jsonResult(map[string]interface{}{
+		"date":            date.Format("2006-01-02"),
+		"work_sessions":   stats.WorkSessions,
+		"break_sessions":  stats.BreaksTaken,
+		"total_work_time": stats.TotalWorkTime.String(),
+		"tasks_completed": stats.TasksCompleted,
+	})
+}
+
+// handleGetPeriodStats handles the get_period_stats tool.
+func (s *Server) handleGetPeriodStats(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	periodStr := request.GetString("period", "week")
+	start, end, err := services.PeriodRange(services.ReportPeriod(periodStr), time.Now())
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	stats, err := s.stateProvider.GetPeriodStats(ctx, start, end)
+	if err != nil {
+		return toolError("failed to get period stats", err)
+	}
+
+	methodologies := make([]map[string]interface{}, 0, len(stats.ByMethodology))
+	for _, m := range stats.ByMethodology {
+		methodologies = append(methodologies, map[string]interface{}{
+			"methodology":   string(m.Methodology),
+			"session_count": m.SessionCount,
+			"total_time":    m.TotalTime.String(),
+		})
+	}
+
+	return jsonResult(map[string]interface{}{
+		"period":            periodStr,
+		"start":             start.Format(time.RFC3339),
+		"end":               end.Format(time.RFC3339),
+		"total_sessions":    stats.TotalSessions,
+		"total_work_time":   stats.TotalWorkTime.String(),
+		"avg_focus_score":   stats.AvgFocusScore,
+		"focus_score_count": stats.FocusScoreCount,
+		"distraction_count": stats.DistractionCount,
+		"by_methodology":    methodologies,
+	})
+}
+
+// handleGetFocusReport handles the get_focus_report tool.
+func (s *Server) handleGetFocusReport(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	report, err := s.stateProvider.GetFocusReport(ctx)
+	if err != nil {
+		return toolError("failed to get focus report", err)
+	}
+
+	highlight := map[string]interface{}{}
+	if report.HighlightID != nil {
+		highlight = map[string]interface{}{
+			"id":    *report.HighlightID,
+			"title": report.HighlightTitle,
+		}
+	}
+
+	return jsonResult(map[string]interface{}{
+		"date":              report.Date,
+		"work_sessions":     report.WorkSessions,
+		"total_work_time":   report.TotalWorkTime.String(),
+		"avg_focus_score":   report.AvgFocusScore,
+		"focus_score_count": report.FocusScoreCount,
+		"distraction_count": report.DistractionCount,
+		"deep_work_streak":  report.DeepWorkStreak,
+		"highlight":         highlight,
+	})
+}
+
+// handleGetTask handles the get_task tool.
+func (s *Server) handleGetTask(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	taskID, err := request.RequireString("task_id")
+	if err != nil {
+		return mcp.NewToolResultError("task_id is required: " + err.Error()), nil
+	}
+
+	task, err := s.stateProvider.GetTask(ctx, taskID)
+	if err != nil {
+		return toolError("failed to get task", err)
+	}
+	if task == nil {
+		return mcp.NewToolResultError("task not found"), nil
+	}
+
+	return jsonResult(map[string]interface{}{
+		"id":          task.ID,
+		"title":       task.Title,
+		"description": task.Description,
+		"status":      string(task.Status),
+		"tags":        task.Tags,
+		"created_at":  task.CreatedAt.Format(time.RFC3339),
+		"updated_at":  task.UpdatedAt.Format(time.RFC3339),
+	})
+}
+
+// handleDeleteTask handles the delete_task tool.
+func (s *Server) handleDeleteTask(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	taskID, err := request.RequireString("task_id")
+	if err != nil {
+		return mcp.NewToolResultError("task_id is required: " + err.Error()), nil
+	}
+
+	if err := s.stateProvider.DeleteTask(ctx, taskID); err != nil {
+		return toolError("failed to delete task", err)
+	}
+	return jsonResult(map[string]interface{}{"deleted": taskID})
+}
+
+// handleStartTask handles the start_task tool.
+func (s *Server) handleStartTask(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	taskID, err := request.RequireString("task_id")
+	if err != nil {
+		return mcp.NewToolResultError("task_id is required: " + err.Error()), nil
+	}
+
+	if err := s.stateProvider.StartTask(ctx, taskID); err != nil {
+		return toolError("failed to start task", err)
+	}
+	return jsonResult(map[string]interface{}{"started": taskID})
 }

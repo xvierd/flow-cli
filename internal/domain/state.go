@@ -65,6 +65,19 @@ type StateSnapshot struct {
 	RecentSessions []*PomodoroSession
 }
 
+// FocusReport summarizes a single day of sessions for AI consumers and the MCP get_focus_report tool.
+type FocusReport struct {
+	Date             string
+	WorkSessions     int
+	TotalWorkTime    time.Duration
+	AvgFocusScore    float64
+	FocusScoreCount  int
+	DistractionCount int
+	DeepWorkStreak   int
+	HighlightID      *string
+	HighlightTitle   string
+}
+
 // IsSessionActive returns true if there's a running or paused session.
 func (cs *CurrentState) IsSessionActive() bool {
 	return cs.ActiveSession != nil &&
