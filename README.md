@@ -1,5 +1,7 @@
 # Flow
 
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+
 A productivity CLI that gets out of your way. Built in Go with an interactive TUI, git awareness, and AI assistant integration. Supports three focus methodologies: Pomodoro, Deep Work, and Make Time.
 
 ```
@@ -272,4 +274,4 @@ git config core.hooksPath .githooks
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for the full text.

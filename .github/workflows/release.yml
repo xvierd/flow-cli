@@ -38,7 +38,7 @@ jobs:
           CGO_ENABLED: 0
         run: |
           go build -ldflags="-s -w" -o flow ./cmd/flow
-          tar czf flow-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz flow
+          tar czf flow-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz flow LICENSE
       - uses: actions/upload-artifact@v4
         with:
           name: flow-${{ matrix.goos }}-${{ matrix.goarch }}
