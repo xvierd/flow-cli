@@ -84,6 +84,7 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			{Label: "Start session", Desc: "Begin a new focus session"},
 			{Label: "View stats", Desc: "Show your productivity dashboard"},
 			{Label: "Reflect", Desc: "Weekly reflection on your work"},
+			{Label: "Report", Desc: "Aggregated weekly or monthly report"},
 		}
 		menuResult := tui.RunPicker("Flow:", menuItems, "", &app.config.Theme)
 		if menuResult.Aborted {
@@ -94,6 +95,8 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			return statsCmd.RunE(cmd, args)
 		case 2: // Reflect
 			return reflectCmd.RunE(cmd, args)
+		case 3: // Report
+			return reportCmd.RunE(cmd, args)
 		}
 		// Index 0: Start session — continue to mode picker
 		fmt.Println()

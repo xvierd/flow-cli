@@ -87,6 +87,9 @@ type SessionRepository interface {
 
 	// GetDeepWorkHours returns total deep work hours for a date range.
 	GetDeepWorkHours(ctx context.Context, start, end time.Time) (time.Duration, error)
+
+	// GetTagStats returns aggregated tag statistics for work sessions in a time range.
+	GetTagStats(ctx context.Context, start, end time.Time) ([]domain.TagStat, error)
 }
 
 // Storage is the combined repository interface.

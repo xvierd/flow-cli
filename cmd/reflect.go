@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/services"
 )
 
 var reflectTodayFlag bool
@@ -28,12 +29,10 @@ var reflectCmd = &cobra.Command{
 		}
 
 		// Compute week start (Monday)
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
+		weekStart, weekEnd, err := services.PeriodRange(services.ReportPeriodWeek, now)
+		if err != nil {
+			return err
 		}
-		weekStart := time.Date(now.Year(), now.Month(), now.Day()-(weekday-1), 0, 0, 0, 0, now.Location())
-		weekEnd := weekStart.AddDate(0, 0, 7)
 
 		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C6FE0"))
 		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))

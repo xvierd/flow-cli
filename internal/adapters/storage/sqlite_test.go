@@ -656,6 +656,101 @@ func TestSessionRepository_GetEnergizeStats(t *testing.T) {
 	})
 }
 
+func TestSessionRepository_GetTagStats(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	sessionRepo := storage.Sessions()
+
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	end := start.Add(24 * time.Hour)
+
+	scoreA := 4
+	sessionA := &domain.PomodoroSession{
+		ID:          "tags-1",
+		Type:        domain.SessionTypeWork,
+		Status:      domain.SessionStatusCompleted,
+		Duration:    25 * time.Minute,
+		StartedAt:   start.Add(10 * time.Hour),
+		Methodology: domain.MethodologyPomodoro,
+		Tags:        []string{"deep", "focus"},
+		FocusScore:  &scoreA,
+	}
+	sessionA.CompletedAt = &sessionA.StartedAt
+	if err := sessionRepo.Save(ctx, sessionA); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	scoreB := 8
+	sessionB := &domain.PomodoroSession{
+		ID:          "tags-2",
+		Type:        domain.SessionTypeWork,
+		Status:      domain.SessionStatusCompleted,
+		Duration:    50 * time.Minute,
+		StartedAt:   start.Add(12 * time.Hour),
+		Methodology: domain.MethodologyDeepWork,
+		Tags:        []string{"deep"},
+		FocusScore:  &scoreB,
+	}
+	sessionB.CompletedAt = &sessionB.StartedAt
+	if err := sessionRepo.Save(ctx, sessionB); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	// A session outside the range with a distinct tag should be excluded.
+	outside := &domain.PomodoroSession{
+		ID:          "tags-3",
+		Type:        domain.SessionTypeWork,
+		Status:      domain.SessionStatusCompleted,
+		Duration:    25 * time.Minute,
+		StartedAt:   start.AddDate(0, 0, -5),
+		Methodology: domain.MethodologyPomodoro,
+		Tags:        []string{"other"},
+	}
+	outside.CompletedAt = &outside.StartedAt
+	if err := sessionRepo.Save(ctx, outside); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	stats, err := sessionRepo.GetTagStats(ctx, start, end)
+	if err != nil {
+		t.Fatalf("GetTagStats() error = %v", err)
+	}
+
+	found := map[string]domain.TagStat{}
+	for _, s := range stats {
+		found[s.Tag] = s
+	}
+
+	deep, ok := found["deep"]
+	if !ok {
+		t.Fatal("expected 'deep' tag stats")
+	}
+	if deep.SessionCount != 2 {
+		t.Errorf("deep SessionCount = %d, want 2", deep.SessionCount)
+	}
+	if deep.TotalTime != 75*time.Minute {
+		t.Errorf("deep TotalTime = %s, want 1h15m", deep.TotalTime)
+	}
+	if deep.AvgFocusScore != 6 {
+		t.Errorf("deep AvgFocusScore = %v, want 6", deep.AvgFocusScore)
+	}
+
+	focus, ok := found["focus"]
+	if !ok {
+		t.Fatal("expected 'focus' tag stats")
+	}
+	if focus.SessionCount != 1 {
+		t.Errorf("focus SessionCount = %d, want 1", focus.SessionCount)
+	}
+
+	if _, exists := found["other"]; exists {
+		t.Error("out-of-range tag 'other' should not be included")
+	}
+}
+
 func TestTaskRepository_FindRecentTasks(t *testing.T) {
 	storage, _ := NewMemory()
 	defer func() { _ = storage.Close() }()

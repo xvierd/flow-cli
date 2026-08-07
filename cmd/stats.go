@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
-	"sort"
+	"github.com/xvierd/flow-cli/internal/services"
 )
 
 var statsPeriod string
@@ -23,23 +24,20 @@ var statsCmd = &cobra.Command{
 		ctx := context.Background()
 		now := time.Now()
 
-		var start, end time.Time
-		var label string
+		period := services.ReportPeriodWeek
+		if statsPeriod == "month" {
+			period = services.ReportPeriodMonth
+		} else {
+			statsPeriod = "week"
+		}
 
-		switch statsPeriod {
-		case "month":
-			start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-			end = start.AddDate(0, 1, 0)
+		start, end, err := services.PeriodRange(period, now)
+		if err != nil {
+			return err
+		}
+		label := fmt.Sprintf("Week of %s", start.Format("Jan 2"))
+		if period == services.ReportPeriodMonth {
 			label = now.Format("January 2006")
-		default:
-			// Default to current week (Monday start)
-			weekday := int(now.Weekday())
-			if weekday == 0 {
-				weekday = 7
-			}
-			start = time.Date(now.Year(), now.Month(), now.Day()-(weekday-1), 0, 0, 0, 0, now.Location())
-			end = start.AddDate(0, 0, 7)
-			label = fmt.Sprintf("Week of %s", start.Format("Jan 2"))
 		}
 
 		stats, err := app.storage.Sessions().GetPeriodStats(ctx, start, end)

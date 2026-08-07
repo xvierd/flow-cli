@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/services"
 )
 
 var (
@@ -33,12 +34,21 @@ func init() {
 }
 
 func runExport(ctx context.Context) error {
+	now := time.Now()
 	var since time.Time
 	switch exportPeriod {
 	case "week":
-		since = time.Now().AddDate(0, 0, -7)
+		start, _, err := services.PeriodRange(services.ReportPeriodWeek, now)
+		if err != nil {
+			return err
+		}
+		since = start
 	case "month":
-		since = time.Now().AddDate(0, -1, 0)
+		start, _, err := services.PeriodRange(services.ReportPeriodMonth, now)
+		if err != nil {
+			return err
+		}
+		since = start
 	default: // "all"
 		since = time.Time{}
 	}

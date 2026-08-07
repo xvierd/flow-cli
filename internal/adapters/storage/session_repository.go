@@ -491,6 +491,74 @@ func (r *sessionRepository) GetDeepWorkHours(ctx context.Context, start, end tim
 	return time.Duration(totalMs) * time.Millisecond, nil
 }
 
+// GetTagStats returns aggregated tag statistics for work sessions in a time range.
+// Tags are stored as a CSV column, so aggregation happens here in Go.
+func (r *sessionRepository) GetTagStats(ctx context.Context, start, end time.Time) ([]domain.TagStat, error) {
+	query := `
+		SELECT tags, duration_ms, focus_score
+		FROM sessions
+		WHERE type = 'work' AND status = 'completed'
+		  AND tags IS NOT NULL AND tags != ''
+		  AND started_at >= ? AND started_at < ?
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tag stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	byTag := map[string]*domain.TagStat{}
+	for rows.Next() {
+		var tagsStr sql.NullString
+		var focusScore sql.NullInt64
+		var durationMs int64
+		if err := rows.Scan(&tagsStr, &durationMs, &focusScore); err != nil {
+			return nil, fmt.Errorf("failed to scan tag stats: %w", err)
+		}
+
+		for _, tag := range strings.Split(tagsStr.String, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			stat, ok := byTag[tag]
+			if !ok {
+				stat = &domain.TagStat{Tag: tag}
+				byTag[tag] = stat
+			}
+			stat.SessionCount++
+			stat.TotalTime += time.Duration(durationMs) * time.Millisecond
+			if focusScore.Valid && focusScore.Int64 > 0 {
+				stat.FocusScoreCount++
+				stat.AvgFocusScore += float64(focusScore.Int64)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]domain.TagStat, 0, len(byTag))
+	for _, stat := range byTag {
+		if stat.FocusScoreCount > 0 {
+			stat.AvgFocusScore /= float64(stat.FocusScoreCount)
+		}
+		result = append(result, *stat)
+	}
+	sortTags(result)
+	return result, nil
+}
+
+// sortTags orders tag stats by total time, descending.
+func sortTags(stats []domain.TagStat) {
+	for i := 1; i < len(stats); i++ {
+		for j := i; j > 0 && stats[j].TotalTime > stats[j-1].TotalTime; j-- {
+			stats[j], stats[j-1] = stats[j-1], stats[j]
+		}
+	}
+}
+
 // scanSession scans a single session row.
 func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, error) {
 	var session domain.PomodoroSession
