@@ -8,11 +8,13 @@ import (
 )
 
 // completionCallbacks holds the external callbacks used by completion input handlers.
+// Each post-completion callback takes the completed session's ID as its first arg so
+// the caller can target the correct session even during chaining or auto-break.
 type completionCallbacks struct {
 	distractionCallback     func(string, string) error
-	accomplishmentCallback  func(string) error
-	shutdownRitualCallback  func(domain.ShutdownRitual) error
-	outcomeAchievedCallback func(string) error
+	accomplishmentCallback  func(sessionID string, text string) error
+	shutdownRitualCallback  func(sessionID string, ritual domain.ShutdownRitual) error
+	outcomeAchievedCallback func(sessionID string, achieved string) error
 	mode                    methodology.Mode
 }
 
@@ -41,11 +43,18 @@ func handleDistractionInput(cs *completionState, cb *completionCallbacks, msg te
 				cs.distractionCategoryMode = false
 				cs.distractionMode = false
 				return doneCmd
-			case "enter", "esc":
+			case "enter":
 				cs.distractions = append(cs.distractions, cs.distractionPendingText)
 				if cb.distractionCallback != nil {
 					_ = cb.distractionCallback(cs.distractionPendingText, "")
 				}
+				cs.distractionCategoryMode = false
+				cs.distractionPendingText = ""
+				cs.distractionMode = false
+				return doneCmd
+			case "esc":
+				// Cancel the distraction entirely — don't log it
+				cs.distractionPendingText = ""
 				cs.distractionCategoryMode = false
 				cs.distractionMode = false
 				return doneCmd
@@ -99,7 +108,7 @@ func handleAccomplishmentInput(cs *completionState, cb *completionCallbacks, msg
 			text := cs.accomplishmentInput.Value()
 			cs.accomplishmentSaved = true // Always mark saved (empty = "skipped")
 			if text != "" && cb.accomplishmentCallback != nil {
-				_ = cb.accomplishmentCallback(text)
+				_ = cb.accomplishmentCallback(cs.completedSessionID, text)
 			}
 			cs.accomplishmentMode = false
 			cs.accomplishmentInput.Blur()
@@ -170,7 +179,7 @@ func finishShutdownRitual(cs *completionState, cb *completionCallbacks) tea.Cmd 
 		ClosingPhrase:      cs.shutdownInputs[3].Value(),
 	}
 	if cb.shutdownRitualCallback != nil {
-		_ = cb.shutdownRitualCallback(ritual)
+		_ = cb.shutdownRitualCallback(cs.completedSessionID, ritual)
 	}
 
 	// Auto-enter outcome review if there was an intended outcome
@@ -239,7 +248,7 @@ func handleOutcomeReview(cs *completionState, cb *completionCallbacks, msg tea.M
 			cs.outcomeReviewDone = true
 			cs.outcomeReviewMode = false
 			if cb.outcomeAchievedCallback != nil {
-				_ = cb.outcomeAchievedCallback("y")
+				_ = cb.outcomeAchievedCallback(cs.completedSessionID, "y")
 			}
 			return nil
 		case "p":
@@ -247,7 +256,7 @@ func handleOutcomeReview(cs *completionState, cb *completionCallbacks, msg tea.M
 			cs.outcomeReviewDone = true
 			cs.outcomeReviewMode = false
 			if cb.outcomeAchievedCallback != nil {
-				_ = cb.outcomeAchievedCallback("p")
+				_ = cb.outcomeAchievedCallback(cs.completedSessionID, "p")
 			}
 			return nil
 		case "n":
@@ -255,7 +264,7 @@ func handleOutcomeReview(cs *completionState, cb *completionCallbacks, msg tea.M
 			cs.outcomeReviewDone = true
 			cs.outcomeReviewMode = false
 			if cb.outcomeAchievedCallback != nil {
-				_ = cb.outcomeAchievedCallback("n")
+				_ = cb.outcomeAchievedCallback(cs.completedSessionID, "n")
 			}
 			return nil
 		case "enter":

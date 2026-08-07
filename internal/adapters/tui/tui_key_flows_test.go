@@ -422,9 +422,10 @@ func TestModel_DistractionCategory_ExternalKey(t *testing.T) {
 
 func TestModel_DistractionCategory_EnterSkipsCategory(t *testing.T) {
 	var gotCat string
+	var gotText string
 	m := NewModel(stateWithSession(), nil, nil)
 	m.mode = methodology.ForMethodology(domain.MethodologyDeepWork, nil)
-	m.distractionCallback = func(_, cat string) error { gotCat = cat; return nil }
+	m.distractionCallback = func(text, cat string) error { gotText = text; gotCat = cat; return nil }
 	m.distractionMode = true
 	m.distractionCategoryMode = true
 	m.distractionPendingText = "thought"
@@ -433,6 +434,52 @@ func TestModel_DistractionCategory_EnterSkipsCategory(t *testing.T) {
 
 	if gotCat != "" {
 		t.Errorf("Enter should skip category (empty string), got %q", gotCat)
+	}
+	if gotText != "thought" {
+		t.Errorf("Enter should still log the distraction, got %q", gotText)
+	}
+}
+
+func TestModel_DistractionCategory_EscCancels(t *testing.T) {
+	var called bool
+	m := NewModel(stateWithSession(), nil, nil)
+	m.mode = methodology.ForMethodology(domain.MethodologyDeepWork, nil)
+	m.distractionCallback = func(text, cat string) error { called = true; return nil }
+	m.distractionMode = true
+	m.distractionCategoryMode = true
+	m.distractionPendingText = "thought"
+
+	result, _ := m.updateDistractionInput(key("esc"))
+	updated := result.(Model)
+
+	if called {
+		t.Error("Esc should cancel the distraction entirely — callback must NOT fire")
+	}
+	if updated.distractionCategoryMode || updated.distractionMode {
+		t.Error("Esc should close category picker and distraction mode")
+	}
+	if updated.distractionPendingText != "" {
+		t.Errorf("Esc should clear pending text, got %q", updated.distractionPendingText)
+	}
+}
+
+func TestInlineModel_DistractionCategory_EscCancels(t *testing.T) {
+	var called bool
+	m := baseInlineModel()
+	m.mode = methodology.ForMethodology(domain.MethodologyDeepWork, nil)
+	m.distractionCallback = func(text, cat string) error { called = true; return nil }
+	m.distractionMode = true
+	m.distractionCategoryMode = true
+	m.distractionPendingText = "noise"
+
+	result, _ := m.updateDistractionInput(key("esc"))
+	updated := result.(InlineModel)
+
+	if called {
+		t.Error("Esc should cancel the distraction entirely — callback must NOT fire")
+	}
+	if updated.distractionCategoryMode || updated.distractionMode {
+		t.Error("Esc should close category and distraction mode in InlineModel")
 	}
 }
 
@@ -453,7 +500,7 @@ func TestInlineModel_DistractionCategory_InternalKey(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 3-step Shutdown Ritual — Model
+// 4-step Shutdown Ritual — Model
 // ---------------------------------------------------------------------------
 
 func TestModel_ShutdownRitual_FourStepsAdvanceOnEnter(t *testing.T) {
@@ -514,7 +561,7 @@ func TestModel_ShutdownRitual_CallsCallback(t *testing.T) {
 	var gotRitual domain.ShutdownRitual
 	m := NewModel(stateWithSession(), nil, nil)
 	m.mode = methodology.ForMethodology(domain.MethodologyDeepWork, nil)
-	m.shutdownRitualCallback = func(r domain.ShutdownRitual) error {
+	m.shutdownRitualCallback = func(sessionID string, r domain.ShutdownRitual) error {
 		gotRitual = r
 		return nil
 	}
@@ -594,7 +641,7 @@ func TestModel_FocusScore_KeySavesScore(t *testing.T) {
 			m.mode = methodology.ForMethodology(domain.MethodologyMakeTime, nil)
 			m.completed = true
 			m.completedSessionType = domain.SessionTypeWork
-			m.focusScoreCallback = func(score int) error { gotScore = score; return nil }
+			m.focusScoreCallback = func(sessionID string, score int) error { gotScore = score; return nil }
 
 			result, _ := m.Update(key(k))
 			updated := result.(Model)
@@ -631,7 +678,7 @@ func TestInlineModel_FocusScore_KeySavesScore(t *testing.T) {
 	m.mode = methodology.ForMethodology(domain.MethodologyMakeTime, nil)
 	m.completed = true
 	m.completedType = domain.SessionTypeWork
-	m.focusScoreCallback = func(score int) error { gotScore = score; return nil }
+	m.focusScoreCallback = func(sessionID string, score int) error { gotScore = score; return nil }
 
 	result, _ := m.Update(key("4"))
 	updated := result.(InlineModel)
@@ -660,7 +707,7 @@ func completedMakeTimeModel() Model {
 func TestModel_Energize_WalkKey(t *testing.T) {
 	var got string
 	m := completedMakeTimeModel()
-	m.energizeCallback = func(a string) error { got = a; return nil }
+	m.energizeCallback = func(sessionID string, a string) error { got = a; return nil }
 
 	result, _ := m.Update(key("w"))
 	updated := result.(Model)
@@ -676,7 +723,7 @@ func TestModel_Energize_WalkKey(t *testing.T) {
 func TestModel_Energize_StretchKey(t *testing.T) {
 	var got string
 	m := completedMakeTimeModel()
-	m.energizeCallback = func(a string) error { got = a; return nil }
+	m.energizeCallback = func(sessionID string, a string) error { got = a; return nil }
 	result, _ := m.Update(key("t"))
 	updated := result.(Model)
 	if got != "stretch" {
@@ -690,7 +737,7 @@ func TestModel_Energize_StretchKey(t *testing.T) {
 func TestModel_Energize_ExerciseKey(t *testing.T) {
 	var got string
 	m := completedMakeTimeModel()
-	m.energizeCallback = func(a string) error { got = a; return nil }
+	m.energizeCallback = func(sessionID string, a string) error { got = a; return nil }
 	result, _ := m.Update(key("e"))
 	updated := result.(Model)
 	if got != "exercise" {
@@ -704,7 +751,7 @@ func TestModel_Energize_ExerciseKey(t *testing.T) {
 func TestModel_Energize_NoneKey(t *testing.T) {
 	var got string
 	m := completedMakeTimeModel()
-	m.energizeCallback = func(a string) error { got = a; return nil }
+	m.energizeCallback = func(sessionID string, a string) error { got = a; return nil }
 	result, _ := m.Update(key("n"))
 	updated := result.(Model)
 	if got != "none" {
@@ -719,7 +766,7 @@ func TestModel_Energize_RequiresFocusScoreFirst(t *testing.T) {
 	var got string
 	m := completedMakeTimeModel()
 	m.focusScoreSaved = false // not yet saved
-	m.energizeCallback = func(a string) error { got = a; return nil }
+	m.energizeCallback = func(sessionID string, a string) error { got = a; return nil }
 	m.Update(key("w"))
 	if got != "" {
 		t.Error("energize should not be recorded before focus score is saved")
@@ -733,7 +780,7 @@ func TestInlineModel_Energize_WalkKey(t *testing.T) {
 	m.completed = true
 	m.completedType = domain.SessionTypeWork
 	m.focusScoreSaved = true
-	m.energizeCallback = func(a string) error { got = a; return nil }
+	m.energizeCallback = func(sessionID string, a string) error { got = a; return nil }
 
 	m.Update(key("w"))
 
@@ -849,5 +896,210 @@ func TestEnergizeTicks_IsAtLeast30(t *testing.T) {
 	// Set to 30, decremented once on same tick → 29; total display = 30 ticks
 	if updated.energizeTicks < 29 {
 		t.Errorf("energizeTicks should be >= 29 after trigger tick (30 - 1 decrement), got %d", updated.energizeTicks)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// [s] Start key post-completion is gated by prompts
+// ---------------------------------------------------------------------------
+
+func TestModel_StartKey_BlockedUntilPromptsComplete(t *testing.T) {
+	cb, cmds := commandTracker()
+	m := NewModel(stateNoSession(), nil, nil)
+	m.mode = methodology.ForMethodology(domain.MethodologyMakeTime, nil)
+	m.completed = true
+	m.completedSessionType = domain.SessionTypeWork
+	m.commandCallback = cb
+
+	m.Update(key("s"))
+
+	if len(*cmds) > 0 {
+		t.Errorf("[s] after completion should NOT start before prompts are done, got %v", *cmds)
+	}
+}
+
+func TestModel_StartKey_StartsWhenPromptsComplete(t *testing.T) {
+	cb, cmds := commandTracker()
+	s := activeSession()
+	m := NewModel(&domain.CurrentState{ActiveSession: s, TodayStats: domain.DailyStats{WorkSessions: 1}}, nil, nil)
+	m.mode = methodology.ForMethodology(domain.MethodologyMakeTime, nil)
+	m.completed = true
+	m.completedSessionType = domain.SessionTypeWork
+	m.focusScoreSaved = true
+	m.energizeSaved = true
+	m.commandCallback = cb
+
+	m.Update(key("s"))
+
+	if len(*cmds) == 0 || (*cmds)[0] != ports.CmdStart {
+		t.Errorf("[s] when prompts done should call CmdStart, got %v", *cmds)
+	}
+}
+
+func TestInlineModel_StartKey_AfterCompletionGated(t *testing.T) {
+	cb, cmds := commandTracker()
+	m := baseInlineModel()
+	m.mode = methodology.ForMethodology(domain.MethodologyMakeTime, nil)
+	m.completed = true
+	m.completedType = domain.SessionTypeWork
+	m.commandCallback = cb
+
+	m.Update(key("s"))
+
+	if len(*cmds) > 0 {
+		t.Errorf("[s] inline after completion should NOT start before prompts are done, got %v", *cmds)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Captured session ID threading
+// ---------------------------------------------------------------------------
+
+func TestModel_ShutdownRitual_CallbackGetsCompletedSessionID(t *testing.T) {
+	var gotSessionID string
+	m := NewModel(stateWithSession(), nil, nil)
+	m.mode = methodology.ForMethodology(domain.MethodologyDeepWork, nil)
+	m.completedSessionID = "session-123"
+	m.shutdownRitualCallback = func(sessionID string, r domain.ShutdownRitual) error {
+		gotSessionID = sessionID
+		return nil
+	}
+	m.shutdownRitualMode = true
+	m.shutdownStep = 3
+
+	m.updateShutdownRitual(key("enter"))
+
+	if gotSessionID != "session-123" {
+		t.Errorf("shutdown ritual callback should get captured session ID, got %q", gotSessionID)
+	}
+}
+
+func TestModel_FocusScore_CallbackGetsCompletedSessionID(t *testing.T) {
+	var gotSessionID string
+	m := NewModel(stateNoSession(), nil, nil)
+	m.mode = methodology.ForMethodology(domain.MethodologyMakeTime, nil)
+	m.completed = true
+	m.completedSessionType = domain.SessionTypeWork
+	m.completedSessionID = "sess-9"
+	m.focusScoreCallback = func(sessionID string, score int) error { gotSessionID = sessionID; return nil }
+
+	m.Update(key("4"))
+
+	if gotSessionID != "sess-9" {
+		t.Errorf("focus score callback should get captured session ID, got %q", gotSessionID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// [m]ode key — inline confirms before cancelling session
+// ---------------------------------------------------------------------------
+
+func TestInlineModel_ModeKey_FirstPressShowsConfirm(t *testing.T) {
+	cb, cmds := commandTracker()
+	m := baseInlineModel()
+	m.commandCallback = cb
+
+	result, _ := m.Update(key("m"))
+	updated := result.(InlineModel)
+
+	if !updated.confirmMode {
+		t.Error("first [m] press should set confirmMode = true")
+	}
+	if len(*cmds) > 0 {
+		t.Errorf("first [m] press must NOT cancel yet, got %v", *cmds)
+	}
+}
+
+func TestInlineModel_ModeKey_SecondPressCancelsAndGoesToModePicker(t *testing.T) {
+	cb, cmds := commandTracker()
+	m := baseInlineModel()
+	m.commandCallback = cb
+	m.confirmMode = true
+
+	result, _ := m.Update(key("m"))
+	updated := result.(InlineModel)
+
+	if updated.confirmMode {
+		t.Error("second [m] press should clear confirmMode")
+	}
+	if len(*cmds) == 0 || (*cmds)[0] != ports.CmdCancel {
+		t.Errorf("second [m] press should call CmdCancel, got %v", *cmds)
+	}
+	if updated.phase != phasePickMode {
+		t.Errorf("[m] confirm should lead to mode picker, got phase %d", updated.phase)
+	}
+}
+
+func TestInlineModel_ModeKey_NoActiveSessionSwitchesImmediately(t *testing.T) {
+	cb, cmds := commandTracker()
+	m := NewInlineModel(stateNoSession(), nil, nil)
+	m.phase = phaseTimer
+	m.commandCallback = cb
+
+	result, _ := m.Update(key("m"))
+	updated := result.(InlineModel)
+
+	if updated.phase != phasePickMode {
+		t.Errorf("[m] with no active session should go straight to mode picker, got phase %d", updated.phase)
+	}
+	if len(*cmds) > 0 {
+		t.Errorf("[m] with no active session should not cancel, got %v", *cmds)
+	}
+}
+
+func TestInlineModel_ModeKey_EscResetsConfirm(t *testing.T) {
+	m := baseInlineModel()
+	m.confirmMode = true
+
+	result, _ := m.Update(key("esc"))
+	updated := result.(InlineModel)
+
+	if updated.confirmMode {
+		t.Error("esc should reset confirmMode")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Shutdown ritual step labels progress to /4
+// ---------------------------------------------------------------------------
+
+func TestModel_ShutdownRitual_ViewShowsFourSteps(t *testing.T) {
+	m := NewModel(stateWithSession(), nil, nil)
+	m.mode = methodology.ForMethodology(domain.MethodologyDeepWork, nil)
+	m.width = 80
+	m.height = 24
+	m.completed = true
+	m.completedSessionType = domain.SessionTypeWork
+	m.shutdownRitualMode = true
+	m.shutdownStep = 0
+
+	view := m.View()
+	if !strings.Contains(view, "/4") {
+		t.Errorf("shutdown ritual should display step /4, got view:\n%s", view)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Inline chaining: pre-select last task for fast repeat
+// ---------------------------------------------------------------------------
+
+func TestInlineModel_Chaining_PreselectsLastTask(t *testing.T) {
+	m := baseInlineModel()
+	m.lastTaskTitle = "Write report"
+	m.recentTasks = []*domain.Task{
+		{Title: "Write report"},
+		{Title: "Read docs"},
+	}
+	m.yesterdayHighlight = nil
+	m.mode = methodology.ForMethodology(domain.MethodologyPomodoro, nil)
+
+	result, _ := m.advanceToTaskPhase()
+	updated := result.(InlineModel)
+
+	if updated.phase != phaseTaskSelect {
+		t.Fatalf("expected phaseTaskSelect, got %d", updated.phase)
+	}
+	if updated.taskSelectCursor != 0 {
+		t.Errorf("cursor should land on the chained 'Write report' task, got %d", updated.taskSelectCursor)
 	}
 }

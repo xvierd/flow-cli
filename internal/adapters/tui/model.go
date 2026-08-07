@@ -59,10 +59,10 @@ type Model struct {
 	commandCallback         func(ports.TimerCommand) error
 	onSessionComplete       func(domain.SessionType)
 	distractionCallback     func(string, string) error
-	accomplishmentCallback  func(string) error
-	focusScoreCallback      func(int) error
-	energizeCallback        func(string) error
-	outcomeAchievedCallback func(string) error
+	accomplishmentCallback  func(sessionID string, text string) error
+	focusScoreCallback      func(sessionID string, score int) error
+	energizeCallback        func(sessionID string, activity string) error
+	outcomeAchievedCallback func(sessionID string, achieved string) error
 	completionInfo          *domain.CompletionInfo
 	theme                   config.ThemeConfig
 	mode                    methodology.Mode
@@ -197,12 +197,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.showDailySummaryOrQuit()
 			}
 		case "s":
-			if m.completed && m.commandCallback != nil {
-				_ = m.commandCallback(ports.CmdStart)
-				m.completed = false
-				m.notified = false
-				m.confirmBreak = false
-				m.resetCompletionState()
+			if m.completed {
+				// Only allow starting a new session once completion prompts are satisfied
+				if !m.completionPromptsComplete() {
+					return m, nil
+				}
+				if m.commandCallback != nil {
+					_ = m.commandCallback(ports.CmdStart)
+					m.completed = false
+					m.notified = false
+					m.confirmBreak = false
+					m.resetCompletionState()
+				}
 			} else if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.IsBreakSession() && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdStop)
 				_ = m.commandCallback(ports.CmdStart)
@@ -259,7 +265,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusScore = &score
 				m.focusScoreSaved = true
 				if m.focusScoreCallback != nil {
-					_ = m.focusScoreCallback(score)
+					_ = m.focusScoreCallback(m.completedSessionID, score)
 				}
 			}
 		case "w":
@@ -267,7 +273,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.energizeActivity = "walk"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
-					_ = m.energizeCallback("walk")
+					_ = m.energizeCallback(m.completedSessionID, "walk")
 				}
 			}
 		case "t":
@@ -275,7 +281,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.energizeActivity = "stretch"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
-					_ = m.energizeCallback("stretch")
+					_ = m.energizeCallback(m.completedSessionID, "stretch")
 				}
 			}
 		case "e":
@@ -283,7 +289,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.energizeActivity = "exercise"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
-					_ = m.energizeCallback("exercise")
+					_ = m.energizeCallback(m.completedSessionID, "exercise")
 				}
 			}
 		case "n":
@@ -292,7 +298,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.energizeActivity = "none"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
-					_ = m.energizeCallback("none")
+					_ = m.energizeCallback(m.completedSessionID, "none")
 				}
 				return m, nil
 			}
@@ -392,6 +398,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.state != nil {
 			// Detect session completion: had a session before, now it's gone
 			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
+				m.completedSessionID = m.state.ActiveSession.ID
 				m.completedSessionType = m.state.ActiveSession.Type
 				m.completedElapsed = m.state.ActiveSession.Duration
 				m.completedIntendedOutcome = m.state.ActiveSession.IntendedOutcome
@@ -461,7 +468,7 @@ func (m Model) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, handleAccomplishmentInput(&m.completionState, cb, msg)
 }
 
-// updateShutdownRitual handles the 3-step shutdown ritual input.
+// updateShutdownRitual handles the 4-step shutdown ritual input.
 func (m Model) updateShutdownRitual(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cb := &completionCallbacks{
 		shutdownRitualCallback: m.shutdownRitualCallback,
@@ -664,7 +671,7 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 
 	sections = append(sections, "")
 	if m.shutdownRitualMode {
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("Shutdown Ritual (step %d/3):", m.shutdownStep+1)))
+		sections = append(sections, statusStyle.Render(fmt.Sprintf("Shutdown Ritual (step %d/4):", m.shutdownStep+1)))
 		sections = append(sections, helpStyle.Render(shutdownStepLabels[m.shutdownStep]))
 		sections = append(sections, m.shutdownInputs[m.shutdownStep].View())
 		sections = append(sections, helpStyle.Render("enter save/skip step · esc exit ritual"))
@@ -843,7 +850,7 @@ func (m Model) viewActiveSession(sections []string) []string {
 		sections = append(sections, "")
 		if m.distractionCategoryMode {
 			sections = append(sections, helpStyle.Render(fmt.Sprintf("Categorize: %s", m.distractionPendingText)))
-			sections = append(sections, helpStyle.Render("[i]nternal  [e]xternal  [enter] skip category"))
+			sections = append(sections, helpStyle.Render("[i]nternal  [e]xternal  [enter] no category  [esc] cancel"))
 		} else {
 			sections = append(sections, helpStyle.Render("Log distraction: ")+m.distractionInput.View())
 			sections = append(sections, helpStyle.Render("enter save · esc cancel"))

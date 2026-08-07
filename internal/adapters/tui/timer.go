@@ -19,11 +19,11 @@ type Timer struct {
 	commandCallback         func(ports.TimerCommand) error
 	onSessionComplete       func(domain.SessionType)
 	distractionCallback     func(string, string) error
-	accomplishmentCallback  func(string) error
-	shutdownRitualCallback  func(domain.ShutdownRitual) error
-	focusScoreCallback      func(int) error
-	energizeCallback        func(string) error
-	outcomeAchievedCallback func(string) error
+	accomplishmentCallback  func(sessionID string, text string) error
+	shutdownRitualCallback  func(sessionID string, ritual domain.ShutdownRitual) error
+	focusScoreCallback      func(sessionID string, score int) error
+	energizeCallback        func(sessionID string, activity string) error
+	outcomeAchievedCallback func(sessionID string, achieved string) error
 	completionInfo          *domain.CompletionInfo
 	theme                   *config.ThemeConfig
 	inline                  bool
@@ -67,11 +67,11 @@ type TimerConfig struct {
 	CommandCallback         func(ports.TimerCommand) error
 	OnSessionComplete       func(domain.SessionType)
 	DistractionCallback     func(string, string) error
-	AccomplishmentCallback  func(string) error
-	ShutdownRitualCallback  func(domain.ShutdownRitual) error
-	FocusScoreCallback      func(int) error
-	EnergizeCallback        func(string) error
-	OutcomeAchievedCallback func(string) error
+	AccomplishmentCallback  func(sessionID string, text string) error
+	ShutdownRitualCallback  func(sessionID string, ritual domain.ShutdownRitual) error
+	FocusScoreCallback      func(sessionID string, score int) error
+	EnergizeCallback        func(sessionID string, activity string) error
+	OutcomeAchievedCallback func(sessionID string, achieved string) error
 	CompletionInfo          *domain.CompletionInfo
 	AutoBreak               bool
 	NotificationsEnabled    bool
@@ -266,17 +266,17 @@ func (t *Timer) SetDistractionCallback(callback func(text string, category strin
 }
 
 // SetAccomplishmentCallback sets a callback for recording accomplishments (Deep Work shutdown ritual).
-func (t *Timer) SetAccomplishmentCallback(callback func(text string) error) {
+func (t *Timer) SetAccomplishmentCallback(callback func(sessionID string, text string) error) {
 	t.accomplishmentCallback = callback
 }
 
-// SetShutdownRitualCallback sets a callback for recording the 3-step shutdown ritual (Deep Work mode).
-func (t *Timer) SetShutdownRitualCallback(callback func(domain.ShutdownRitual) error) {
+// SetShutdownRitualCallback sets a callback for recording the 4-step shutdown ritual (Deep Work mode).
+func (t *Timer) SetShutdownRitualCallback(callback func(sessionID string, ritual domain.ShutdownRitual) error) {
 	t.shutdownRitualCallback = callback
 }
 
 // SetFocusScoreCallback sets a callback for recording focus scores (Make Time).
-func (t *Timer) SetFocusScoreCallback(callback func(score int) error) {
+func (t *Timer) SetFocusScoreCallback(callback func(sessionID string, score int) error) {
 	t.focusScoreCallback = callback
 }
 
@@ -291,7 +291,7 @@ func (t *Timer) SetFirstRun(firstRun bool) {
 }
 
 // SetEnergizeCallback sets a callback for recording energize activities (Make Time).
-func (t *Timer) SetEnergizeCallback(callback func(activity string) error) {
+func (t *Timer) SetEnergizeCallback(callback func(sessionID string, activity string) error) {
 	t.energizeCallback = callback
 }
 

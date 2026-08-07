@@ -57,6 +57,9 @@ type InlineModel struct {
 	outcomeInput    textinput.Model
 	intendedOutcome string
 
+	// Chaining: remembers the previous session's task for a frictionless repeat
+	lastTaskTitle string
+
 	// Timer state
 	state                   *domain.CurrentState
 	progress                progress.Model
@@ -67,14 +70,15 @@ type InlineModel struct {
 	notified                bool
 	confirmBreak            bool
 	confirmFinish           bool
+	confirmMode             bool
 	fetchState              func() *domain.CurrentState
 	commandCallback         func(ports.TimerCommand) error
 	onSessionComplete       func(domain.SessionType)
 	distractionCallback     func(string, string) error
-	accomplishmentCallback  func(string) error
-	focusScoreCallback      func(int) error
-	energizeCallback        func(string) error
-	outcomeAchievedCallback func(string) error
+	accomplishmentCallback  func(sessionID string, text string) error
+	focusScoreCallback      func(sessionID string, score int) error
+	energizeCallback        func(sessionID string, activity string) error
+	outcomeAchievedCallback func(sessionID string, achieved string) error
 	completionInfo          *domain.CompletionInfo
 	theme                   config.ThemeConfig
 
@@ -276,12 +280,18 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.showDailySummaryOrQuit()
 			}
 		case "s":
-			if m.completed && m.commandCallback != nil {
-				_ = m.commandCallback(ports.CmdStart)
-				m.completed = false
-				m.notified = false
-				m.confirmBreak = false
-				m.resetCompletionState()
+			if m.completed {
+				// Only allow starting a new session once completion prompts are satisfied
+				if !m.completionPromptsComplete() {
+					return m, nil
+				}
+				if m.commandCallback != nil {
+					_ = m.commandCallback(ports.CmdStart)
+					m.completed = false
+					m.notified = false
+					m.confirmBreak = false
+					m.resetCompletionState()
+				}
 			} else if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.IsBreakSession() && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdStop)
 				_ = m.commandCallback(ports.CmdStart)
@@ -334,7 +344,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusScore = &score
 				m.focusScoreSaved = true
 				if m.focusScoreCallback != nil {
-					_ = m.focusScoreCallback(score)
+					_ = m.focusScoreCallback(m.completedSessionID, score)
 				}
 			}
 		case "w":
@@ -342,7 +352,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.energizeActivity = "walk"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
-					_ = m.energizeCallback("walk")
+					_ = m.energizeCallback(m.completedSessionID, "walk")
 				}
 			}
 		case "t":
@@ -350,7 +360,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.energizeActivity = "stretch"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
-					_ = m.energizeCallback("stretch")
+					_ = m.energizeCallback(m.completedSessionID, "stretch")
 				}
 			}
 		case "e":
@@ -358,7 +368,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.energizeActivity = "exercise"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
-					_ = m.energizeCallback("exercise")
+					_ = m.energizeCallback(m.completedSessionID, "exercise")
 				}
 			}
 		case "n":
@@ -367,14 +377,13 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.energizeActivity = "none"
 				m.energizeSaved = true
 				if m.energizeCallback != nil {
-					_ = m.energizeCallback("none")
+					_ = m.energizeCallback(m.completedSessionID, "none")
 				}
 				return m, nil
 			}
-			// Session chaining: start new session
+			// Session chaining: start new session with the same methodology and last preset
 			if m.completed && m.completionPromptsComplete() {
 				m.phase = phasePickDuration
-				m.presetCursor = 0
 				m.completed = false
 				m.notified = false
 				m.resetCompletionState()
@@ -428,14 +437,33 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.resetCompletionState()
 			}
 		case "m":
-			// Switch mode: cancel active session (if any) and go back to mode picker
-			if !m.completed && m.state.ActiveSession != nil && m.commandCallback != nil {
-				_ = m.commandCallback(ports.CmdCancel)
+			// Switch mode. If a session is active, confirm before cancelling it.
+			if !m.completed && m.state.ActiveSession != nil {
+				if m.confirmMode {
+					m.confirmMode = false
+					m.confirmFinish = false
+					m.confirmBreak = false
+					if m.commandCallback != nil {
+						_ = m.commandCallback(ports.CmdCancel)
+					}
+					m.completed = false
+					m.notified = false
+					m.resetCompletionState()
+					m.phase = phasePickMode
+					m.modeLocked = false
+					return m, nil
+				}
+				m.confirmMode = true
+				m.confirmFinish = false
+				m.confirmBreak = false
+				return m, nil
 			}
-			m.completed = false
-			m.notified = false
+			// No active session: switch mode immediately
+			m.confirmMode = false
 			m.confirmFinish = false
 			m.confirmBreak = false
+			m.completed = false
+			m.notified = false
 			m.resetCompletionState()
 			m.phase = phasePickMode
 			m.modeLocked = false
@@ -443,6 +471,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			m.confirmBreak = false
 			m.confirmFinish = false
+			m.confirmMode = false
 		}
 
 	case tickMsg:
@@ -477,9 +506,13 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateMsg:
 		if msg.state != nil {
 			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
+				m.completedSessionID = m.state.ActiveSession.ID
 				m.completedType = m.state.ActiveSession.Type
 				m.completedElapsed = m.state.ActiveSession.Duration
 				m.completedIntendedOutcome = m.state.ActiveSession.IntendedOutcome
+				if m.state.ActiveTask != nil {
+					m.lastTaskTitle = m.state.ActiveTask.Title
+				}
 				m.completed = true
 				if !m.notified && m.onSessionComplete != nil {
 					m.onSessionComplete(m.completedType)
@@ -510,44 +543,13 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *InlineModel) resetCompletionState() {
 	m.completedElapsed = 0
-	m.accomplishmentSaved = false
-	m.focusScore = nil
-	m.focusScoreSaved = false
-	m.distractions = nil
-	m.distractionReviewMode = false
-	m.distractionReviewDone = false
-	m.outcomeReviewMode = false
-	m.outcomeReviewDone = false
-	m.outcomeAchieved = ""
-	m.energizeActivity = ""
-	m.energizeSaved = false
-	m.shutdownRitualMode = false
-	m.shutdownStep = 0
-	m.shutdownComplete = false
-	m.completedIntendedOutcome = ""
+	m.reset()
 }
 
 // completionPromptsComplete returns true when all mode-specific completion prompts are done.
+// Delegates to the shared completionState logic so Model and InlineModel stay in sync.
 func (m InlineModel) completionPromptsComplete() bool {
-	if m.mode == nil {
-		return true
-	}
-	// Deep Work: need shutdown ritual complete (or accomplishment saved) and distraction review
-	if m.mode.HasShutdownRitual() && m.completedType == domain.SessionTypeWork {
-		if !m.shutdownComplete && !m.accomplishmentSaved {
-			return false
-		}
-		if len(m.distractions) > 0 && !m.distractionReviewDone {
-			return false
-		}
-		return true
-	}
-	// Make Time: need focus score and energize activity
-	if m.mode.HasFocusScore() && m.completedType == domain.SessionTypeWork {
-		return m.focusScoreSaved && m.energizeSaved
-	}
-	// Pomodoro or break: always ready
-	return true
+	return m.promptsDone(m.mode, m.completedType)
 }
 
 // --- View ---
@@ -681,7 +683,7 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 		if m.distractionCategoryMode {
 			b.WriteString(dim.Render(fmt.Sprintf("  Categorize: %s", m.distractionPendingText)))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("  [i]nternal  [e]xternal  [enter] skip category"))
+			b.WriteString(dim.Render("  [i]nternal  [e]xternal  [enter] no category  [esc] cancel"))
 			b.WriteString("\n")
 		} else {
 			b.WriteString(dim.Render("  Distraction: ") + m.distractionInput.View())
@@ -724,7 +726,9 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	}
 
 	// Help
-	if m.confirmFinish {
+	if m.confirmMode {
+		b.WriteString(dim.Render("  Switch mode? This cancels the current session  [m] confirm  [esc] cancel"))
+	} else if m.confirmFinish {
 		b.WriteString(dim.Render("  Stop session? [f] confirm  [esc] cancel  [m]ode"))
 	} else if m.confirmBreak {
 		b.WriteString(dim.Render("  Start break? [b] confirm  [esc] cancel  [m]ode"))
@@ -826,7 +830,7 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 	b.WriteString("\n")
 
 	if m.shutdownRitualMode {
-		b.WriteString(accent.Render(fmt.Sprintf("  Shutdown Ritual (step %d/3):", m.shutdownStep+1)))
+		b.WriteString(accent.Render(fmt.Sprintf("  Shutdown Ritual (step %d/4):", m.shutdownStep+1)))
 		b.WriteString("\n")
 		b.WriteString(dim.Render("  " + shutdownStepLabels[m.shutdownStep]))
 		b.WriteString("\n")

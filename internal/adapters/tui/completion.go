@@ -27,7 +27,7 @@ type completionState struct {
 	shutdownStep           int // 0=pending tasks, 1=calendar review, 2=tomorrow plan, 3=closing phrase
 	shutdownInputs         [4]textinput.Model
 	shutdownComplete       bool
-	shutdownRitualCallback func(domain.ShutdownRitual) error
+	shutdownRitualCallback func(sessionID string, ritual domain.ShutdownRitual) error
 
 	// Deep Work: distraction review (shown after accomplishment in shutdown ritual)
 	distractionReviewMode bool
@@ -54,8 +54,12 @@ type completionState struct {
 	autoBreak      bool
 	autoBreakTicks int
 
-	// Shared: intended outcome captured at session completion (Deep Work)
+	// Shared: captured at session completion (Deep Work)
 	completedIntendedOutcome string
+	// completedSessionID is the ID of the session that just completed, captured
+	// when completion is detected so post-completion callbacks can target the
+	// correct session even if chaining or auto-break has already started a new one.
+	completedSessionID string
 }
 
 // reset clears all mode-specific completion state, ready for the next session.
@@ -75,6 +79,7 @@ func (c *completionState) reset() {
 	c.shutdownStep = 0
 	c.shutdownComplete = false
 	c.completedIntendedOutcome = ""
+	c.completedSessionID = ""
 }
 
 // promptsDone returns true when all mode-specific completion prompts are satisfied,

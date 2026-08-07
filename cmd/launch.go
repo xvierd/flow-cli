@@ -128,40 +128,35 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			}
 			return app.pomodoro.LogDistraction(ctx, activeState.ActiveSession.ID, text, category)
 		},
-		AccomplishmentCallback: func(text string) error {
-			recent, err := app.pomodoro.GetRecentSessions(ctx, 1)
-			if err != nil || len(recent) == 0 {
+		AccomplishmentCallback: func(sessionID string, text string) error {
+			if sessionID == "" {
 				return nil
 			}
-			return app.pomodoro.SetAccomplishment(ctx, recent[0].ID, text)
+			return app.pomodoro.SetAccomplishment(ctx, sessionID, text)
 		},
-		ShutdownRitualCallback: func(ritual domain.ShutdownRitual) error {
-			recent, err := app.pomodoro.GetRecentSessions(ctx, 1)
-			if err != nil || len(recent) == 0 {
+		ShutdownRitualCallback: func(sessionID string, ritual domain.ShutdownRitual) error {
+			if sessionID == "" {
 				return nil
 			}
-			return app.pomodoro.SetShutdownRitual(ctx, recent[0].ID, ritual)
+			return app.pomodoro.SetShutdownRitual(ctx, sessionID, ritual)
 		},
-		FocusScoreCallback: func(score int) error {
-			recent, err := app.pomodoro.GetRecentSessions(ctx, 1)
-			if err != nil || len(recent) == 0 {
+		FocusScoreCallback: func(sessionID string, score int) error {
+			if sessionID == "" {
 				return nil
 			}
-			return app.pomodoro.SetFocusScore(ctx, recent[0].ID, score)
+			return app.pomodoro.SetFocusScore(ctx, sessionID, score)
 		},
-		EnergizeCallback: func(activity string) error {
-			recent, err := app.pomodoro.GetRecentSessions(ctx, 1)
-			if err != nil || len(recent) == 0 {
+		EnergizeCallback: func(sessionID string, activity string) error {
+			if sessionID == "" {
 				return nil
 			}
-			return app.pomodoro.SetEnergizeActivity(ctx, recent[0].ID, activity)
+			return app.pomodoro.SetEnergizeActivity(ctx, sessionID, activity)
 		},
-		OutcomeAchievedCallback: func(achieved string) error {
-			recent, err := app.pomodoro.GetRecentSessions(ctx, 1)
-			if err != nil || len(recent) == 0 {
+		OutcomeAchievedCallback: func(sessionID string, achieved string) error {
+			if sessionID == "" {
 				return nil
 			}
-			return app.pomodoro.SetOutcomeAchieved(ctx, recent[0].ID, achieved)
+			return app.pomodoro.SetOutcomeAchieved(ctx, sessionID, achieved)
 		},
 		OnSessionComplete: func(sessionType domain.SessionType) {
 			if app.notifier == nil || !app.notifier.IsEnabled() {

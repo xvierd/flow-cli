@@ -316,13 +316,29 @@ func (m InlineModel) advanceToTaskPhase() (tea.Model, tea.Cmd) {
 	}
 	if len(m.recentTasks) > 0 || m.yesterdayHighlight != nil {
 		m.phase = phaseTaskSelect
-		m.taskSelectCursor = 0
+		// Pre-select the previous (chained) task so a fast repeat is one Enter away.
+		m.taskSelectCursor = m.repeatTaskCursor(0)
 		return m, nil
 	}
 	// No recent tasks, skip to task name input
 	m.phase = phaseTaskName
+	m.taskInput.SetValue(m.lastTaskTitle)
 	m.taskInput.Focus()
 	return m, m.taskInput.Cursor.BlinkCmd()
+}
+
+// repeatTaskCursor returns the task-select index of the last chained task, defaulting to fallback.
+func (m InlineModel) repeatTaskCursor(fallback int) int {
+	if m.lastTaskTitle == "" {
+		return fallback
+	}
+	base := m.taskSelectRecentBaseIdx()
+	for i, task := range m.recentTasks {
+		if task.Title == m.lastTaskTitle {
+			return base + i
+		}
+	}
+	return fallback
 }
 func (m InlineModel) updatePickDuration(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -737,11 +753,12 @@ func (m InlineModel) advanceFromLaserChecklist() (tea.Model, tea.Cmd) {
 	}
 	if len(m.recentTasks) > 0 || m.yesterdayHighlight != nil {
 		m.phase = phaseTaskSelect
-		m.taskSelectCursor = 0
+		m.taskSelectCursor = m.repeatTaskCursor(0)
 		return m, nil
 	}
 	// No recent tasks, skip to task name input
 	m.phase = phaseTaskName
+	m.taskInput.SetValue(m.lastTaskTitle)
 	m.taskInput.Focus()
 	return m, m.taskInput.Cursor.BlinkCmd()
 }
