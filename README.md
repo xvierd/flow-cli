@@ -1,8 +1,15 @@
 # Flow
 
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+> The AI-native focus CLI — Pomodoro, Deep Work & Make Time from your terminal, with an MCP server your AI agents can drive.
 
-A productivity CLI that gets out of your way. Built in Go with an interactive TUI, git awareness, and AI assistant integration. Supports three focus methodologies: Pomodoro, Deep Work, and Make Time.
+![CI](https://img.shields.io/github/actions/workflow/status/xvierd/flow-cli/ci.yml?branch=main)
+![Go](https://img.shields.io/github/go-version/xvierd/flow-cli)
+![Release](https://img.shields.io/github/v/release/xvierd/flow-cli?sort=semver)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/xvierd/flow-cli)](https://goreportcard.com/report/github.com/xvierd/flow-cli)
+![MCP Server](https://img.shields.io/badge/MCP%20Server-compatible-8A2BE2)
+
+Flow is a productivity CLI that gets out of your way. Built in Go with an interactive TUI, git awareness, and a full MCP server that lets Claude Code, Cursor, and other agents read and write your focus state. Supports three focus methodologies: **Pomodoro**, **Deep Work**, and **Make Time**.
 
 ```
 $ flow
@@ -11,6 +18,7 @@ $ flow
   > Start session
     View stats
     Reflect
+    Report
 
   Mode:
   > Pomodoro    Classic 25/5 timer
@@ -31,26 +39,26 @@ $ flow
        ██░░░░░░░░░░░░░░░░░░░░░░░░░░
        🌿 main (a5e7d58)
 
-       📊 Today: 3 work sessions, 1 breaks, 1h15m worked
+       📊 Today: 3 work sessions, 1 break, 1h15m worked
 
        [s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit
 ```
 
-## Why
+## Why Flow
 
-Most pomodoro apps are either too heavy (Electron apps with accounts and syncing) or too simple (a bash timer). Flow sits in between: it tracks your tasks, knows what git branch you're on, and integrates with AI coding assistants - all from the terminal.
+Most productivity timers are either too heavy (Electron apps with accounts, cloud sync, and onboarding flows) or too trivial (a `sleep` script in your shell). Flow sits in between:
+
+- **Flow stays in the terminal.** No new window, no login, no telemetry. Just a TUI that tracks your tasks, knows which git branch you're on, and persists everything to a local SQLite database.
+- **Flow structures your focus, not just your time.** Three methodologies with real ceremonies — Deep Work shutdown ritual, Make Time highlight + focus score, Pomodoro break cycles.
+- **Flow is AI-native.** Agents can *see* and *change* your state through the MCP server: your Claude Code status line shows the live timer, and any MCP-capable agent can start a session, log a distraction, or read your weekly report without leaving the conversation.
 
 ## Install
 
 ```bash
-# Homebrew (macOS)
-brew tap xvierd/tap
-brew install flow
-
 # Go
 go install github.com/xvierd/flow-cli/cmd/flow@latest
 
-# Script
+# Script (installs to ~/.local/bin)
 curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/install.sh | sh
 
 # From source
@@ -58,78 +66,75 @@ git clone https://github.com/xvierd/flow-cli.git
 cd flow-cli && go build -o flow ./cmd/flow
 ```
 
-## Uninstall
-
-```bash
-curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/uninstall.sh | sh
-
-# Or if installed via Homebrew
-brew uninstall flow
-```
-
-## Methodology Modes
-
-Flow supports three productivity methodologies. Pick one from the main menu or set a default with `--mode`.
-
-| Mode | Description | Session Presets |
-|------|-------------|-----------------|
-| **Pomodoro** | Classic 25/5 timer with long break every 4 sessions | Focus (25m), Short (15m), Deep (50m) |
-| **Deep Work** | Longer sessions with distraction logging and shutdown ritual | Deep (90m), Focus (50m), Shallow (25m) |
-| **Make Time** | Daily Highlight, focus scoring, and energize reminders | Highlight (60m), Sprint (25m), Quick (15m) |
-
-Set a default mode in config:
-
-```toml
-methodology = "deepwork"   # pomodoro, deepwork, or maketime
-```
-
-Or pass it per-session:
-
-```bash
-flow --mode deepwork
-```
+Uninstall with `curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/uninstall.sh | sh`.
 
 ## Quick Start
 
 ```bash
-# Just type flow - the interactive wizard handles the rest
-flow
+flow                        # interactive wizard (main menu, task, session)
+flow add "Fix auth bug"     # create a task
+flow start                 # start a session for the active task
+flow status                 # current session + today's stats
+flow stats                  # productivity dashboard
+flow reflect                # weekly reflection
+flow report --week          # aggregated weekly report (terminal / md / csv / json)
+flow report --week -fmd -o report.md
+flow break                   # take a break
+flow complete <id>           # mark a task done
+flow mcp                     # start the MCP server
+```
 
-# Or use commands directly
-flow add "Fix auth bug"        # create a task
-flow start abc123              # start a pomodoro for that task
-flow status                    # check current state
-flow stats                     # view productivity dashboard
-flow reflect                   # weekly reflection
-flow break                     # take a break
-flow complete abc123           # mark task done
+Add `#tags` inline when naming a task to tag the session:
+
+```
+What are you working on? Fix login bug #backend #urgent
+```
+
+## Methodology Modes
+
+Flow ships three rigorously separated methodologies. Pick one from the main menu or set a default with `--mode` / `methodology` in config.
+
+| Mode | Description | Session Presets |
+|------|-------------|-----------------|
+| **Pomodoro** | Classic 25/5 timer with a long break every 4 sessions | Focus (25m), Short (15m), Deep (50m) |
+| **Deep Work** | Longer sessions, distraction log, intended outcome, 4-step shutdown ritual | Deep (90m), Focus (50m), Shallow (25m) |
+| **Make Time** | Daily Highlight, laser checklist, focus scoring, energize reminders | Highlight (60m), Sprint (25m), Quick (15m) |
+
+```toml
+methodology = "deepwork"   # pomodoro, deepwork, or maketime
 ```
 
 ## Commands
 
 | Command | What it does |
 |---------|-------------|
-| `flow` | Interactive wizard - main menu, mode picker, task, duration, start |
-| `flow add "title"` | Create a new task |
-| `flow list` | List tasks (`--all`, `--status pending`) |
-| `flow start [task-id]` | Start a pomodoro (`--task` flag also works) |
-| `flow status` | Show current session and daily stats |
-| `flow stats` | Productivity dashboard: sessions by mode, focus scores, hourly heatmap |
-| `flow reflect` | Weekly reflection: day-by-day breakdown, highlights, energize vs focus |
+| `flow` | Interactive wizard: main menu, mode picker, task, duration, start |
+| `flow add "title" [-t tag1,tag2]` | Create a new task |
+| `flow list [--all] [--status pending]` | List tasks |
+| `flow start [task-id]` | Start a session (`--task`, `--tags` flags also work) |
+| `flow stop` | Complete the active session (Deep Work shutdown ritual) |
+| `flow pause` / `flow resume` | Pause / resume the active session |
 | `flow break` | Start a short or long break |
-| `flow pause` | Pause the active session |
-| `flow resume` | Resume a paused session |
-| `flow stop` | Complete the current session |
+| `flow void` | Void a session due to interruption |
+| `flow status [--json]` | Current session + today's stats |
+| `flow stats [--period week|month]` | Productivity dashboard: sessions by mode, focus scores, heatmap |
+| `flow reflect [--today]` | Weekly reflection: day-by-day breakdown, highlights, focus |
+| `flow report [--week\|--month] [--format terminal\|md\|csv] [--out file] [--json]` | Aggregated report: daily breakdown, 24h heatmap, top tags, methodology focus |
+| `flow export [--format md|csv] [--period week|month|all]` | Raw session history dump |
 | `flow complete <id>` | Mark a task as completed |
+| `flow delete <id>` | Delete a task |
+| `flow config` | Configure presets, breaks, methodology, notifications |
+| `flow reset [--force]` | Wipe the database |
 | `flow mcp` | Start the MCP server |
 
 ### Global Flags
 
 | Flag | Description |
 |------|-------------|
-| `--mode <mode>` | Set methodology for this session: `pomodoro`, `deepwork`, `maketime` |
-| `--inline`, `-i` | Compact inline timer (no fullscreen TUI) |
-| `--json` | Output results in JSON format |
+| `--mode <pomodoro\|deepwork\|maketime>` | Methodology for this session (or default) |
+| `--strict` | Enforce strict focus mode for this session (see Focus Mode) |
+| `--inline`, `-i` | Compact inline timer (narrow terminals / non-TTY) |
+| `--json` | Machine-readable output |
 | `--db <path>` | Custom database path |
 
 ## Session Chaining
@@ -143,54 +148,81 @@ When a session completes, Flow shows a "What next?" menu instead of exiting. Cha
   [n]ew session  [b]reak  [q]uit
 ```
 
-- **`n`** -- start a new session (re-runs the full wizard: mode, task, duration)
-- **`b`** -- start a break (only after work sessions)
-- **`q`** -- quit the timer
+- **`n`** — start a new session (last methodology is pre-selected; your last task is the first option)
+- **`b`** — start a break (only after work sessions)
+- **`q`** — quit the timer
 
-The `[n]` option appears after all mode-specific prompts are done: immediately in Pomodoro, after the shutdown ritual in Deep Work, and after focus score + energize log in Make Time.
+`[n]` is unlocked only after the mode's ceremony is done: immediately in Pomodoro, after the 4-step shutdown ritual + distraction/outcome review in Deep Work, and after the focus score + energize log in Make Time.
 
-## Session Tagging
+## Deep Work Shutdown Ritual
 
-Add `#tags` inline when entering a task name. Tags are stored with the session for filtering and stats.
+Deep Work sessions end with a 4-step closing ritual — the same sequence the book prescribes:
 
+1. **Review pending tasks** — anything urgent left over?
+2. **Review tomorrow's calendar** — any conflicts?
+3. **Plan for tomorrow** — write tomorrow's plan
+4. **Closing phrase** — e.g. *"Shutdown complete"*
+
+Plus outcome review (`did you achieve your intended outcome?`) and a distraction review when applicable.
+
+## Focus Mode (Strict)
+
+Flow is distraction-free by default; **strict focus mode** makes it enforced, at the service layer — the CLI, TUI, and MCP all respect the same rules:
+
+```toml
+[focus]
+strict = true          # default false
 ```
-What are you working on? Fix login bug #backend #urgent
-```
+
+Or per-session with `flow start --strict`.
+
+In strict mode:
+
+- **Pausing is locked** while a work session is running.
+- **Stopping / voiding / cancelling** before 80% of the session is complete asks for `--force`.
+- **Breaks cannot be cancelled backwards** to jump back into work; `flow start` must be explicit.
+- The TUI shows a `🔒 STRICT` badge and the affected keys explain themselves; the MCP stop/pause tools return a descriptive error.
+
+Exiting strict enforcement: `flow stop --force`.
 
 ## TUI Key Bindings
 
-| Key | Action | Modes |
-|-----|--------|-------|
-| `s` | Start session | All |
-| `p` | Pause / Resume | All |
-| `b` | Start break | All |
-| `c` | Cancel session | All |
-| `x` | Stop session | All |
-| `q` | Quit | All |
-| `n` | New session (on completion screen) | All |
-| `d` | Log a distraction | Deep Work |
-| `a` | Record accomplishment (shutdown ritual) | Deep Work |
-| `r` | Review distractions (after accomplishment) | Deep Work |
-| `1`-`5` | Rate focus score | Make Time |
-| `w/t/e/n` | Log energize activity (walk/stretch/exercise/none) | Make Time |
+| Key | Action | Context |
+|-----|--------|---------|
+| `s` | Start session / skip break | Idle / break |
+| `p` | Pause / resume | Work or break |
+| `f` | Finish (stop) session | Work / break |
+| `x` | Finish session | Work (alias) |
+| `v` | Void session | Work |
+| `c` | Cancel / close session | Work / break |
+| `b`, `m` | Take a break | Work / inline |
+| `q` | Quit | Idle / completion |
+| `d` | Log a distraction (`,n` next) | Deep Work |
+| `r` | Review distractions | Deep Work completion |
+| `a` | Shutdown ritual | Deep Work completion |
+| `o` | Outcome review | Deep Work completion |
+| `1`–`5` | Rate focus score | Make Time |
+| `w`/`t`/`e`/`n` | Energize: walk / stretch / exercise / none | Make Time |
+| `tab` | Toggle notifications on/off | Any session |
+| `n` | New session | Completion screen |
+| `esc` | Back / cancel prompt | Any menu |
+| `ctrl+c` | Quit | Any |
 
 ## Claude Code Integration
 
 ### Status Line
 
-See your pomodoro timer in Claude Code's status bar:
+See your timer in Claude Code's status bar:
 
 ```
-[Opus 4.6] 12% ctx | 🍅 18:32 ███░░ Write API docs
+[Opus 4.6] 12% ctx | 🍅 18:52 ███░░ Write API docs
 ```
-
-Setup:
 
 ```bash
 cp scripts/claude-statusline.sh ~/.claude/flow-statusline.sh
 ```
 
-Add to `~/.claude/settings.json`:
+Then add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -203,7 +235,7 @@ Add to `~/.claude/settings.json`:
 
 ### MCP Server
 
-Let AI assistants read your flow state. Add to your editor's MCP config:
+Let AI assistants read and act on your focus state. Add to your editor's MCP config:
 
 ```json
 {
@@ -218,7 +250,21 @@ Let AI assistants read your flow state. Add to your editor's MCP config:
 
 Works with Claude Code, Cursor, and any MCP-compatible client.
 
-Available tools: `get_current_state`, `list_tasks`, `get_task_history`, `start_pomodoro`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `create_task`, `complete_task`, `add_session_notes`.
+**Sessions** — `start_session` (methodology, task, duration, tags, intended outcome), `start_break`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `cancel_session`, `void_session`.
+
+**Reviews & insights** — `get_current_state`, `get_recent_sessions`, `get_daily_summary`, `get_period_stats`, `get_focus_report`, `get_today_highlight`.
+
+**Tasks** — `get_task`, `list_tasks`, `get_task_history`, `create_task`, `complete_task`, `delete_task`, `start_task`.
+
+**Methodology ceremonies** — `set_highlight`, `log_distraction`, `set_focus_score`, `set_accomplishment`, `set_shutdown_ritual`, `set_energize_activity`, `set_outcome_achieved`, `add_session_notes`.
+
+Example: an agent asks you to log a distraction:
+
+```
+> tell the agent to log a distraction
+log_distraction(session_id="8f2a…", text="Phone rings", category="external")
+→ {"session_id": "8f2a…", "logged": true}
+```
 
 ## Configuration
 
@@ -226,28 +272,64 @@ Flow stores config at `~/.flow/config.toml` and data at `~/.flow/flow.db`.
 
 ```toml
 methodology = "pomodoro"  # default mode: pomodoro, deepwork, maketime
+first_run = true
+
+[focus]
+strict = false           # strict focus mode (see above)
 
 [pomodoro]
 work_duration = "25m"
 short_break = "5m"
 long_break = "15m"
 sessions_before_long = 4
-auto_break = false        # automatically start break after work session ends
+auto_break = false
+preset1_name = "Focus"
+preset1_duration = "25m0s"
+preset2_name = "Short"
+preset2_duration = "15m0s"
+preset3_name = "Deep"
+preset3_duration = "50m0s"
+
+[deepwork]
+deep_work_goal_hours = 4.0
+break_duration = "20m0s"
+philosophy = "journalistic"           # journalistic, bimodal, monastic
+preset1_name = "Deep"
+preset1_duration = "1h30m0s"
+preset2_name = "Focus"
+preset2_duration = "50m0s"
+preset3_name = "Shallow"
+preset3_duration = "25m0s"
+
+[maketime]
+break_duration = "15m0s"
+highlight_target_minutes = 60
+preset1_name = "Highlight"
+preset1_duration = "1h0m0s"
+preset2_name = "Sprint"
+preset2_duration = "25m0s"
+preset3_name = "Quick"
+preset3_duration = "15m0s"
 
 [notifications]
 enabled = true
 sound = true
+
+[theme]
+color_work = "#7C6FE0"
+color_break = "#4ECDC4"
+icon_app = "🍅"
 ```
 
 ## Architecture
 
-Hexagonal architecture with clean separation between business logic and external concerns.
+Hexagonal architecture with a clean separation between business logic and external concerns.
 
 ```
 internal/
-├── domain/       # Entities: Task, PomodoroSession, State
+├── domain/       # Entities: Task, Session, State, Report
 ├── ports/        # Interfaces: Storage, Timer, GitDetector, MCP
-├── services/     # Use cases: TaskService, PomodoroService, StateService
+├── services/     # Use cases: TaskService, PomodoroService, StateService, ReportService
 └── adapters/     # Implementations
     ├── storage/  # SQLite
     ├── tui/      # Bubbletea
@@ -259,18 +341,23 @@ internal/
 ## Development
 
 ```bash
-go test ./...        # run tests
-go vet ./...         # lint
-go build -o flow .   # build
+go test -race ./...   # tests with race detector
+go vet ./...          # static analysis
+golangci-lint run     # linters (v2 config)
+go build -o flow ./cmd/flow
 ```
 
-### Git hooks
-
-Install the pre-commit hook (runs `gofmt` + `go vet` before every commit):
+Install the pre-commit hook (runs `gofmt` + `go vet`):
 
 ```bash
 git config core.hooksPath .githooks
 ```
+
+> 🎬 Suggested demo (manual): record `flow`, `flow report --week`, and an MCP session with [asciinema](https://asciinema.org) or [vhs](https://github.com/charmbracelet/vhs).
+
+## GitHub Topics
+
+`productivity` `pomodoro` `cli` `tui` `golang` `mcp` `mcp-server` `deep-work` `make-time` `ai-agents` `terminal` `focus`
 
 ## License
 
