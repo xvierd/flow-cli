@@ -74,4 +74,10 @@ func init() {
 	rootCmd.AddCommand(completeCmd)
 	rootCmd.AddCommand(resetCmd)
 	rootCmd.AddCommand(voidCmd)
+	rootCmd.AddCommand(reportCmd)
+	rootCmd.AddCommand(reflectCmd)
+	rootCmd.AddCommand(statsCmd)
+	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(configCmd)
 }

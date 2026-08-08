@@ -240,7 +240,7 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return fmt.Errorf("session not found: %s", session.ID)
+		return fmt.Errorf("session not found: %s: %w", session.ID, domain.ErrSessionNotFound)
 	}
 
 	return nil
@@ -276,6 +276,17 @@ func (r *sessionRepository) GetDailyStats(ctx context.Context, date time.Time) (
 	}
 
 	stats.TotalWorkTime = time.Duration(totalWorkMs) * time.Millisecond
+
+	// Count tasks completed on this day (same SQLite database).
+	var tasksCompleted int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM tasks
+		WHERE status = 'completed' AND completed_at >= ? AND completed_at < ?
+	`, startOfDay, endOfDay).Scan(&tasksCompleted); err != nil {
+		return nil, fmt.Errorf("failed to count completed tasks: %w", err)
+	}
+	stats.TasksCompleted = tasksCompleted
 
 	return stats, nil
 }
@@ -366,29 +377,42 @@ func (r *sessionRepository) GetPeriodStats(ctx context.Context, start, end time.
 // GetDeepWorkStreak returns consecutive days (ending today) with >= threshold deep work hours.
 func (r *sessionRepository) GetDeepWorkStreak(ctx context.Context, threshold time.Duration) (int, error) {
 	thresholdMs := threshold.Milliseconds()
-	streak := 0
 
-	// Walk backward from today, checking each day
 	now := time.Now()
-	for i := 0; i < 365; i++ {
-		day := now.AddDate(0, 0, -i)
-		startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
-		endOfDay := startOfDay.Add(24 * time.Hour)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -365)
 
-		query := `
-			SELECT COALESCE(SUM(duration_ms), 0)
-			FROM sessions
-			WHERE type = 'work' AND status = 'completed'
-			  AND methodology = 'deepwork'
-			  AND started_at >= ? AND started_at < ?
-		`
+	// Load deep work sessions in a single query and aggregate by day in Go.
+	query := `
+		SELECT started_at, duration_ms
+		FROM sessions
+		WHERE type = 'work' AND status = 'completed'
+		  AND methodology = 'deepwork'
+		  AND started_at >= ?
+	`
 
-		var totalMs int64
-		if err := r.db.QueryRowContext(ctx, query, startOfDay, endOfDay).Scan(&totalMs); err != nil {
-			return 0, fmt.Errorf("failed to query deep work streak: %w", err)
+	rows, err := r.db.QueryContext(ctx, query, start)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query deep work streak: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	daySums := make(map[string]int64)
+	for rows.Next() {
+		var startedAt time.Time
+		var durationMs int64
+		if err := rows.Scan(&startedAt, &durationMs); err != nil {
+			return 0, fmt.Errorf("failed to scan deep work streak: %w", err)
 		}
+		daySums[startedAt.Format("2006-01-02")] += durationMs
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("failed to iterate deep work streak: %w", err)
+	}
 
-		if totalMs >= thresholdMs {
+	streak := 0
+	for i := 0; i < 366; i++ {
+		day := now.AddDate(0, 0, -i)
+		if daySums[day.Format("2006-01-02")] >= thresholdMs {
 			streak++
 		} else {
 			// If today has no sessions yet, skip it (don't break streak for today)
@@ -403,21 +427,15 @@ func (r *sessionRepository) GetDeepWorkStreak(ctx context.Context, threshold tim
 }
 
 // GetHourlyProductivity returns total work minutes per hour-of-day for the last N days.
+// Hours are aggregated using the session's local time (consistent with the report heatmap).
 func (r *sessionRepository) GetHourlyProductivity(ctx context.Context, days int) (map[int]time.Duration, error) {
 	since := time.Now().AddDate(0, 0, -days)
 
-	// Go stores time.Time as RFC3339 (e.g. "2024-01-15T09:30:00Z").
-	// SQLite's strftime('%H', ...) cannot parse the 'T' separator or trailing timezone,
-	// so we extract the hour by byte position: chars 12-13 in the RFC3339 string.
 	query := `
-		SELECT
-			CAST(substr(started_at, 12, 2) AS INTEGER) as hour,
-			SUM(duration_ms) as total_ms
+		SELECT started_at, duration_ms
 		FROM sessions
 		WHERE type = 'work' AND status = 'completed'
 		  AND started_at >= ?
-		GROUP BY hour
-		ORDER BY hour
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, since)
@@ -428,12 +446,12 @@ func (r *sessionRepository) GetHourlyProductivity(ctx context.Context, days int)
 
 	result := make(map[int]time.Duration)
 	for rows.Next() {
-		var hour int
+		var startedAt time.Time
 		var totalMs int64
-		if err := rows.Scan(&hour, &totalMs); err != nil {
+		if err := rows.Scan(&startedAt, &totalMs); err != nil {
 			return nil, fmt.Errorf("failed to scan hourly productivity: %w", err)
 		}
-		result[hour] = time.Duration(totalMs) * time.Millisecond
+		result[startedAt.Local().Hour()] += time.Duration(totalMs) * time.Millisecond
 	}
 
 	return result, rows.Err()

@@ -25,7 +25,3 @@ disrupted and the session no longer represents focused work.`,
 		return nil
 	},
 }
-
-func init() {
-	rootCmd.AddCommand(voidCmd)
-}

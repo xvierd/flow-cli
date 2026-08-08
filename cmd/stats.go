@@ -88,6 +88,37 @@ var statsCmd = &cobra.Command{
 			}
 		}
 
+		if jsonOutput {
+			methodologies := make([]map[string]interface{}, 0, len(stats.ByMethodology))
+			for _, m := range stats.ByMethodology {
+				methodologies = append(methodologies, map[string]interface{}{
+					"methodology":   string(m.Methodology),
+					"session_count": m.SessionCount,
+					"total_time":    m.TotalTime.String(),
+				})
+			}
+			hourlyOut := make(map[string]string)
+			for hour, dur := range hourly {
+				hourlyOut[fmt.Sprintf("%02d:00", hour)] = dur.String()
+			}
+			return jsonOut(map[string]interface{}{
+				"period":            string(period),
+				"label":             stats.Label,
+				"start":             start.Format(time.RFC3339),
+				"end":               end.Format(time.RFC3339),
+				"total_sessions":    stats.TotalSessions,
+				"total_work_time":   stats.TotalWorkTime.String(),
+				"avg_focus_score":   stats.AvgFocusScore,
+				"focus_score_count": stats.FocusScoreCount,
+				"distraction_count": stats.DistractionCount,
+				"deep_work_streak":  streak,
+				"total_prev_week":   prevWeekHours.String(),
+				"total_month":       monthHours.String(),
+				"by_methodology":    methodologies,
+				"hourly":            hourlyOut,
+			})
+		}
+
 		fmt.Println()
 		renderDashboard(stats, hourly, energize, philosophy, streak, prevWeekHours, monthHours)
 		return nil
@@ -96,7 +127,6 @@ var statsCmd = &cobra.Command{
 
 func init() {
 	statsCmd.Flags().StringVarP(&statsPeriod, "period", "p", "week", "Time period: week or month")
-	rootCmd.AddCommand(statsCmd)
 }
 
 func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, energize []domain.EnergizeStat, philosophy string, streak int, prevWeekHours, monthHours time.Duration) {

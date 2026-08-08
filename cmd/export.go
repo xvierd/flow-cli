@@ -28,7 +28,6 @@ var exportCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(exportCmd)
 	exportCmd.Flags().StringVar(&exportFormat, "format", "md", "Output format: md or csv")
 	exportCmd.Flags().StringVar(&exportPeriod, "period", "week", "Time period: week, month, or all")
 }
@@ -119,13 +118,14 @@ func exportMarkdown(sessions []*domain.PomodoroSession) error {
 
 func exportCSV(sessions []*domain.PomodoroSession) error {
 	w := csv.NewWriter(os.Stdout)
-	defer w.Flush()
 
-	_ = w.Write([]string{
+	if err := w.Write([]string{
 		"date", "methodology", "duration_min", "goal", "accomplished",
 		"focus_score", "tags", "energize_activity", "distraction_count",
 		"distractions", "pending_tasks_review", "calendar_review", "tomorrow_plan",
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
 
 	for _, s := range sessions {
 		if !s.IsWorkSession() {
@@ -146,7 +146,7 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 			calendarReview = s.ShutdownRitual.CalendarReview
 			tomorrowPlan = s.ShutdownRitual.TomorrowPlan
 		}
-		_ = w.Write([]string{
+		if err := w.Write([]string{
 			s.StartedAt.Format("2006-01-02"),
 			string(s.Methodology),
 			fmt.Sprintf("%.0f", s.Duration.Minutes()),
@@ -160,7 +160,13 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 			pendingTasksReview,
 			calendarReview,
 			tomorrowPlan,
-		})
+		}); err != nil {
+			return fmt.Errorf("failed to write CSV row: %w", err)
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return fmt.Errorf("failed to flush CSV output: %w", err)
 	}
 	return nil
 }

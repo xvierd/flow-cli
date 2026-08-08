@@ -13,10 +13,12 @@ var (
 	ErrInvalidTaskID        = errors.New("invalid task ID")
 	ErrEmptyTaskTitle       = errors.New("task title cannot be empty")
 	ErrTaskNotFound         = errors.New("task not found")
+	ErrSessionNotFound      = errors.New("session not found")
 	ErrInvalidDuration      = errors.New("invalid duration")
 	ErrSessionAlreadyActive = errors.New("session already active")
 	ErrNoActiveSession      = errors.New("no active session")
 	ErrStrictFocusBlocked   = errors.New("strict focus mode: pause, finish, void and cancel are locked while a work session is active")
+	ErrServiceNotConfigured = errors.New("service not configured")
 )
 
 // TaskStatus represents the current state of a task.

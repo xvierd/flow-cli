@@ -125,39 +125,6 @@ func TestOutputStatusJSON(t *testing.T) {
 	}
 }
 
-// TestPrintStatusText tests the printStatusText helper
-func TestPrintStatusText(t *testing.T) {
-	// Just verify the function signature and doesn't panic
-	state := &domain.CurrentState{
-		ActiveSession: &domain.PomodoroSession{
-			Type:      domain.SessionTypeWork,
-			Status:    domain.SessionStatusRunning,
-			Duration:  25 * time.Minute,
-			StartedAt: time.Now(),
-			GitBranch: "main",
-			GitCommit: "abc123def789",
-		},
-		ActiveTask: &domain.Task{
-			Title: "Test Task",
-		},
-		TodayStats: domain.DailyStats{
-			WorkSessions:  5,
-			BreaksTaken:   3,
-			TotalWorkTime: 2 * time.Hour,
-		},
-	}
-
-	// Just verify the function doesn't panic
-	printStatusText(state)
-
-	// Test with nil session
-	stateNoSession := &domain.CurrentState{
-		ActiveSession: nil,
-		TodayStats:    domain.DailyStats{},
-	}
-	printStatusText(stateNoSession)
-}
-
 func strPtr(s string) *string {
 	return &s
 }

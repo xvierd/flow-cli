@@ -16,19 +16,13 @@ type StateService struct {
 	pomodoroSvc *PomodoroService
 }
 
-// NewStateService creates a new state service.
-func NewStateService(storage ports.Storage) *StateService {
-	return &StateService{storage: storage}
-}
-
-// SetTaskService sets the task service for write operations.
-func (s *StateService) SetTaskService(taskService *TaskService) {
-	s.taskService = taskService
-}
-
-// SetPomodoroService sets the pomodoro service for write operations.
-func (s *StateService) SetPomodoroService(pomodoroSvc *PomodoroService) {
-	s.pomodoroSvc = pomodoroSvc
+// NewStateService creates a new state service with its dependencies.
+func NewStateService(storage ports.Storage, taskService *TaskService, pomodoroSvc *PomodoroService) *StateService {
+	return &StateService{
+		storage:     storage,
+		taskService: taskService,
+		pomodoroSvc: pomodoroSvc,
+	}
 }
 
 // GetCurrentState implements ports.MCPStateProvider.
@@ -91,7 +85,7 @@ func (s *StateService) StartPomodoro(ctx context.Context, taskID *string, durati
 // StartSession implements ports.MCPStateProvider.
 func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionRequest) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
-		return nil, domain.ErrNoActiveSession
+		return nil, domain.ErrServiceNotConfigured
 	}
 
 	if req.Methodology != "" {
@@ -114,7 +108,7 @@ func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionR
 		}
 		if req.TaskID == nil {
 			if s.taskService == nil {
-				return nil, domain.ErrTaskNotFound
+				return nil, domain.ErrServiceNotConfigured
 			}
 			task, err := s.taskService.AddTask(ctx, AddTaskRequest{
 				Title: strings.TrimSpace(req.TaskTitle),
@@ -142,7 +136,7 @@ func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionR
 // StartBreak implements ports.MCPStateProvider.
 func (s *StateService) StartBreak(ctx context.Context) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
-		return nil, domain.ErrNoActiveSession
+		return nil, domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.StartBreak(ctx, "")
 }
@@ -150,7 +144,7 @@ func (s *StateService) StartBreak(ctx context.Context) (*domain.PomodoroSession,
 // StopPomodoro implements ports.MCPStateProvider.
 func (s *StateService) StopPomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
-		return nil, domain.ErrNoActiveSession
+		return nil, domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.StopSession(ctx)
 }
@@ -158,7 +152,7 @@ func (s *StateService) StopPomodoro(ctx context.Context) (*domain.PomodoroSessio
 // PausePomodoro implements ports.MCPStateProvider.
 func (s *StateService) PausePomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
-		return nil, domain.ErrNoActiveSession
+		return nil, domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.PauseSession(ctx)
 }
@@ -166,7 +160,7 @@ func (s *StateService) PausePomodoro(ctx context.Context) (*domain.PomodoroSessi
 // ResumePomodoro implements ports.MCPStateProvider.
 func (s *StateService) ResumePomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
-		return nil, domain.ErrNoActiveSession
+		return nil, domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.ResumeSession(ctx)
 }
@@ -174,7 +168,7 @@ func (s *StateService) ResumePomodoro(ctx context.Context) (*domain.PomodoroSess
 // CancelSession implements ports.MCPStateProvider.
 func (s *StateService) CancelSession(ctx context.Context) error {
 	if s.pomodoroSvc == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.CancelSession(ctx)
 }
@@ -182,7 +176,7 @@ func (s *StateService) CancelSession(ctx context.Context) error {
 // VoidSession implements ports.MCPStateProvider.
 func (s *StateService) VoidSession(ctx context.Context) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
-		return nil, domain.ErrNoActiveSession
+		return nil, domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.VoidSession(ctx)
 }
@@ -190,7 +184,7 @@ func (s *StateService) VoidSession(ctx context.Context) (*domain.PomodoroSession
 // CreateTask implements ports.MCPStateProvider.
 func (s *StateService) CreateTask(ctx context.Context, title string, description *string, tags []string) (*domain.Task, error) {
 	if s.taskService == nil {
-		return nil, domain.ErrTaskNotFound
+		return nil, domain.ErrServiceNotConfigured
 	}
 	req := AddTaskRequest{
 		Title:       title,
@@ -206,7 +200,7 @@ func (s *StateService) CreateTask(ctx context.Context, title string, description
 // CompleteTask implements ports.MCPStateProvider.
 func (s *StateService) CompleteTask(ctx context.Context, taskID string) (*domain.Task, error) {
 	if s.taskService == nil {
-		return nil, domain.ErrTaskNotFound
+		return nil, domain.ErrServiceNotConfigured
 	}
 	if err := s.taskService.CompleteTask(ctx, taskID); err != nil {
 		return nil, err
@@ -216,13 +210,16 @@ func (s *StateService) CompleteTask(ctx context.Context, taskID string) (*domain
 
 // GetTask implements ports.MCPStateProvider.
 func (s *StateService) GetTask(ctx context.Context, taskID string) (*domain.Task, error) {
+	if s.taskService == nil {
+		return nil, domain.ErrServiceNotConfigured
+	}
 	return s.taskService.GetTask(ctx, taskID)
 }
 
 // DeleteTask implements ports.MCPStateProvider.
 func (s *StateService) DeleteTask(ctx context.Context, taskID string) error {
 	if s.taskService == nil {
-		return domain.ErrTaskNotFound
+		return domain.ErrServiceNotConfigured
 	}
 	return s.taskService.DeleteTask(ctx, taskID)
 }
@@ -230,7 +227,7 @@ func (s *StateService) DeleteTask(ctx context.Context, taskID string) error {
 // StartTask implements ports.MCPStateProvider.
 func (s *StateService) StartTask(ctx context.Context, taskID string) error {
 	if s.taskService == nil {
-		return domain.ErrTaskNotFound
+		return domain.ErrServiceNotConfigured
 	}
 	return s.taskService.StartTask(ctx, taskID)
 }
@@ -238,7 +235,7 @@ func (s *StateService) StartTask(ctx context.Context, taskID string) error {
 // AddSessionNotes implements ports.MCPStateProvider.
 func (s *StateService) AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
-		return nil, domain.ErrNoActiveSession
+		return nil, domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.AddSessionNotes(ctx, sessionID, notes)
 }
@@ -246,7 +243,7 @@ func (s *StateService) AddSessionNotes(ctx context.Context, sessionID string, no
 // LogDistraction implements ports.MCPStateProvider.
 func (s *StateService) LogDistraction(ctx context.Context, sessionID string, text string, category string) error {
 	if s.pomodoroSvc == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.LogDistraction(ctx, sessionID, text, category)
 }
@@ -254,7 +251,7 @@ func (s *StateService) LogDistraction(ctx context.Context, sessionID string, tex
 // SetFocusScore implements ports.MCPStateProvider.
 func (s *StateService) SetFocusScore(ctx context.Context, sessionID string, score int) error {
 	if s.pomodoroSvc == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.SetFocusScore(ctx, sessionID, score)
 }
@@ -262,7 +259,7 @@ func (s *StateService) SetFocusScore(ctx context.Context, sessionID string, scor
 // SetAccomplishment implements ports.MCPStateProvider.
 func (s *StateService) SetAccomplishment(ctx context.Context, sessionID string, text string) error {
 	if s.pomodoroSvc == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.SetAccomplishment(ctx, sessionID, text)
 }
@@ -270,7 +267,7 @@ func (s *StateService) SetAccomplishment(ctx context.Context, sessionID string, 
 // SetShutdownRitual implements ports.MCPStateProvider.
 func (s *StateService) SetShutdownRitual(ctx context.Context, sessionID string, ritual domain.ShutdownRitual) error {
 	if s.pomodoroSvc == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.SetShutdownRitual(ctx, sessionID, ritual)
 }
@@ -278,7 +275,7 @@ func (s *StateService) SetShutdownRitual(ctx context.Context, sessionID string, 
 // SetEnergizeActivity implements ports.MCPStateProvider.
 func (s *StateService) SetEnergizeActivity(ctx context.Context, sessionID string, activity string) error {
 	if s.pomodoroSvc == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.SetEnergizeActivity(ctx, sessionID, activity)
 }
@@ -286,7 +283,7 @@ func (s *StateService) SetEnergizeActivity(ctx context.Context, sessionID string
 // SetOutcomeAchieved implements ports.MCPStateProvider.
 func (s *StateService) SetOutcomeAchieved(ctx context.Context, sessionID string, achieved string) error {
 	if s.pomodoroSvc == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrServiceNotConfigured
 	}
 	return s.pomodoroSvc.SetOutcomeAchieved(ctx, sessionID, achieved)
 }

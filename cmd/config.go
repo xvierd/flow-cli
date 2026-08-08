@@ -104,10 +104,6 @@ var configCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(configCmd)
-}
-
 func editPreset(reader *bufio.Reader, cfg *config.Config, num int) error {
 	methodology := cfg.Methodology
 	if methodology == "" {

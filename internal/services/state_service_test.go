@@ -22,9 +22,7 @@ func newStateWithServices(t *testing.T) (*StateService, ports.Storage, *TaskServ
 	taskSvc := NewTaskService(store)
 	pomSvc := NewPomodoroService(store, nil)
 
-	svc := NewStateService(store)
-	svc.SetTaskService(taskSvc)
-	svc.SetPomodoroService(pomSvc)
+	svc := NewStateService(store, taskSvc, pomSvc)
 	return svc, store, taskSvc, pomSvc
 }
 
@@ -33,9 +31,7 @@ func TestStateService_GetCurrentState(t *testing.T) {
 	defer cleanup()
 	taskSvc := NewTaskService(store)
 	pomSvc := NewPomodoroService(store, nil)
-	svc := NewStateService(store)
-	svc.SetTaskService(taskSvc)
-	svc.SetPomodoroService(pomSvc)
+	svc := NewStateService(store, taskSvc, pomSvc)
 	ctx := context.Background()
 
 	t.Run("empty state", func(t *testing.T) {
@@ -179,50 +175,50 @@ func TestState_PomodoroGuard(t *testing.T) {
 	store, cleanup := setupTestStorage(t)
 	defer cleanup()
 	// StateService without a configured pomodoro service.
-	svc := NewStateService(store)
+	svc := NewStateService(store, nil, nil)
 	ctx := context.Background()
 
-	if _, err := svc.StartSession(ctx, ports.StartSessionRequest{}); err != domain.ErrNoActiveSession {
-		t.Errorf("StartSession() error = %v, want ErrNoActiveSession", err)
+	if _, err := svc.StartSession(ctx, ports.StartSessionRequest{}); err != domain.ErrServiceNotConfigured {
+		t.Errorf("StartSession() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if _, err := svc.StartBreak(ctx); err != domain.ErrNoActiveSession {
-		t.Errorf("StartBreak() error = %v, want ErrNoActiveSession", err)
+	if _, err := svc.StartBreak(ctx); err != domain.ErrServiceNotConfigured {
+		t.Errorf("StartBreak() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if _, err := svc.StopPomodoro(ctx); err != domain.ErrNoActiveSession {
-		t.Errorf("StopPomodoro() error = %v, want ErrNoActiveSession", err)
+	if _, err := svc.StopPomodoro(ctx); err != domain.ErrServiceNotConfigured {
+		t.Errorf("StopPomodoro() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if _, err := svc.PausePomodoro(ctx); err != domain.ErrNoActiveSession {
-		t.Errorf("PausePomodoro() error = %v, want ErrNoActiveSession", err)
+	if _, err := svc.PausePomodoro(ctx); err != domain.ErrServiceNotConfigured {
+		t.Errorf("PausePomodoro() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if _, err := svc.ResumePomodoro(ctx); err != domain.ErrNoActiveSession {
-		t.Errorf("ResumePomodoro() error = %v, want ErrNoActiveSession", err)
+	if _, err := svc.ResumePomodoro(ctx); err != domain.ErrServiceNotConfigured {
+		t.Errorf("ResumePomodoro() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := svc.CancelSession(ctx); err != domain.ErrNoActiveSession {
-		t.Errorf("CancelSession() error = %v, want ErrNoActiveSession", err)
+	if err := svc.CancelSession(ctx); err != domain.ErrServiceNotConfigured {
+		t.Errorf("CancelSession() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if _, err := svc.VoidSession(ctx); err != domain.ErrNoActiveSession {
-		t.Errorf("VoidSession() error = %v, want ErrNoActiveSession", err)
+	if _, err := svc.VoidSession(ctx); err != domain.ErrServiceNotConfigured {
+		t.Errorf("VoidSession() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if _, err := svc.AddSessionNotes(ctx, "s1", "note"); err != domain.ErrNoActiveSession {
-		t.Errorf("AddSessionNotes() error = %v, want ErrNoActiveSession", err)
+	if _, err := svc.AddSessionNotes(ctx, "s1", "note"); err != domain.ErrServiceNotConfigured {
+		t.Errorf("AddSessionNotes() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := svc.LogDistraction(ctx, "s1", "x", "internal"); err != domain.ErrNoActiveSession {
-		t.Errorf("LogDistraction() error = %v, want ErrNoActiveSession", err)
+	if err := svc.LogDistraction(ctx, "s1", "x", "internal"); err != domain.ErrServiceNotConfigured {
+		t.Errorf("LogDistraction() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := svc.SetFocusScore(ctx, "s1", 3); err != domain.ErrNoActiveSession {
-		t.Errorf("SetFocusScore() error = %v, want ErrNoActiveSession", err)
+	if err := svc.SetFocusScore(ctx, "s1", 3); err != domain.ErrServiceNotConfigured {
+		t.Errorf("SetFocusScore() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := svc.SetAccomplishment(ctx, "s1", "done"); err != domain.ErrNoActiveSession {
-		t.Errorf("SetAccomplishment() error = %v, want ErrNoActiveSession", err)
+	if err := svc.SetAccomplishment(ctx, "s1", "done"); err != domain.ErrServiceNotConfigured {
+		t.Errorf("SetAccomplishment() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := svc.SetShutdownRitual(ctx, "s1", domain.ShutdownRitual{}); err != domain.ErrNoActiveSession {
-		t.Errorf("SetShutdownRitual() error = %v, want ErrNoActiveSession", err)
+	if err := svc.SetShutdownRitual(ctx, "s1", domain.ShutdownRitual{}); err != domain.ErrServiceNotConfigured {
+		t.Errorf("SetShutdownRitual() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := svc.SetEnergizeActivity(ctx, "s1", "walk"); err != domain.ErrNoActiveSession {
-		t.Errorf("SetEnergizeActivity() error = %v, want ErrNoActiveSession", err)
+	if err := svc.SetEnergizeActivity(ctx, "s1", "walk"); err != domain.ErrServiceNotConfigured {
+		t.Errorf("SetEnergizeActivity() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := svc.SetOutcomeAchieved(ctx, "s1", "y"); err != domain.ErrNoActiveSession {
-		t.Errorf("SetOutcomeAchieved() error = %v, want ErrNoActiveSession", err)
+	if err := svc.SetOutcomeAchieved(ctx, "s1", "y"); err != domain.ErrServiceNotConfigured {
+		t.Errorf("SetOutcomeAchieved() error = %v, want ErrServiceNotConfigured", err)
 	}
 }
 
@@ -231,8 +227,7 @@ func TestState_TaskServiceGuard(t *testing.T) {
 	defer cleanup()
 	// StateService with a task service but no pomodoro service.
 	taskSvc := NewTaskService(store)
-	svc := NewStateService(store)
-	svc.SetTaskService(taskSvc)
+	svc := NewStateService(store, taskSvc, nil)
 	ctx := context.Background()
 
 	if _, err := svc.CreateTask(ctx, "task", nil, nil); err != nil {
@@ -240,15 +235,15 @@ func TestState_TaskServiceGuard(t *testing.T) {
 	}
 
 	// StateService without a task service at all.
-	bare := NewStateService(store)
-	if _, err := bare.CreateTask(ctx, "task", nil, nil); err != domain.ErrTaskNotFound {
-		t.Errorf("CreateTask() error = %v, want ErrTaskNotFound", err)
+	bare := NewStateService(store, nil, nil)
+	if _, err := bare.CreateTask(ctx, "task", nil, nil); err != domain.ErrServiceNotConfigured {
+		t.Errorf("CreateTask() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := bare.DeleteTask(ctx, "t1"); err != domain.ErrTaskNotFound {
-		t.Errorf("DeleteTask() error = %v, want ErrTaskNotFound", err)
+	if err := bare.DeleteTask(ctx, "t1"); err != domain.ErrServiceNotConfigured {
+		t.Errorf("DeleteTask() error = %v, want ErrServiceNotConfigured", err)
 	}
-	if err := bare.StartTask(ctx, "t1"); err != domain.ErrTaskNotFound {
-		t.Errorf("StartTask() error = %v, want ErrTaskNotFound", err)
+	if err := bare.StartTask(ctx, "t1"); err != domain.ErrServiceNotConfigured {
+		t.Errorf("StartTask() error = %v, want ErrServiceNotConfigured", err)
 	}
 	if _, err := svc.CompleteTask(ctx, "missing"); err == nil {
 		t.Error("CompleteTask() with missing task should error")

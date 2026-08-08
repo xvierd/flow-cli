@@ -361,6 +361,8 @@ func TestDailyStats(t *testing.T) {
 
 	ctx := context.Background()
 	pomodoroSvc := services.NewPomodoroService(store, nil)
+	taskSvc := services.NewTaskService(store)
+	stateSvc := services.NewStateService(store, taskSvc, pomodoroSvc)
 
 	t.Run("daily stats accumulation", func(t *testing.T) {
 		// Complete 3 work sessions
@@ -377,7 +379,7 @@ func TestDailyStats(t *testing.T) {
 		}
 
 		// Get current state to check stats
-		state, err := pomodoroSvc.GetCurrentState(ctx)
+		state, err := stateSvc.GetCurrentState(ctx)
 		if err != nil {
 			t.Fatalf("failed to get current state: %v", err)
 		}

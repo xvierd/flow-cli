@@ -25,6 +25,9 @@ var reflectCmd = &cobra.Command{
 		now := time.Now()
 
 		if reflectTodayFlag {
+			if jsonOutput {
+				return outputReflectTodayJSON(ctx, now)
+			}
 			return runReflectToday(ctx, now)
 		}
 
@@ -32,6 +35,10 @@ var reflectCmd = &cobra.Command{
 		weekStart, weekEnd, err := services.PeriodRange(services.ReportPeriodWeek, now)
 		if err != nil {
 			return err
+		}
+
+		if jsonOutput {
+			return outputReflectJSON(ctx, weekStart, weekEnd, now)
 		}
 
 		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C6FE0"))
@@ -163,8 +170,85 @@ var reflectCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(reflectCmd)
 	reflectCmd.Flags().BoolVar(&reflectTodayFlag, "today", false, "Show today's reflection summary")
+}
+
+// outputReflectJSON emits the weekly reflection data as JSON.
+func outputReflectJSON(ctx context.Context, weekStart, weekEnd, now time.Time) error {
+	days := make([]map[string]interface{}, 0, 7)
+	highlights := make([]map[string]interface{}, 0, 7)
+	totalSessions := 0
+	var totalWork time.Duration
+
+	for i := 0; i < 7; i++ {
+		day := weekStart.AddDate(0, 0, i)
+		if day.After(now) {
+			break
+		}
+
+		stats, err := app.storage.Sessions().GetDailyStats(ctx, day)
+		if err != nil {
+			continue
+		}
+		days = append(days, map[string]interface{}{
+			"date":      day.Format("2006-01-02"),
+			"sessions":  stats.WorkSessions,
+			"work_time": formatMinutes(stats.TotalWorkTime),
+		})
+		totalSessions += stats.WorkSessions
+		totalWork += stats.TotalWorkTime
+
+		if hl, err := app.storage.Tasks().FindTodayHighlight(ctx, day); err == nil && hl != nil {
+			highlights = append(highlights, map[string]interface{}{
+				"date":   day.Format("2006-01-02"),
+				"title":  hl.Title,
+				"status": string(hl.Status),
+			})
+		}
+	}
+
+	periodStats, err := app.storage.Sessions().GetPeriodStats(ctx, weekStart, weekEnd)
+	if err != nil {
+		periodStats = &domain.PeriodStats{}
+	}
+
+	energize, _ := app.storage.Sessions().GetEnergizeStats(ctx, weekStart, weekEnd)
+	energizeOut := make([]map[string]interface{}, 0, len(energize))
+	for _, e := range energize {
+		energizeOut = append(energizeOut, map[string]interface{}{
+			"activity":      e.Activity,
+			"avg_focus":     e.AvgFocusScore,
+			"session_count": e.SessionCount,
+		})
+	}
+
+	return jsonOut(map[string]interface{}{
+		"week_start":        weekStart.Format(time.RFC3339),
+		"week_end":          weekEnd.Format(time.RFC3339),
+		"days":              days,
+		"total_sessions":    totalSessions,
+		"total_work_time":   totalWork.String(),
+		"avg_focus_score":   periodStats.AvgFocusScore,
+		"focus_score_count": periodStats.FocusScoreCount,
+		"distraction_count": periodStats.DistractionCount,
+		"highlights":        highlights,
+		"energize":          energizeOut,
+	})
+}
+
+// outputReflectTodayJSON renders today's daily stats as JSON.
+func outputReflectTodayJSON(ctx context.Context, now time.Time) error {
+	stats, err := app.storage.Sessions().GetDailyStats(ctx, now)
+	if err != nil {
+		return fmt.Errorf("failed to get today's stats: %w", err)
+	}
+	return jsonOut(map[string]interface{}{
+		"date":            now.Format("2006-01-02"),
+		"work_sessions":   stats.WorkSessions,
+		"breaks_taken":    stats.BreaksTaken,
+		"total_work_time": stats.TotalWorkTime.String(),
+		"tasks_completed": stats.TasksCompleted,
+	})
 }
 
 // runReflectToday displays a methodology-aware summary of today's sessions with interactive prompts.

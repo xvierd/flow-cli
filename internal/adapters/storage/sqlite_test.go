@@ -394,6 +394,51 @@ func TestSessionRepository_GetDailyStats(t *testing.T) {
 	}
 }
 
+func TestSessionRepository_GetDailyStats_TasksCompleted(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	taskRepo := storage.Tasks()
+	sessionRepo := storage.Sessions()
+
+	t.Run("counts tasks completed on the day", func(t *testing.T) {
+		complete := func(title string) string {
+			task, err := domain.NewTask(title)
+			if err != nil {
+				t.Fatalf("NewTask() error = %v", err)
+			}
+			task.Complete()
+			if err := taskRepo.Save(ctx, task); err != nil {
+				t.Fatalf("Save() task error = %v", err)
+			}
+			return task.ID
+		}
+		complete("done one")
+		complete("done two")
+
+		// A task completed on a different day must be excluded.
+		pending, err := domain.NewTask("not yet")
+		if err != nil {
+			t.Fatalf("NewTask() error = %v", err)
+		}
+		old := time.Now().AddDate(0, 0, -1)
+		pending.CompletedAt = &old
+		pending.Status = domain.StatusCompleted
+		if err := taskRepo.Save(ctx, pending); err != nil {
+			t.Fatalf("Save() old task error = %v", err)
+		}
+
+		stats, err := sessionRepo.GetDailyStats(ctx, time.Now())
+		if err != nil {
+			t.Fatalf("GetDailyStats() error = %v", err)
+		}
+		if stats.TasksCompleted != 2 {
+			t.Errorf("TasksCompleted = %d, want 2", stats.TasksCompleted)
+		}
+	})
+}
+
 func TestSessionRepository_GetPeriodStats(t *testing.T) {
 	storage, _ := NewMemory()
 	defer func() { _ = storage.Close() }()
@@ -540,9 +585,6 @@ func TestSessionRepository_GetHourlyProductivity(t *testing.T) {
 	})
 
 	t.Run("with sessions", func(t *testing.T) {
-		// Create a session with a started_at that SQLite's strftime can parse.
-		// Note: Go's default time format may not be parseable by strftime;
-		// this test uses a manually constructed session to validate the query logic.
 		session := &domain.PomodoroSession{
 			ID:        "hourly-test-1",
 			Type:      domain.SessionTypeWork,
@@ -556,22 +598,17 @@ func TestSessionRepository_GetHourlyProductivity(t *testing.T) {
 			t.Fatalf("Save() error = %v", err)
 		}
 
-		// The strftime function in SQLite may not parse Go's time format correctly,
-		// so we just verify no panic/fatal error occurs with valid data.
 		result, err := sessionRepo.GetHourlyProductivity(ctx, 7)
 		if err != nil {
-			// Known issue: SQLite strftime may return NULL for Go time formats
-			t.Skipf("GetHourlyProductivity() error (known SQLite strftime issue): %v", err)
+			t.Fatalf("GetHourlyProductivity() error = %v", err)
 		}
-		if len(result) > 0 {
-			for hour, dur := range result {
-				if hour < 0 || hour > 23 {
-					t.Errorf("unexpected hour %d", hour)
-				}
-				if dur < 0 {
-					t.Errorf("unexpected negative duration for hour %d", hour)
-				}
-			}
+		wantHour := session.StartedAt.Local().Hour()
+		got, ok := result[wantHour]
+		if !ok {
+			t.Fatalf("expected hour %d in result, got %v", wantHour, result)
+		}
+		if got != session.Duration {
+			t.Errorf("hour %d duration = %s, want %s", wantHour, got, session.Duration)
 		}
 	})
 }

@@ -251,7 +251,7 @@ func (s *PomodoroService) LogDistraction(ctx context.Context, sessionID string, 
 		return fmt.Errorf("failed to find session: %w", err)
 	}
 	if session == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrSessionNotFound
 	}
 	session.Distractions = append(session.Distractions, domain.Distraction{Text: text, Category: category})
 	return s.storage.Sessions().Update(ctx, session)
@@ -264,7 +264,7 @@ func (s *PomodoroService) SetAccomplishment(ctx context.Context, sessionID strin
 		return fmt.Errorf("failed to find session: %w", err)
 	}
 	if session == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrSessionNotFound
 	}
 	session.Accomplishment = text
 	return s.storage.Sessions().Update(ctx, session)
@@ -280,7 +280,7 @@ func (s *PomodoroService) SetFocusScore(ctx context.Context, sessionID string, s
 		return fmt.Errorf("failed to find session: %w", err)
 	}
 	if session == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrSessionNotFound
 	}
 	session.FocusScore = &score
 	return s.storage.Sessions().Update(ctx, session)
@@ -293,7 +293,7 @@ func (s *PomodoroService) SetEnergizeActivity(ctx context.Context, sessionID str
 		return fmt.Errorf("failed to find session: %w", err)
 	}
 	if session == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrSessionNotFound
 	}
 	session.EnergizeActivity = activity
 	return s.storage.Sessions().Update(ctx, session)
@@ -306,7 +306,7 @@ func (s *PomodoroService) SetShutdownRitual(ctx context.Context, sessionID strin
 		return fmt.Errorf("failed to find session: %w", err)
 	}
 	if session == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrSessionNotFound
 	}
 	session.ShutdownRitual = &ritual
 	return s.storage.Sessions().Update(ctx, session)
@@ -322,7 +322,7 @@ func (s *PomodoroService) SetOutcomeAchieved(ctx context.Context, sessionID stri
 		return fmt.Errorf("failed to find session: %w", err)
 	}
 	if session == nil {
-		return domain.ErrNoActiveSession
+		return domain.ErrSessionNotFound
 	}
 	session.OutcomeAchieved = achieved
 	return s.storage.Sessions().Update(ctx, session)
@@ -335,7 +335,7 @@ func (s *PomodoroService) AddSessionNotes(ctx context.Context, sessionID string,
 		return nil, fmt.Errorf("failed to find session: %w", err)
 	}
 	if session == nil {
-		return nil, domain.ErrNoActiveSession
+		return nil, domain.ErrSessionNotFound
 	}
 
 	session.AddNotes(notes)
@@ -344,23 +344,6 @@ func (s *PomodoroService) AddSessionNotes(ctx context.Context, sessionID string,
 	}
 
 	return session, nil
-}
-
-// GetCurrentState retrieves the complete current application state.
-func (s *PomodoroService) GetCurrentState(ctx context.Context) (*domain.CurrentState, error) {
-	activeTask, _ := s.storage.Tasks().FindActive(ctx)
-	activeSession, _ := s.storage.Sessions().FindActive(ctx)
-
-	stats, err := s.storage.Sessions().GetDailyStats(ctx, time.Now())
-	if err != nil {
-		stats = &domain.DailyStats{Date: time.Now()}
-	}
-
-	return &domain.CurrentState{
-		ActiveTask:    activeTask,
-		ActiveSession: activeSession,
-		TodayStats:    *stats,
-	}, nil
 }
 
 // GetDeepWorkStreak returns the number of consecutive days with >= threshold of deep work.

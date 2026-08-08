@@ -70,7 +70,7 @@ func initializeServices() error {
 	// Initialize services
 	app.tasks = services.NewTaskService(app.storage)
 	app.pomodoro = services.NewPomodoroService(app.storage, app.git)
-	app.state = services.NewStateService(app.storage)
+	app.state = services.NewStateService(app.storage, app.tasks, app.pomodoro)
 
 	// Configure pomodoro service from config
 	workDur, _, _, sessionsBeforeLong := app.config.ToPomodoroDomainConfig()
@@ -88,10 +88,6 @@ func initializeServices() error {
 
 	// Strict focus mode: --strict flag overrides the config setting.
 	app.pomodoro.SetStrictMode(app.config.Focus.Strict || strictFlag)
-
-	// Wire up services for state service
-	app.state.SetTaskService(app.tasks)
-	app.state.SetPomodoroService(app.pomodoro)
 
 	// Resolve effective methodology: --mode flag > config > default
 	modeStr := app.config.Methodology

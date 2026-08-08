@@ -283,7 +283,7 @@ func TestPomodoroService_GetCurrentState(t *testing.T) {
 	}
 
 	t.Run("get current state", func(t *testing.T) {
-		state, err := service.GetCurrentState(ctx)
+		state, err := NewStateService(store, taskService, service).GetCurrentState(ctx)
 		if err != nil {
 			t.Errorf("GetCurrentState() error = %v", err)
 		}
@@ -602,11 +602,11 @@ func TestPomodoroService_SessionWrites_MissingSession(t *testing.T) {
 	ctx := context.Background()
 	clearSessions(t, store, ctx)
 
-	if err := service.LogDistraction(ctx, "does-not-exist", "x", "internal"); err != domain.ErrNoActiveSession {
-		t.Errorf("LogDistraction() error = %v, want ErrNoActiveSession", err)
+	if err := service.LogDistraction(ctx, "does-not-exist", "x", "internal"); err != domain.ErrSessionNotFound {
+		t.Errorf("LogDistraction() error = %v, want ErrSessionNotFound", err)
 	}
-	if _, err := service.AddSessionNotes(ctx, "does-not-exist", "note"); err != domain.ErrNoActiveSession {
-		t.Errorf("AddSessionNotes() error = %v, want ErrNoActiveSession", err)
+	if _, err := service.AddSessionNotes(ctx, "does-not-exist", "note"); err != domain.ErrSessionNotFound {
+		t.Errorf("AddSessionNotes() error = %v, want ErrSessionNotFound", err)
 	}
 }
 

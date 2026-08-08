@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
@@ -32,8 +30,8 @@ var statusCmd = &cobra.Command{
 		tui.ShowStatus(state, &app.config.Theme)
 
 		// Show today's Highlight for Make Time mode
-		if app.config.Methodology == "maketime" || app.config.Methodology == "make_time" {
-			highlight, _ := app.storage.Tasks().FindTodayHighlight(ctx, time.Now())
+		if app.methodology == domain.MethodologyMakeTime {
+			highlight, _ := app.state.GetTodayHighlight(ctx)
 			if highlight != nil {
 				fmt.Printf("\nHighlight: %s\n", highlight.Title)
 			} else if state.ActiveTask != nil {
@@ -91,8 +89,8 @@ func outputStatusJSON(state *domain.CurrentState) error {
 	}
 
 	// Include highlight for Make Time mode
-	if app.config.Methodology == "maketime" || app.config.Methodology == "make_time" {
-		highlight, _ := app.storage.Tasks().FindTodayHighlight(ctx, time.Now())
+	if app.methodology == domain.MethodologyMakeTime {
+		highlight, _ := app.state.GetTodayHighlight(ctx)
 		if highlight != nil {
 			result["highlight"] = map[string]interface{}{
 				"id":     highlight.ID,
@@ -102,35 +100,5 @@ func outputStatusJSON(state *domain.CurrentState) error {
 		}
 	}
 
-	jsonData, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal status: %w", err)
-	}
-	fmt.Println(string(jsonData))
-	return nil
-}
-
-// printStatusText prints the status in plain text format
-func printStatusText(state *domain.CurrentState) {
-	if state.ActiveSession != nil {
-		session := state.ActiveSession
-		fmt.Println("🍅 Active Pomodoro Session")
-		fmt.Printf("   Status: %s (%s)\n", domain.GetStatusLabel(session.Status), domain.GetSessionTypeLabel(session.Type))
-		fmt.Printf("   Remaining: %s\n", session.RemainingTime())
-		fmt.Printf("   Progress: %.0f%%\n", session.Progress()*100)
-		if session.GitBranch != "" {
-			fmt.Printf("   Git: %s (%s)\n", session.GitBranch, session.GitCommit[:7])
-		}
-	} else {
-		fmt.Println("No active pomodoro session.")
-	}
-
-	if state.ActiveTask != nil {
-		fmt.Printf("\n📋 Active Task: %s\n", state.ActiveTask.Title)
-	}
-
-	fmt.Printf("\n📊 Today's Stats:\n")
-	fmt.Printf("   Work Sessions: %d\n", state.TodayStats.WorkSessions)
-	fmt.Printf("   Breaks Taken: %d\n", state.TodayStats.BreaksTaken)
-	fmt.Printf("   Total Work Time: %s\n", state.TodayStats.TotalWorkTime)
+	return jsonOut(result)
 }

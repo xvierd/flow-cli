@@ -123,7 +123,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			}
 		},
 		DistractionCallback: func(text string, category string) error {
-			activeState, err := app.pomodoro.GetCurrentState(ctx)
+			activeState, err := app.state.GetCurrentState(ctx)
 			if err != nil || activeState.ActiveSession == nil {
 				return nil
 			}

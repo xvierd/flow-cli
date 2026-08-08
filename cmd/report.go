@@ -36,7 +36,6 @@ func init() {
 	reportCmd.Flags().BoolVar(&reportWeek, "week", false, "Report over the current week (default)")
 	reportCmd.Flags().StringVarP(&reportFormat, "format", "f", "terminal", "Output format: terminal, md, or csv")
 	reportCmd.Flags().StringVarP(&reportOut, "out", "o", "", "Write output to a file instead of stdout")
-	rootCmd.AddCommand(reportCmd)
 }
 
 func runReport(cmd *cobra.Command, args []string) error {

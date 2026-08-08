@@ -1,9 +1,21 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
+
+// jsonOut prints a value as indented JSON. Returns the marshal error so callers
+// surface it instead of silently dropping invalid output.
+func jsonOut(v interface{}) error {
+	jsonData, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON output: %w", err)
+	}
+	fmt.Println(string(jsonData))
+	return nil
+}
 
 // formatMinutes formats a duration as a human-friendly string like "25m" or "1h30m".
 func formatMinutes(d time.Duration) string {

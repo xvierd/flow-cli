@@ -3,7 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -25,7 +25,7 @@ var deleteCmd = &cobra.Command{
 		// Get task info first for confirmation
 		task, err := app.tasks.GetTask(ctx, taskID)
 		if err != nil {
-			if err == domain.ErrTaskNotFound {
+			if errors.Is(err, domain.ErrTaskNotFound) {
 				return fmt.Errorf("task not found: %s", taskID)
 			}
 			return fmt.Errorf("failed to get task: %w", err)
@@ -46,26 +46,19 @@ var deleteCmd = &cobra.Command{
 		// Delete the task
 		err = app.tasks.DeleteTask(ctx, taskID)
 		if err != nil {
-			if err == domain.ErrTaskNotFound {
+			if errors.Is(err, domain.ErrTaskNotFound) {
 				return fmt.Errorf("task not found: %s", taskID)
 			}
 			return fmt.Errorf("failed to delete task: %w", err)
 		}
 
 		if jsonOutput {
-			data, _ := json.Marshal(map[string]interface{}{
+			return jsonOut(map[string]interface{}{
 				"deleted": true,
 				"task_id": taskID,
 			})
-			fmt.Println(string(data))
-		} else {
-			fmt.Printf("✅ Task '%s' deleted successfully.\n", task.Title)
 		}
-
+		fmt.Printf("✅ Task '%s' deleted successfully.\n", task.Title)
 		return nil
 	},
-}
-
-func init() {
-	rootCmd.AddCommand(deleteCmd)
 }
