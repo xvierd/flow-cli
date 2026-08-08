@@ -73,7 +73,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 
 	out := os.Stdout
 	if reportOut != "" {
-		f, err := os.Create(reportOut)
+		f, err := os.Create(reportOut) // #nosec G304 -- user-specified output path
 		if err != nil {
 			return fmt.Errorf("failed to create output file: %w", err)
 		}
