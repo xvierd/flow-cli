@@ -39,3 +39,10 @@ func TestDeepWorkGoalHours_Default4(t *testing.T) {
 		t.Errorf("expected default DeepWorkGoalHours=4.0, got %f", cfg.DeepWork.DeepWorkGoalHours)
 	}
 }
+
+func TestDefaultConfig_FocusStrictFalse(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Focus.Strict {
+		t.Error("expected focus.strict to default to false")
+	}
+}

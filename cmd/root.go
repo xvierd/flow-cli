@@ -19,6 +19,7 @@ var (
 	jsonOutput bool
 	inlineMode bool
 	modeFlag   string
+	strictFlag bool
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -54,6 +55,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
 	rootCmd.PersistentFlags().BoolVarP(&inlineMode, "inline", "i", false, "Compact inline timer (no fullscreen)")
 	rootCmd.PersistentFlags().StringVar(&modeFlag, "mode", "", "Productivity methodology: pomodoro, deepwork, maketime")
+	rootCmd.PersistentFlags().BoolVar(&strictFlag, "strict", false, "Strict focus mode: lock pause/finish/void/cancel during work sessions (overrides config)")
 
 	// Set version - cobra handles --version automatically
 	rootCmd.Version = Version

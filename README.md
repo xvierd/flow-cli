@@ -132,7 +132,7 @@ methodology = "deepwork"   # pomodoro, deepwork, or maketime
 | Flag | Description |
 |------|-------------|
 | `--mode <pomodoro\|deepwork\|maketime>` | Methodology for this session (or default) |
-| `--strict` | Enforce strict focus mode for this session (see Focus Mode) |
+| `--strict` | Enforce strict focus mode (overrides `[focus] strict` in config) |
 | `--inline`, `-i` | Compact inline timer (narrow terminals / non-TTY) |
 | `--json` | Machine-readable output |
 | `--db <path>` | Custom database path |
@@ -174,16 +174,15 @@ Flow is distraction-free by default; **strict focus mode** makes it enforced, at
 strict = true          # default false
 ```
 
-Or per-session with `flow start --strict`.
+Or enable it per command with the global `--strict` flag, e.g. `flow --strict start` (this overrides the config).
 
-In strict mode:
+In strict mode, while a work session is active:
 
-- **Pausing is locked** while a work session is running.
-- **Stopping / voiding / cancelling** before 80% of the session is complete asks for `--force`.
-- **Breaks cannot be cancelled backwards** to jump back into work; `flow start` must be explicit.
-- The TUI shows a `🔒 STRICT` badge and the affected keys explain themselves; the MCP stop/pause tools return a descriptive error.
+- **Pausing, finishing (stopping), voiding, and cancelling are locked** — the session must run to completion. CLI commands (`flow stop`, `flow pause`, `flow void`) and MCP tools (`stop_pomodoro`, `pause_pomodoro`, `void_session`, `cancel_session`) fail with a descriptive "strict focus mode" error.
+- **Break sessions are unaffected** — you can still pause, finish, or skip a break.
+- The TUI shows a `🔒 STRICT` badge and locked keys (`p`/`f`/`v`/`b`, plus `m` inline) explain themselves instead of acting.
 
-Exiting strict enforcement: `flow stop --force`.
+To leave strict mode, set `[focus] strict = false` in the config (or drop the `--strict` flag).
 
 ## TUI Key Bindings
 

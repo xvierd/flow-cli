@@ -81,6 +81,8 @@ type InlineModel struct {
 	outcomeAchievedCallback func(sessionID string, achieved string) error
 	completionInfo          *domain.CompletionInfo
 	theme                   config.ThemeConfig
+	strict                  bool
+	strictLocked            bool // transient notice shown when a strict-locked key is pressed
 
 	// Callbacks for session creation (called during setup phase)
 	onStartSession func(presetIndex int, taskName string, intendedOutcome string) error
@@ -108,6 +110,21 @@ func getTerminalWidth() int {
 		return 80
 	}
 	return w
+}
+
+// strictWorkBlocked reports whether strict focus mode locks early disengagement:
+// an active (not yet completed) work session cannot be paused, finished, voided,
+// skipped into a break, or cancelled via mode switch.
+func (m InlineModel) strictWorkBlocked() bool {
+	return m.strict && !m.completed && m.state != nil && m.state.ActiveSession != nil && m.state.ActiveSession.IsWorkSession()
+}
+
+// setStrictLocked records a blocked-key notice and clears any confirm states.
+func (m *InlineModel) setStrictLocked() {
+	m.strictLocked = true
+	m.confirmBreak = false
+	m.confirmFinish = false
+	m.confirmMode = false
 }
 
 // NewInlineModel creates a new inline TUI model starting in the setup phase.
@@ -303,6 +320,10 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notified = false
 			}
 		case "p":
+			if m.strictWorkBlocked() && m.state.ActiveSession.Status == domain.SessionStatusRunning {
+				m.setStrictLocked()
+				return m, nil
+			}
 			if m.commandCallback != nil && m.state.ActiveSession != nil {
 				if m.state.ActiveSession.Status == domain.SessionStatusRunning {
 					_ = m.commandCallback(ports.CmdPause)
@@ -390,6 +411,10 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "b":
+			if m.strictWorkBlocked() {
+				m.setStrictLocked()
+				return m, nil
+			}
 			if m.completed && m.completedType == domain.SessionTypeWork {
 				if m.commandCallback != nil {
 					_ = m.commandCallback(ports.CmdBreak)
@@ -415,6 +440,10 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.completed || m.state.ActiveSession == nil {
 				return m, nil
 			}
+			if m.strictWorkBlocked() {
+				m.setStrictLocked()
+				return m, nil
+			}
 			if m.confirmFinish {
 				if m.commandCallback != nil {
 					_ = m.commandCallback(ports.CmdStop)
@@ -427,6 +456,10 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.confirmFinish = true
 			m.confirmBreak = false
 		case "v":
+			if m.strictWorkBlocked() {
+				m.setStrictLocked()
+				return m, nil
+			}
 			// Void (interrupt) the current session — not counted in stats
 			if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.Type == domain.SessionTypeWork && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdVoid)
@@ -437,6 +470,11 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.resetCompletionState()
 			}
 		case "m":
+			// Strict focus: cancel via mode switch is locked during a work session.
+			if m.strictWorkBlocked() {
+				m.setStrictLocked()
+				return m, nil
+			}
 			// Switch mode. If a session is active, confirm before cancelling it.
 			if !m.completed && m.state.ActiveSession != nil {
 				if m.confirmMode {
@@ -472,6 +510,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.confirmBreak = false
 			m.confirmFinish = false
 			m.confirmMode = false
+			m.strictLocked = false
 		}
 
 	case tickMsg:
@@ -653,6 +692,9 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	} else {
 		b.WriteString(accent.Render(fmt.Sprintf("  %s %s  %s", m.theme.IconApp, displayLabel, timeStr)))
 	}
+	if m.strict && session.IsWorkSession() {
+		b.WriteString(accent.Render("  🔒 STRICT"))
+	}
 
 	if m.state.ActiveTask != nil {
 		b.WriteString(dim.Render(fmt.Sprintf("  %s %s", m.theme.IconTask, m.state.ActiveTask.Title)))
@@ -726,7 +768,9 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	}
 
 	// Help
-	if m.confirmMode {
+	if m.strictLocked {
+		b.WriteString(dim.Render("  🔒 STRICT: pause, finish, void, break and mode are locked — let the session run to completion"))
+	} else if m.confirmMode {
 		b.WriteString(dim.Render("  Switch mode? This cancels the current session  [m] confirm  [esc] cancel"))
 	} else if m.confirmFinish {
 		b.WriteString(dim.Render("  Stop session? [f] confirm  [esc] cancel  [m]ode"))

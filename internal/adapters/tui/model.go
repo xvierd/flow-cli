@@ -66,6 +66,8 @@ type Model struct {
 	completionInfo          *domain.CompletionInfo
 	theme                   config.ThemeConfig
 	mode                    methodology.Mode
+	strict                  bool
+	strictLocked            bool // transient notice shown when a strict-locked key is pressed
 
 	// completionState holds all mode-specific fields shared with InlineModel.
 	completionState
@@ -117,6 +119,20 @@ func (m Model) getThemeColor() lipgloss.Color {
 		return lipgloss.Color(m.theme.ColorBreak)
 	}
 	return lipgloss.Color(m.theme.ColorWork)
+}
+
+// strictWorkBlocked reports whether strict focus mode locks early disengagement:
+// an active (not yet completed) work session cannot be paused, finished, voided,
+// or skipped into a break.
+func (m Model) strictWorkBlocked() bool {
+	return m.strict && !m.completed && m.state != nil && m.state.ActiveSession != nil && m.state.ActiveSession.IsWorkSession()
+}
+
+// setStrictLocked records a blocked-key notice and clears any confirm states.
+func (m *Model) setStrictLocked() {
+	m.strictLocked = true
+	m.confirmBreak = false
+	m.confirmFinish = false
 }
 
 // getTimerColor returns the color for the timer, accounting for pause state.
@@ -220,6 +236,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notified = false
 			}
 		case "p":
+			if m.strictWorkBlocked() && m.state.ActiveSession.Status == domain.SessionStatusRunning {
+				m.setStrictLocked()
+				return m, nil
+			}
 			if m.commandCallback != nil && m.state.ActiveSession != nil {
 				if m.state.ActiveSession.Status == domain.SessionStatusRunning {
 					_ = m.commandCallback(ports.CmdPause)
@@ -308,6 +328,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "b":
+			if m.strictWorkBlocked() {
+				m.setStrictLocked()
+				return m, nil
+			}
 			if m.completed && m.completedSessionType == domain.SessionTypeWork {
 				if m.commandCallback != nil {
 					_ = m.commandCallback(ports.CmdBreak)
@@ -333,6 +357,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.completed || m.state.ActiveSession == nil {
 				return m, nil
 			}
+			if m.strictWorkBlocked() {
+				m.setStrictLocked()
+				return m, nil
+			}
 			if m.confirmFinish {
 				if m.commandCallback != nil {
 					_ = m.commandCallback(ports.CmdStop)
@@ -345,6 +373,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.confirmFinish = true
 			m.confirmBreak = false
 		case "v":
+			if m.strictWorkBlocked() {
+				m.setStrictLocked()
+				return m, nil
+			}
 			// Void (interrupt) the current work session — not counted in stats
 			if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.Type == domain.SessionTypeWork && m.commandCallback != nil {
 				_ = m.commandCallback(ports.CmdVoid)
@@ -357,6 +389,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			m.confirmBreak = false
 			m.confirmFinish = false
+			m.strictLocked = false
 		}
 
 	case tea.WindowSizeMsg:
@@ -819,6 +852,18 @@ func (m Model) viewActiveSession(sections []string) []string {
 		domain.GetStatusLabel(session.Status))
 	sections = append(sections, statusStyle.Render(statusText))
 
+	// Strict focus badge
+	if m.strict && session.IsWorkSession() {
+		strictBadge := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#E63946")).
+			Padding(0, 1).
+			Render("🔒 STRICT")
+		sections = append(sections, "")
+		sections = append(sections, strictBadge)
+	}
+
 	// Big ASCII timer
 	remaining := session.RemainingTime()
 	timeStr := formatDuration(remaining)
@@ -887,7 +932,9 @@ func (m Model) viewActiveSession(sections []string) []string {
 		notifLabel = "on"
 	}
 	sections = append(sections, "")
-	if m.confirmFinish {
+	if m.strictLocked {
+		sections = append(sections, helpStyle.Render("🔒 STRICT: pause, finish, void and break are locked — let the session run to completion"))
+	} else if m.confirmFinish {
 		sections = append(sections, helpStyle.Render("Stop session? [f] confirm  [esc] cancel"))
 	} else if m.confirmBreak {
 		sections = append(sections, helpStyle.Render("Start break? [b] confirm  [esc] cancel"))

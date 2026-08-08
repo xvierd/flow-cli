@@ -85,6 +85,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			}
 			_ = config.Save(app.config)
 		},
+		Strict: app.config.Focus.Strict || strictFlag,
 		FetchState: func() *domain.CurrentState {
 			newState, err := app.state.GetCurrentState(ctx)
 			if err != nil {

@@ -183,6 +183,88 @@ func TestPomodoroService_CancelSession(t *testing.T) {
 	})
 }
 
+func TestPomodoroService_StrictMode(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	service.SetStrictMode(true)
+	ctx := context.Background()
+
+	clearSessions(t, store, ctx)
+	if _, err := service.StartPomodoro(ctx, StartPomodoroRequest{}); err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+
+	t.Run("pause blocked on work", func(t *testing.T) {
+		if _, err := service.PauseSession(ctx); err != domain.ErrStrictFocusBlocked {
+			t.Errorf("PauseSession() error = %v, want ErrStrictFocusBlocked", err)
+		}
+		active, _ := service.storage.Sessions().FindActive(ctx)
+		if active == nil || active.Status != domain.SessionStatusRunning {
+			t.Error("work session should still be running after blocked pause")
+		}
+	})
+
+	t.Run("stop blocked on work", func(t *testing.T) {
+		if _, err := service.StopSession(ctx); err != domain.ErrStrictFocusBlocked {
+			t.Errorf("StopSession() error = %v, want ErrStrictFocusBlocked", err)
+		}
+	})
+
+	t.Run("void blocked on work", func(t *testing.T) {
+		if _, err := service.VoidSession(ctx); err != domain.ErrStrictFocusBlocked {
+			t.Errorf("VoidSession() error = %v, want ErrStrictFocusBlocked", err)
+		}
+	})
+
+	t.Run("cancel blocked on work", func(t *testing.T) {
+		if err := service.CancelSession(ctx); err != domain.ErrStrictFocusBlocked {
+			t.Errorf("CancelSession() error = %v, want ErrStrictFocusBlocked", err)
+		}
+	})
+
+	t.Run("break session not blocked", func(t *testing.T) {
+		// Complete the active work session via storage (bypasses service policy).
+		clearSessions(t, store, ctx)
+		if _, err := service.StartBreak(ctx, "."); err != nil {
+			t.Fatalf("StartBreak() error = %v", err)
+		}
+		if _, err := service.PauseSession(ctx); err != nil {
+			t.Errorf("PauseSession() on break error = %v, want nil", err)
+		}
+		if _, err := service.ResumeSession(ctx); err != nil {
+			t.Errorf("ResumeSession() on break error = %v, want nil", err)
+		}
+		if _, err := service.StopSession(ctx); err != nil {
+			t.Errorf("StopSession() on break error = %v, want nil", err)
+		}
+	})
+}
+
+func TestPomodoroService_StrictModeOff(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	clearSessions(t, store, ctx)
+	if _, err := service.StartPomodoro(ctx, StartPomodoroRequest{}); err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+
+	if _, err := service.PauseSession(ctx); err != nil {
+		t.Errorf("PauseSession() error = %v, want nil", err)
+	}
+	if _, err := service.ResumeSession(ctx); err != nil {
+		t.Errorf("ResumeSession() error = %v, want nil", err)
+	}
+	if _, err := service.StopSession(ctx); err != nil {
+		t.Errorf("StopSession() error = %v, want nil", err)
+	}
+}
+
 func TestPomodoroService_GetCurrentState(t *testing.T) {
 	store, cleanup := setupTestStorage(t)
 	defer cleanup()

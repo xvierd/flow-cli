@@ -14,6 +14,7 @@ type PomodoroService struct {
 	storage     ports.Storage
 	gitDetector ports.GitDetector
 	config      domain.PomodoroConfig
+	strictMode  bool
 }
 
 // NewPomodoroService creates a new pomodoro service.
@@ -28,6 +29,21 @@ func NewPomodoroService(storage ports.Storage, gitDetector ports.GitDetector) *P
 // SetConfig updates the pomodoro configuration.
 func (s *PomodoroService) SetConfig(config domain.PomodoroConfig) {
 	s.config = config
+}
+
+// SetStrictMode toggles focus strict mode. When enabled, active work sessions
+// cannot be paused, stopped, voided, or cancelled — they must run to completion.
+func (s *PomodoroService) SetStrictMode(enabled bool) {
+	s.strictMode = enabled
+}
+
+// enforceStrict returns ErrStrictFocusBlocked when strict mode is active and the
+// given session is an in-progress work session being disengaged early.
+func (s *PomodoroService) enforceStrict(session *domain.PomodoroSession) error {
+	if s.strictMode && session.IsWorkSession() {
+		return domain.ErrStrictFocusBlocked
+	}
+	return nil
 }
 
 // StartPomodoroRequest contains data to start a work session.
@@ -129,6 +145,13 @@ func (s *PomodoroService) PauseSession(ctx context.Context) (*domain.PomodoroSes
 		return nil, domain.ErrNoActiveSession
 	}
 
+	// Strict focus: running work sessions cannot be paused.
+	if session.Status == domain.SessionStatusRunning {
+		if err := s.enforceStrict(session); err != nil {
+			return nil, err
+		}
+	}
+
 	session.Pause()
 	if err := s.storage.Sessions().Update(ctx, session); err != nil {
 		return nil, fmt.Errorf("failed to update session: %w", err)
@@ -164,6 +187,9 @@ func (s *PomodoroService) StopSession(ctx context.Context) (*domain.PomodoroSess
 	if session == nil {
 		return nil, domain.ErrNoActiveSession
 	}
+	if err := s.enforceStrict(session); err != nil {
+		return nil, err
+	}
 
 	// Record actual elapsed time if session was stopped early (minimum 1s to filter test/immediate stops)
 	elapsed := time.Since(session.StartedAt)
@@ -187,6 +213,9 @@ func (s *PomodoroService) CancelSession(ctx context.Context) error {
 	if session == nil {
 		return domain.ErrNoActiveSession
 	}
+	if err := s.enforceStrict(session); err != nil {
+		return err
+	}
 
 	session.Cancel()
 	return s.storage.Sessions().Update(ctx, session)
@@ -201,6 +230,10 @@ func (s *PomodoroService) VoidSession(ctx context.Context) (*domain.PomodoroSess
 	}
 	if session == nil {
 		return nil, domain.ErrNoActiveSession
+	}
+
+	if err := s.enforceStrict(session); err != nil {
+		return nil, err
 	}
 
 	session.Interrupt()

@@ -20,9 +20,22 @@ type Config struct {
 	DeepWork      DeepWorkConfig     `mapstructure:"deepwork"`
 	MakeTime      MakeTimeConfig     `mapstructure:"maketime"`
 	Notifications NotificationConfig `mapstructure:"notifications"`
+	Focus         FocusConfig        `mapstructure:"focus"`
 	MCP           MCPConfig          `mapstructure:"mcp"`
 	Storage       StorageConfig      `mapstructure:"storage"`
 	Theme         ThemeConfig        `mapstructure:"theme"`
+}
+
+// FocusConfig holds focus mode settings.
+type FocusConfig struct {
+	// Strict locks pause/finish/void/cancel during active work sessions,
+	// forcing them to run to completion.
+	Strict bool `mapstructure:"strict"`
+}
+
+// DefaultFocusConfig returns the default focus mode configuration.
+func DefaultFocusConfig() FocusConfig {
+	return FocusConfig{Strict: false}
 }
 
 // ThemeConfig holds theme customization settings (colors and icons).
@@ -224,6 +237,9 @@ func DefaultConfig() *Config {
 			Enabled: true,
 			Sound:   true,
 		},
+		Focus: FocusConfig{
+			Strict: false,
+		},
 		MCP: MCPConfig{
 			Enabled:   true,
 			AutoStart: false,
@@ -401,6 +417,7 @@ func setDefaults() {
 	viper.SetDefault("maketime.preset3_duration", "15m0s")
 	viper.SetDefault("notifications.enabled", true)
 	viper.SetDefault("notifications.sound", true)
+	viper.SetDefault("focus.strict", false)
 	viper.SetDefault("mcp.enabled", true)
 	viper.SetDefault("mcp.auto_start", false)
 	viper.SetDefault("storage.data_dir", "~/.flow")

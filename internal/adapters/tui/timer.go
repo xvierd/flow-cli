@@ -39,6 +39,7 @@ type Timer struct {
 	notificationsEnabled    bool
 	notificationToggle      func(bool)
 	firstRun                bool
+	strict                  bool
 	// PostAction holds the action selected from the main menu (stats/reflect).
 	PostAction MainMenuAction
 	// WantsNewSession is set when user wants to chain another session (fullscreen mode).
@@ -85,6 +86,7 @@ type TimerConfig struct {
 	FetchRecentTasks        func(limit int) []*domain.Task
 	FetchYesterdayHighlight func() *domain.Task
 	FirstRun                bool
+	Strict                  bool
 }
 
 // Configure applies a TimerConfig to the timer, replacing individual Set* calls.
@@ -111,6 +113,7 @@ func (t *Timer) Configure(cfg TimerConfig) {
 	t.fetchRecentTasks = cfg.FetchRecentTasks
 	t.fetchYesterdayHighlight = cfg.FetchYesterdayHighlight
 	t.firstRun = cfg.FirstRun
+	t.strict = cfg.Strict
 }
 
 // SetMode sets the methodology mode for mode-aware UI behavior.
@@ -148,6 +151,7 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	model.autoBreak = t.autoBreak
 	model.notificationsEnabled = t.notificationsEnabled
 	model.notificationToggle = t.notificationToggle
+	model.strict = t.strict
 
 	t.program = tea.NewProgram(
 		model,
@@ -197,6 +201,7 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.autoBreak = t.autoBreak
 	model.notificationsEnabled = t.notificationsEnabled
 	model.notificationToggle = t.notificationToggle
+	model.strict = t.strict
 
 	// If no active session, start at main menu or mode picker
 	if initialState.ActiveSession == nil {

@@ -25,6 +25,10 @@ type mockStateProvider struct {
 	created          map[string]string // taskID -> title
 	distractionCalls []string
 	lastNotes        string
+
+	// err, when set, is returned by session lifecycle ops to simulate failures
+	// (e.g. strict focus mode blocks).
+	err error
 }
 
 func newMockSession() *domain.PomodoroSession {
@@ -87,24 +91,36 @@ func (m *mockStateProvider) StartBreak(ctx context.Context) (*domain.PomodoroSes
 }
 
 func (m *mockStateProvider) StopPomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	return newMockSession(), nil
 }
 
 func (m *mockStateProvider) PausePomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	s := newMockSession()
 	s.Pause()
 	return s, nil
 }
 
 func (m *mockStateProvider) ResumePomodoro(ctx context.Context) (*domain.PomodoroSession, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	return newMockSession(), nil
 }
 
 func (m *mockStateProvider) CancelSession(ctx context.Context) error {
-	return nil
+	return m.err
 }
 
 func (m *mockStateProvider) VoidSession(ctx context.Context) (*domain.PomodoroSession, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	s := newMockSession()
 	s.Interrupt()
 	return s, nil
@@ -576,6 +592,49 @@ func TestServer_handleVoidSession(t *testing.T) {
 	}
 	if result == nil || result.IsError {
 		t.Fatalf("handleVoidSession() error result: %+v", result)
+	}
+}
+
+func TestServer_StrictFocusErrorSurfaced(t *testing.T) {
+	mock := &mockStateProvider{err: domain.ErrStrictFocusBlocked}
+	server := newTestServer(mock)
+
+	// Each handler must surface the strict focus error as an error tool result
+	// (never a transport error), carrying the descriptive message to the client.
+	tests := []struct {
+		name    string
+		handler func(context.Context) (*mcp.CallToolResult, error)
+	}{
+		{"stop", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleStopPomodoro(ctx, request(map[string]interface{}{}))
+		}},
+		{"pause", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handlePausePomodoro(ctx, request(map[string]interface{}{}))
+		}},
+		{"void", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleVoidSession(ctx, request(map[string]interface{}{}))
+		}},
+		{"cancel", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleCancelSession(ctx, request(map[string]interface{}{}))
+		}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.handler(context.Background())
+			if err != nil {
+				t.Fatalf("expected a tool error result, got transport error: %v", err)
+			}
+			if result == nil || !result.IsError {
+				t.Fatal("expected IsError=true result conveying the strict focus block")
+			}
+			if len(result.Content) == 0 {
+				t.Fatal("expected error content in result")
+			}
+			if text, ok := result.Content[0].(mcp.TextContent); ok && !strings.Contains(text.Text, "strict focus mode") {
+				t.Errorf("error message = %q, want it to mention strict focus mode", text.Text)
+			}
+		})
 	}
 }
 

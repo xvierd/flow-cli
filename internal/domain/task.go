@@ -16,6 +16,7 @@ var (
 	ErrInvalidDuration      = errors.New("invalid duration")
 	ErrSessionAlreadyActive = errors.New("session already active")
 	ErrNoActiveSession      = errors.New("no active session")
+	ErrStrictFocusBlocked   = errors.New("strict focus mode: pause, finish, void and cancel are locked while a work session is active")
 )
 
 // TaskStatus represents the current state of a task.
