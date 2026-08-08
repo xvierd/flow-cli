@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 	"github.com/xvierd/flow-cli/internal/ports"
 )
@@ -49,12 +50,9 @@ type Model struct {
 	progress                progress.Model
 	width                   int
 	height                  int
-	completed               bool
 	completedSessionType    domain.SessionType
 	completedElapsed        time.Duration // actual time worked, captured at session end
 	notified                bool
-	confirmBreak            bool
-	confirmFinish           bool
 	fetchState              func() *domain.CurrentState
 	commandCallback         func(ports.TimerCommand) error
 	onSessionComplete       func(domain.SessionType)
@@ -66,10 +64,9 @@ type Model struct {
 	completionInfo          *domain.CompletionInfo
 	theme                   config.ThemeConfig
 	mode                    methodology.Mode
-	strict                  bool
-	strictLocked            bool // transient notice shown when a strict-locked key is pressed
 
-	// completionState holds all mode-specific fields shared with InlineModel.
+	// completionState holds all mode-specific fields shared with InlineModel,
+	// including the completed flag, strict-mode state and confirm states.
 	completionState
 
 	// Notifications
@@ -119,20 +116,6 @@ func (m Model) getThemeColor() lipgloss.Color {
 		return lipgloss.Color(m.theme.ColorBreak)
 	}
 	return lipgloss.Color(m.theme.ColorWork)
-}
-
-// strictWorkBlocked reports whether strict focus mode locks early disengagement:
-// an active (not yet completed) work session cannot be paused, finished, voided,
-// or skipped into a break.
-func (m Model) strictWorkBlocked() bool {
-	return m.strict && !m.completed && m.state != nil && m.state.ActiveSession != nil && m.state.ActiveSession.IsWorkSession()
-}
-
-// setStrictLocked records a blocked-key notice and clears any confirm states.
-func (m *Model) setStrictLocked() {
-	m.strictLocked = true
-	m.confirmBreak = false
-	m.confirmFinish = false
 }
 
 // getTimerColor returns the color for the timer, accounting for pause state.
@@ -236,7 +219,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notified = false
 			}
 		case "p":
-			if m.strictWorkBlocked() && m.state.ActiveSession.Status == domain.SessionStatusRunning {
+			if m.strictWorkBlocked(m.state) && m.state.ActiveSession.Status == domain.SessionStatusRunning {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -328,7 +311,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "b":
-			if m.strictWorkBlocked() {
+			if m.strictWorkBlocked(m.state) {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -357,7 +340,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.completed || m.state.ActiveSession == nil {
 				return m, nil
 			}
-			if m.strictWorkBlocked() {
+			if m.strictWorkBlocked(m.state) {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -373,7 +356,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.confirmFinish = true
 			m.confirmBreak = false
 		case "v":
-			if m.strictWorkBlocked() {
+			if m.strictWorkBlocked(m.state) {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -524,7 +507,7 @@ func (m Model) updateOutcomeReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the TUI.
 func (m Model) View() string {
 	if m.width == 0 {
-		return "Loading..."
+		return i18n.T("Loading...")
 	}
 
 	if m.showingSummary {
@@ -543,14 +526,14 @@ func (m Model) View() string {
 
 	// Active task
 	if m.state.ActiveTask != nil {
-		taskText := fmt.Sprintf("%s Task: %s", m.theme.IconTask, m.state.ActiveTask.Title)
+		taskText := fmt.Sprintf("%s %s", m.theme.IconTask, i18n.T("Task: %s", m.state.ActiveTask.Title))
 		taskStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorTask))
 		sections = append(sections, taskStyle.Render(taskText))
 	}
 
 	// Intended outcome
 	if m.state.ActiveSession != nil && m.state.ActiveSession.IntendedOutcome != "" {
-		outcome := lipgloss.NewStyle().Italic(true).Faint(true).Render("Goal: " + m.state.ActiveSession.IntendedOutcome)
+		outcome := lipgloss.NewStyle().Italic(true).Faint(true).Render(i18n.T("Goal: %s", m.state.ActiveSession.IntendedOutcome))
 		sections = append(sections, outcome)
 	}
 
@@ -582,10 +565,10 @@ func (m Model) View() string {
 			sections = append(sections, helpStyle.Render(info))
 		} else {
 			idleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused))
-			sections = append(sections, idleStyle.Render("No active session"))
+			sections = append(sections, idleStyle.Render(i18n.T("No active session")))
 		}
 		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render("[s]tart  [c]lose"))
+		sections = append(sections, helpStyle.Render(i18n.T("[s]tart  [c]lose")))
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
@@ -599,17 +582,17 @@ func (m Model) viewFullscreenSummary() string {
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork))
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
-	sections = append(sections, titleStyle.Render(fmt.Sprintf("%s Today's Summary", m.theme.IconApp)))
+	sections = append(sections, titleStyle.Render(fmt.Sprintf("%s %s", m.theme.IconApp, i18n.T("Today's Summary"))))
 
 	stats := m.state.TodayStats
-	sections = append(sections, statusStyle.Render(fmt.Sprintf("%s %d sessions, %s focused",
-		m.theme.IconStats, stats.WorkSessions, formatDuration(stats.TotalWorkTime))))
+	sections = append(sections, statusStyle.Render(fmt.Sprintf("%s %s",
+		m.theme.IconStats, i18n.T("%d sessions, %s focused", stats.WorkSessions, formatDuration(stats.TotalWorkTime)))))
 	if stats.BreaksTaken > 0 {
-		sections = append(sections, helpStyle.Render(fmt.Sprintf("%d breaks taken", stats.BreaksTaken)))
+		sections = append(sections, helpStyle.Render(i18n.T("%d breaks taken", stats.BreaksTaken)))
 	}
 
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("Press any key to exit"))
+	sections = append(sections, helpStyle.Render(i18n.T("Press any key to exit")))
 
 	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
@@ -633,9 +616,9 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 
 	sections = append(sections, "")
 	if vd.elapsed > 0 {
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("Session complete — %s worked", formatDuration(vd.elapsed))))
+		sections = append(sections, statusStyle.Render(i18n.T("Session complete — %s worked", formatDuration(vd.elapsed))))
 	} else {
-		sections = append(sections, statusStyle.Render("Session complete! Great work."))
+		sections = append(sections, statusStyle.Render(i18n.T("Session complete! Great work.")))
 	}
 	sections = append(sections, m.progress.ViewAs(1.0))
 
@@ -643,36 +626,36 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 	if vd.hasBreakInfo {
 		breakLine := fmt.Sprintf("[b] %s %s", vd.breakDur, vd.breakLabel)
 		if vd.isLongBreak {
-			breakLine += " - you earned it!"
+			breakLine += i18n.T(" - you earned it!")
 		}
 		sections = append(sections, "")
 		sections = append(sections, statusStyle.Render(breakLine))
 
 		if !vd.isLongBreak {
-			countLine := fmt.Sprintf("%d of %d sessions until long break",
+			countLine := i18n.T("%d of %d sessions until long break",
 				vd.sessionsBeforeLong-vd.sessionsUntilLong, vd.sessionsBeforeLong)
 			sections = append(sections, helpStyle.Render(countLine))
 		}
 	}
 
 	// Daily stats
-	statsText := fmt.Sprintf("%s Today: %d work sessions, %d breaks, %s worked",
-		m.theme.IconStats, vd.statsWorkSessions, vd.statsBreaksTaken, formatDuration(vd.statsTotalWorkTime))
+	statsText := fmt.Sprintf("%s %s", m.theme.IconStats,
+		i18n.T("Today: %d work sessions, %d breaks, %s worked", vd.statsWorkSessions, vd.statsBreaksTaken, formatDuration(vd.statsTotalWorkTime)))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
 
 	if m.mode != nil && m.mode.Name() == domain.MethodologyPomodoro {
-		sections = append(sections, helpStyle.Render(fmt.Sprintf("\U0001F345 %d sessions today", vd.statsWorkSessions)))
+		sections = append(sections, helpStyle.Render(fmt.Sprintf("\U0001F345 %s", i18n.T("%d sessions today", vd.statsWorkSessions))))
 	}
 
 	sections = append(sections, "")
 	if m.autoBreakTicks > 0 {
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+		sections = append(sections, statusStyle.Render(i18n.T("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
 	} else {
-		sections = append(sections, helpStyle.Render("[n]ew session  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("[n]ew session  [b]reak  [q]uit")))
 	}
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("Customize in ~/.flow/config.toml"))
+	sections = append(sections, helpStyle.Render(i18n.T("Customize in ~/.flow/config.toml")))
 	return sections
 }
 
@@ -682,60 +665,60 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	sections = append(sections, "")
-	sections = append(sections, statusStyle.Render("Deep Work Session Complete."))
+	sections = append(sections, statusStyle.Render(i18n.T("Deep Work Session Complete.")))
 	if vd.intendedOutcome != "" {
-		sections = append(sections, helpStyle.Render("Goal: "+vd.intendedOutcome))
+		sections = append(sections, helpStyle.Render(i18n.T("Goal: %s", vd.intendedOutcome)))
 	}
 	sections = append(sections, m.progress.ViewAs(1.0))
 
 	if vd.distractionCount > 0 {
 		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render(fmt.Sprintf("Distractions logged: %d", vd.distractionCount)))
+		sections = append(sections, helpStyle.Render(i18n.T("Distractions logged: %d", vd.distractionCount)))
 	}
 
 	sections = append(sections, "")
-	sections = append(sections, statusStyle.Render(fmt.Sprintf("Deep Work Score: %s today", formatDuration(vd.statsTotalWorkTime))))
-	sections = append(sections, helpStyle.Render(fmt.Sprintf("%.0f%% of %.0fh target", vd.deepWorkPct, vd.deepWorkGoalHours)))
+	sections = append(sections, statusStyle.Render(i18n.T("Deep Work Score: %s today", formatDuration(vd.statsTotalWorkTime))))
+	sections = append(sections, helpStyle.Render(i18n.T("%.0f%% of %.0fh target", vd.deepWorkPct, vd.deepWorkGoalHours)))
 
 	if vd.deepWorkStreak > 0 {
 		sections = append(sections, "")
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("Deep Work streak: %d days", vd.deepWorkStreak)))
+		sections = append(sections, statusStyle.Render(i18n.T("Deep Work streak: %d days", vd.deepWorkStreak)))
 	}
 
 	sections = append(sections, "")
 	if m.shutdownRitualMode {
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("Shutdown Ritual (step %d/4):", m.shutdownStep+1)))
-		sections = append(sections, helpStyle.Render(shutdownStepLabels[m.shutdownStep]))
+		sections = append(sections, statusStyle.Render(i18n.T("Shutdown Ritual (step %d/4):", m.shutdownStep+1)))
+		sections = append(sections, helpStyle.Render(i18n.T(shutdownStepLabels[m.shutdownStep])))
 		sections = append(sections, m.shutdownInputs[m.shutdownStep].View())
-		sections = append(sections, helpStyle.Render("enter save/skip step · esc exit ritual"))
+		sections = append(sections, helpStyle.Render(i18n.T("enter save/skip step · esc exit ritual")))
 	} else if m.accomplishmentMode {
-		sections = append(sections, helpStyle.Render("What did you accomplish? ")+m.accomplishmentInput.View())
-		sections = append(sections, helpStyle.Render("enter save · esc cancel"))
+		sections = append(sections, helpStyle.Render(i18n.T("What did you accomplish? "))+m.accomplishmentInput.View())
+		sections = append(sections, helpStyle.Render(i18n.T("enter save · esc cancel")))
 	} else if m.outcomeReviewMode {
-		sections = append(sections, statusStyle.Render("Did you achieve your intended outcome?"))
-		sections = append(sections, helpStyle.Render(fmt.Sprintf("Goal: %s", vd.intendedOutcome)))
+		sections = append(sections, statusStyle.Render(i18n.T("Did you achieve your intended outcome?")))
+		sections = append(sections, helpStyle.Render(i18n.T("Goal: %s", vd.intendedOutcome)))
 		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render("[y]es  [p]artially  [n]o  [enter] skip"))
+		sections = append(sections, helpStyle.Render(i18n.T("[y]es  [p]artially  [n]o  [enter] skip")))
 	} else if m.distractionReviewMode {
-		sections = append(sections, statusStyle.Render("Distraction Review:"))
+		sections = append(sections, statusStyle.Render(i18n.T("Distraction Review:")))
 		for i, d := range m.distractions {
 			sections = append(sections, helpStyle.Render(fmt.Sprintf("  %d. %s", i+1, d)))
 		}
 		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render("Consider batching these for tomorrow."))
-		sections = append(sections, helpStyle.Render("enter dismiss"))
+		sections = append(sections, helpStyle.Render(i18n.T("Consider batching these for tomorrow.")))
+		sections = append(sections, helpStyle.Render(i18n.T("enter dismiss")))
 	} else if m.shutdownComplete || m.accomplishmentSaved {
 		if vd.intendedOutcome != "" && !m.outcomeReviewDone {
-			sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
-			sections = append(sections, helpStyle.Render("[o]utcome review"))
+			sections = append(sections, statusStyle.Render(i18n.T("Shutdown ritual complete.")))
+			sections = append(sections, helpStyle.Render(i18n.T("[o]utcome review")))
 		} else if vd.distractionCount > 0 && !m.distractionReviewDone {
-			sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
-			sections = append(sections, helpStyle.Render(fmt.Sprintf("[r]eview %d distractions", vd.distractionCount)))
+			sections = append(sections, statusStyle.Render(i18n.T("Shutdown ritual complete.")))
+			sections = append(sections, helpStyle.Render(i18n.T("[r]eview %d distractions", vd.distractionCount)))
 		} else {
-			sections = append(sections, statusStyle.Render("Shutdown ritual complete."))
+			sections = append(sections, statusStyle.Render(i18n.T("Shutdown ritual complete.")))
 		}
 	} else {
-		sections = append(sections, helpStyle.Render("[a] Shutdown ritual"))
+		sections = append(sections, helpStyle.Render(i18n.T("[a] Shutdown ritual")))
 	}
 
 	if vd.hasBreakInfo {
@@ -745,21 +728,21 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 
 	sections = append(sections, "")
 	if m.completionPromptsComplete() {
-		sections = append(sections, helpStyle.Render("[n]ew session  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("[n]ew session  [b]reak  [q]uit")))
 	} else if !m.shutdownComplete && !m.accomplishmentSaved {
-		sections = append(sections, helpStyle.Render("→ [n]ew session locked: complete the shutdown ritual first"))
-		sections = append(sections, helpStyle.Render("  Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest."))
-		sections = append(sections, helpStyle.Render("[a] shutdown ritual  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("→ [n]ew session locked: complete the shutdown ritual first")))
+		sections = append(sections, helpStyle.Render("  "+i18n.T("Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest.")))
+		sections = append(sections, helpStyle.Render(i18n.T("[a] shutdown ritual  [b]reak  [q]uit")))
 	} else if vd.intendedOutcome != "" && !m.outcomeReviewDone {
-		sections = append(sections, helpStyle.Render("→ [n]ew session locked: review your outcome first"))
-		sections = append(sections, helpStyle.Render("  Did you achieve what you set out to do?"))
-		sections = append(sections, helpStyle.Render("[o]utcome review  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("→ [n]ew session locked: review your outcome first")))
+		sections = append(sections, helpStyle.Render("  "+i18n.T("Did you achieve what you set out to do?")))
+		sections = append(sections, helpStyle.Render(i18n.T("[o]utcome review  [b]reak  [q]uit")))
 	} else if vd.distractionCount > 0 && !m.distractionReviewDone {
-		sections = append(sections, helpStyle.Render("→ [n]ew session locked: review your distractions first"))
-		sections = append(sections, helpStyle.Render("  Newport: batch distractions and schedule them — don't let them follow you into the next block."))
-		sections = append(sections, helpStyle.Render("[r]eview distractions  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("→ [n]ew session locked: review your distractions first")))
+		sections = append(sections, helpStyle.Render("  "+i18n.T("Newport: batch distractions and schedule them — don't let them follow you into the next block.")))
+		sections = append(sections, helpStyle.Render(i18n.T("[r]eview distractions  [b]reak  [q]uit")))
 	} else {
-		sections = append(sections, helpStyle.Render("[b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("[b]reak  [q]uit")))
 	}
 	return sections
 }
@@ -770,32 +753,32 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	sections = append(sections, "")
-	sections = append(sections, statusStyle.Render("Session complete!"))
+	sections = append(sections, statusStyle.Render(i18n.T("Session complete!")))
 	sections = append(sections, m.progress.ViewAs(1.0))
 
 	if vd.hasHighlightTask {
 		sections = append(sections, "")
-		sections = append(sections, statusStyle.Render("You made time for your Highlight today."))
+		sections = append(sections, statusStyle.Render(i18n.T("You made time for your Highlight today.")))
 	}
 
 	sections = append(sections, "")
 	if m.focusScoreSaved && m.focusScore != nil {
-		sections = append(sections, statusStyle.Render(fmt.Sprintf("Focus score: %d/5", *m.focusScore)))
+		sections = append(sections, statusStyle.Render(i18n.T("Focus score: %d/5", *m.focusScore)))
 	} else {
-		sections = append(sections, helpStyle.Render("How focused were you? [1] [2] [3] [4] [5]"))
+		sections = append(sections, helpStyle.Render(i18n.T("How focused were you? [1] [2] [3] [4] [5]")))
 	}
 
 	if m.focusScoreSaved {
 		sections = append(sections, "")
 		if m.energizeSaved {
-			sections = append(sections, statusStyle.Render(fmt.Sprintf("Energize: %s", m.energizeActivity)))
+			sections = append(sections, statusStyle.Render(i18n.T("Energize: %s", m.energizeActivity)))
 		} else {
-			sections = append(sections, helpStyle.Render("Energize? [w]alk [t]stretch [e]xercise [n]one"))
+			sections = append(sections, helpStyle.Render(i18n.T("Energize? [w]alk [t]stretch [e]xercise [n]one")))
 		}
 	}
 
-	statsText := fmt.Sprintf("%s Today: %d sessions, %s worked",
-		m.theme.IconStats, vd.statsWorkSessions, formatDuration(vd.statsTotalWorkTime))
+	statsText := fmt.Sprintf("%s %s", m.theme.IconStats,
+		i18n.T("Today: %d sessions, %s worked", vd.statsWorkSessions, formatDuration(vd.statsTotalWorkTime)))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
 
@@ -806,15 +789,15 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 
 	sections = append(sections, "")
 	if m.completionPromptsComplete() {
-		sections = append(sections, helpStyle.Render("[n]ew session  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("[n]ew session  [b]reak  [q]uit")))
 	} else if !m.focusScoreSaved {
-		sections = append(sections, helpStyle.Render("→ [n]ew session locked: rate your focus first"))
-		sections = append(sections, helpStyle.Render("  Make Time: tracking focus shows you when you're at your best — skip it and the data disappears."))
-		sections = append(sections, helpStyle.Render("[1-5] focus score  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("→ [n]ew session locked: rate your focus first")))
+		sections = append(sections, helpStyle.Render("  "+i18n.T("Make Time: tracking focus shows you when you're at your best — skip it and the data disappears.")))
+		sections = append(sections, helpStyle.Render(i18n.T("[1-5] focus score  [b]reak  [q]uit")))
 	} else {
-		sections = append(sections, helpStyle.Render("→ [n]ew session locked: log how you'll recharge first"))
-		sections = append(sections, helpStyle.Render("  Make Time: energy fuels your next Highlight — Knapp says laser focus requires an energized body."))
-		sections = append(sections, helpStyle.Render("[w]alk [t]stretch [e]xercise [n]one  [b]reak  [q]uit"))
+		sections = append(sections, helpStyle.Render(i18n.T("→ [n]ew session locked: log how you'll recharge first")))
+		sections = append(sections, helpStyle.Render("  "+i18n.T("Make Time: energy fuels your next Highlight — Knapp says laser focus requires an energized body.")))
+		sections = append(sections, helpStyle.Render(i18n.T("[w]alk [t]stretch [e]xercise [n]one  [b]reak  [q]uit")))
 	}
 	return sections
 }
@@ -824,19 +807,19 @@ func (m Model) viewBreakComplete(sections []string) []string {
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	sections = append(sections, "")
-	sections = append(sections, statusStyle.Render("Break over!"))
-	sections = append(sections, helpStyle.Render("Start your next session or call it a day."))
+	sections = append(sections, statusStyle.Render(i18n.T("Break over!")))
+	sections = append(sections, helpStyle.Render(i18n.T("Start your next session or call it a day.")))
 	sections = append(sections, m.progress.ViewAs(1.0))
 
 	// Daily stats
 	stats := m.state.TodayStats
-	statsText := fmt.Sprintf("%s Today: %d work sessions, %d breaks, %s worked",
-		m.theme.IconStats, stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime))
+	statsText := fmt.Sprintf("%s %s", m.theme.IconStats,
+		i18n.T("Today: %d work sessions, %d breaks, %s worked", stats.WorkSessions, stats.BreaksTaken, formatDuration(stats.TotalWorkTime)))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
 
 	sections = append(sections, "")
-	sections = append(sections, helpStyle.Render("[n]ew session  [q]uit"))
+	sections = append(sections, helpStyle.Render(i18n.T("[n]ew session  [q]uit")))
 	return sections
 }
 
@@ -847,7 +830,7 @@ func (m Model) viewActiveSession(sections []string) []string {
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	// Session type and status
-	statusText := fmt.Sprintf("Status: %s (%s)",
+	statusText := i18n.T("Status: %s (%s)",
 		domain.GetSessionTypeLabel(session.Type),
 		domain.GetStatusLabel(session.Status))
 	sections = append(sections, statusStyle.Render(statusText))
@@ -859,7 +842,7 @@ func (m Model) viewActiveSession(sections []string) []string {
 			Foreground(lipgloss.Color("#FFFFFF")).
 			Background(lipgloss.Color("#E63946")).
 			Padding(0, 1).
-			Render("🔒 STRICT")
+			Render(i18n.T("🔒 STRICT"))
 		sections = append(sections, "")
 		sections = append(sections, strictBadge)
 	}
@@ -877,7 +860,7 @@ func (m Model) viewActiveSession(sections []string) []string {
 			Foreground(lipgloss.Color("#FFFFFF")).
 			Background(lipgloss.Color(m.theme.ColorPaused)).
 			Padding(0, 1).
-			Render(fmt.Sprintf("%s PAUSED", m.theme.IconPaused))
+			Render(fmt.Sprintf("%s %s", m.theme.IconPaused, i18n.T("PAUSED")))
 		sections = append(sections, "")
 		sections = append(sections, pauseBadge)
 	}
@@ -886,19 +869,19 @@ func (m Model) viewActiveSession(sections []string) []string {
 	if m.energizeTicks > 0 {
 		reminderStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTask))
 		sections = append(sections, "")
-		sections = append(sections, reminderStyle.Render("Quick stretch? Take a moment to energize."))
-		sections = append(sections, helpStyle.Render("[b]reak"))
+		sections = append(sections, reminderStyle.Render(i18n.T("Quick stretch? Take a moment to energize.")))
+		sections = append(sections, helpStyle.Render(i18n.T("[b]reak")))
 	}
 
 	// Distraction input overlay
 	if m.distractionMode {
 		sections = append(sections, "")
 		if m.distractionCategoryMode {
-			sections = append(sections, helpStyle.Render(fmt.Sprintf("Categorize: %s", m.distractionPendingText)))
-			sections = append(sections, helpStyle.Render("[i]nternal  [e]xternal  [enter] no category  [esc] cancel"))
+			sections = append(sections, helpStyle.Render(i18n.T("Categorize: %s", m.distractionPendingText)))
+			sections = append(sections, helpStyle.Render(i18n.T("[i]nternal  [e]xternal  [enter] no category  [esc] cancel")))
 		} else {
-			sections = append(sections, helpStyle.Render("Log distraction: ")+m.distractionInput.View())
-			sections = append(sections, helpStyle.Render("enter save · esc cancel"))
+			sections = append(sections, helpStyle.Render(i18n.T("Log distraction: "))+m.distractionInput.View())
+			sections = append(sections, helpStyle.Render(i18n.T("enter save · esc cancel")))
 		}
 	}
 
@@ -927,33 +910,33 @@ func (m Model) viewActiveSession(sections []string) []string {
 	}
 
 	// Help
-	notifLabel := "off"
+	notifLabel := i18n.T("off")
 	if m.notificationsEnabled {
-		notifLabel = "on"
+		notifLabel = i18n.T("on")
 	}
 	sections = append(sections, "")
 	if m.strictLocked {
-		sections = append(sections, helpStyle.Render("🔒 STRICT: pause, finish, void and break are locked — let the session run to completion"))
+		sections = append(sections, helpStyle.Render(strictLockMessage(false)))
 	} else if m.confirmFinish {
-		sections = append(sections, helpStyle.Render("Stop session? [f] confirm  [esc] cancel"))
+		sections = append(sections, helpStyle.Render(i18n.T("Stop session? [f] confirm  [esc] cancel")))
 	} else if m.confirmBreak {
-		sections = append(sections, helpStyle.Render("Start break? [b] confirm  [esc] cancel"))
+		sections = append(sections, helpStyle.Render(i18n.T("Start break? [b] confirm  [esc] cancel")))
 	} else if session.IsBreakSession() {
-		sections = append(sections, helpStyle.Render(fmt.Sprintf("[s]kip  [p]ause  [f]inish  [c]lose  tab:notify %s", notifLabel)))
+		sections = append(sections, helpStyle.Render(i18n.T("[s]kip  [p]ause  [f]inish  [c]lose  tab:notify %s", notifLabel)))
 	} else {
-		pauseAction := "[p]ause"
+		pauseAction := i18n.T("[p]ause")
 		if session.Status == domain.SessionStatusPaused {
-			pauseAction = "[p]resume"
+			pauseAction = i18n.T("[p]resume")
 		}
-		helpText := fmt.Sprintf("%s  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction)
+		helpText := i18n.T("%s  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction)
 		if m.mode != nil && m.mode.HasDistractionLog() && session.Status == domain.SessionStatusRunning {
 			if len(m.distractions) > 0 {
-				helpText = fmt.Sprintf("%s  [d]istraction(%d)  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction, len(m.distractions))
+				helpText = i18n.T("%s  [d]istraction(%d)  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction, len(m.distractions))
 			} else {
-				helpText = fmt.Sprintf("%s  [d]istraction  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction)
+				helpText = i18n.T("%s  [d]istraction  [f]inish  [v]oid  [b]reak  [c]lose", pauseAction)
 			}
 		}
-		helpText += fmt.Sprintf("  tab:notify %s", notifLabel)
+		helpText += i18n.T("  tab:notify %s", notifLabel)
 		sections = append(sections, helpStyle.Render(helpText))
 	}
 	return sections

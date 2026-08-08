@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 )
 
@@ -85,19 +86,19 @@ func (m InlineModel) viewWelcome() string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
 	var b strings.Builder
-	b.WriteString(accent.Render("  Welcome to Flow!"))
+	b.WriteString(accent.Render("  " + i18n.T("Welcome to Flow!")))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  Three methodologies to choose from:"))
+	b.WriteString(dim.Render("  " + i18n.T("Three methodologies to choose from:")))
 	b.WriteString("\n")
-	b.WriteString(accent.Render("  Pomodoro   ") + dim.Render("25m sprints, short breaks — frictionless and fast"))
+	b.WriteString(accent.Render("  Pomodoro   ") + dim.Render(i18n.T("25m sprints, short breaks — frictionless and fast")))
 	b.WriteString("\n")
-	b.WriteString(accent.Render("  Deep Work  ") + dim.Render("long blocks, distraction tracking, shutdown ritual (Newport)"))
+	b.WriteString(accent.Render("  Deep Work  ") + dim.Render(i18n.T("long blocks, distraction tracking, shutdown ritual (Newport)")))
 	b.WriteString("\n")
-	b.WriteString(accent.Render("  Make Time  ") + dim.Render("daily Highlight, focus score, energize (Knapp)"))
+	b.WriteString(accent.Render("  Make Time  ") + dim.Render(i18n.T("daily Highlight, focus score, energize (Knapp)")))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  Change anytime with \"flow config\""))
+	b.WriteString(dim.Render("  " + i18n.T("Change anytime with \"flow config\"")))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  enter continue · c close"))
+	b.WriteString(dim.Render("  " + i18n.T("enter continue · c close")))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -160,20 +161,20 @@ func (m InlineModel) viewMainMenu() string {
 	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
-	b.WriteString(titleStyle.Render("  Flow:") + "\n")
+	b.WriteString(titleStyle.Render("  "+i18n.T("Flow:")) + "\n")
 
 	for i, opt := range mainMenuOptions {
 		if i == m.menuCursor {
-			b.WriteString(activeStyle.Render("  ▸ "+opt.label) + "\n")
+			b.WriteString(activeStyle.Render("  ▸ "+i18n.T(opt.label)) + "\n")
 		} else {
-			b.WriteString(dimStyle.Render("    "+opt.label) + "\n")
+			b.WriteString(dimStyle.Render("    "+i18n.T(opt.label)) + "\n")
 		}
 	}
 
 	desc := mainMenuOptions[m.menuCursor].desc
-	b.WriteString(dimStyle.Render("  "+desc) + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T(desc)) + "\n")
 
-	b.WriteString(dimStyle.Render("  ↑/↓ select · enter confirm · c close") + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("↑/↓ select · enter confirm · c close")) + "\n")
 
 	return b.String()
 }
@@ -270,12 +271,12 @@ func (m InlineModel) viewPickMode() string {
 	// Onboarding overlay
 	if m.onboardingMode && m.mode != nil {
 		b.WriteString(activeStyle.Render("  "+m.mode.TUITitle()) + "\n")
-		b.WriteString(dimStyle.Render("  "+m.mode.Description()) + "\n")
-		b.WriteString(dimStyle.Render("  enter continue · esc back to mode picker") + "\n")
+		b.WriteString(dimStyle.Render("  "+i18n.T(m.mode.Description())) + "\n")
+		b.WriteString(dimStyle.Render("  "+i18n.T("enter continue · esc back to mode picker")) + "\n")
 		return b.String()
 	}
 
-	b.WriteString(titleStyle.Render("  Mode:") + "  ")
+	b.WriteString(titleStyle.Render("  "+i18n.T("Mode:")) + "  ")
 
 	for i, opt := range modeOptions {
 		label := opt.label
@@ -289,9 +290,9 @@ func (m InlineModel) viewPickMode() string {
 
 	// Show description of selected mode
 	desc := modeOptions[m.modeCursor].desc
-	b.WriteString(dimStyle.Render("  "+desc) + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T(desc)) + "\n")
 
-	b.WriteString(dimStyle.Render("  ←/→ select · enter confirm · esc back · c close") + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("←/→ select · enter confirm · esc back · c close")) + "\n")
 
 	return b.String()
 }
@@ -388,10 +389,10 @@ func (m InlineModel) viewPickDuration() string {
 
 	// Show selected mode
 	if m.mode != nil {
-		b.WriteString(dimStyle.Render(fmt.Sprintf("  %s mode", m.mode.Name().Label())) + "\n")
+		b.WriteString(dimStyle.Render("  "+i18n.T("%s mode", m.mode.Name().Label())) + "\n")
 	}
 
-	b.WriteString(titleStyle.Render("  Duration:") + "  ")
+	b.WriteString(titleStyle.Render("  "+i18n.T("Duration:")) + "  ")
 
 	for i, p := range m.presets {
 		label := fmt.Sprintf("%s %s", p.Name, formatMinutesCompact(p.Duration))
@@ -407,11 +408,11 @@ func (m InlineModel) viewPickDuration() string {
 		b.WriteString(dimStyle.Render("  "+m.breakInfo) + "\n")
 	}
 
-	escHint := "esc back · "
+	hint := i18n.T("←/→ select · enter confirm · esc back · c close")
 	if m.modeLocked {
-		escHint = ""
+		hint = i18n.T("←/→ select · enter confirm · c close")
 	}
-	b.WriteString(dimStyle.Render("  ←/→ select · enter confirm · "+escHint+"c close") + "\n")
+	b.WriteString(dimStyle.Render("  "+hint) + "\n")
 
 	return b.String()
 }
@@ -548,13 +549,13 @@ func (m InlineModel) viewTaskSelect() string {
 	b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ %s %s", p.Name, formatMinutesCompact(p.Duration))))
 	b.WriteString("\n")
 
-	b.WriteString(titleStyle.Render("  Task:") + "\n")
+	b.WriteString(titleStyle.Render("  "+i18n.T("Task:")) + "\n")
 
 	idx := 0
 
 	// Carry-over option
 	if m.yesterdayHighlight != nil {
-		label := fmt.Sprintf("Carry forward: %s", m.yesterdayHighlight.Title)
+		label := i18n.T("Carry forward: %s", m.yesterdayHighlight.Title)
 		if idx == m.taskSelectCursor {
 			b.WriteString(activeStyle.Render("  ▸ "+label) + "\n")
 		} else {
@@ -575,14 +576,14 @@ func (m InlineModel) viewTaskSelect() string {
 	}
 
 	// "New task" option
-	newLabel := "New task..."
+	newLabel := i18n.T("New task...")
 	if idx == m.taskSelectCursor {
 		b.WriteString(activeStyle.Render("  ▸ "+newLabel) + "\n")
 	} else {
 		b.WriteString(dimStyle.Render("    "+newLabel) + "\n")
 	}
 
-	b.WriteString(dimStyle.Render("  ↑/↓ select · enter confirm · esc back") + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("↑/↓ select · enter confirm · esc back")) + "\n")
 
 	return b.String()
 }
@@ -623,15 +624,15 @@ func (m InlineModel) viewTaskName() string {
 	b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ %s %s", p.Name, formatMinutesCompact(p.Duration))))
 	b.WriteString("\n")
 
-	taskPrompt := "Task:"
+	taskPrompt := i18n.T("Task:")
 	if m.mode != nil {
-		taskPrompt = m.mode.TaskPrompt()
+		taskPrompt = i18n.T(m.mode.TaskPrompt())
 	}
 	b.WriteString(titleStyle.Render("  " + taskPrompt + " "))
 	b.WriteString(m.taskInput.View())
 	b.WriteString("\n")
 
-	b.WriteString(dimStyle.Render("  enter start · esc back · ctrl+c quit") + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("enter start · esc back · ctrl+c quit")) + "\n")
 
 	return b.String()
 }
@@ -676,19 +677,19 @@ func (m InlineModel) viewPickOutcome() string {
 	b.WriteString("\n")
 
 	if m.taskInput.Value() != "" {
-		b.WriteString(dimStyle.Render(fmt.Sprintf("  Task: %s", strings.TrimSpace(m.taskInput.Value()))))
+		b.WriteString(dimStyle.Render("  " + i18n.T("Task: %s", strings.TrimSpace(m.taskInput.Value()))))
 		b.WriteString("\n")
 	}
 
-	outcomePrompt := "Intended outcome:"
+	outcomePrompt := i18n.T("Intended outcome:")
 	if m.mode != nil && m.mode.OutcomePrompt() != "" {
-		outcomePrompt = m.mode.OutcomePrompt()
+		outcomePrompt = i18n.T(m.mode.OutcomePrompt())
 	}
 	b.WriteString(titleStyle.Render("  " + outcomePrompt + " "))
 	b.WriteString(m.outcomeInput.View())
 	b.WriteString("\n")
 
-	b.WriteString(dimStyle.Render("  enter start · esc back · ctrl+c quit") + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("enter start · esc back · ctrl+c quit")) + "\n")
 
 	return b.String()
 }
@@ -777,7 +778,7 @@ func (m InlineModel) viewLaserChecklist() string {
 	b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ %s %s", p.Name, formatMinutesCompact(p.Duration))))
 	b.WriteString("\n")
 
-	b.WriteString(titleStyle.Render("  Laser Checklist:"))
+	b.WriteString(titleStyle.Render("  " + i18n.T("Laser Checklist:")))
 	b.WriteString("\n")
 
 	for i, item := range laserChecklistItems {
@@ -791,14 +792,14 @@ func (m InlineModel) viewLaserChecklist() string {
 		}
 
 		if i == m.laserChecklistCursor {
-			b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ [%s] %s", status, item)))
+			b.WriteString(activeStyle.Render(fmt.Sprintf("  ▸ [%s] %s", status, i18n.T(item))))
 		} else {
-			b.WriteString(dimStyle.Render(fmt.Sprintf("    [%s] %s", status, item)))
+			b.WriteString(dimStyle.Render(fmt.Sprintf("    [%s] %s", status, i18n.T(item))))
 		}
 		b.WriteString("\n")
 	}
 
-	b.WriteString(dimStyle.Render("  [y]es [n]o [enter] skip all · esc back"))
+	b.WriteString(dimStyle.Render("  " + i18n.T("[y]es [n]o [enter] skip all · esc back")))
 	b.WriteString("\n")
 
 	return b.String()

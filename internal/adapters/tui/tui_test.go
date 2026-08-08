@@ -379,9 +379,9 @@ func TestModel_EmptyAccomplishment_UnblocksNewSession(t *testing.T) {
 			TodayStats: domain.DailyStats{},
 		},
 		mode:                 mode,
-		completed:            true,
 		completedSessionType: domain.SessionTypeWork,
 		completionState: completionState{
+			completed:          true,
 			accomplishmentMode: true,
 		},
 		width:  80,
@@ -405,9 +405,9 @@ func TestInlineModel_EmptyAccomplishment_UnblocksNewSession(t *testing.T) {
 			TodayStats: domain.DailyStats{},
 		},
 		mode:          mode,
-		completed:     true,
 		completedType: domain.SessionTypeWork,
 		completionState: completionState{
+			completed:          true,
 			accomplishmentMode: true,
 		},
 		width: 80,

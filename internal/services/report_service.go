@@ -3,9 +3,11 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/ports"
 )
 
@@ -31,7 +33,13 @@ func (s *ReportService) GetReport(ctx context.Context, period ReportPeriod) (*do
 
 // GetReportForRange builds an aggregated report over an explicit [start, end) range.
 func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeriod, start, end, ref time.Time) (*domain.Report, error) {
-	sessions, err := s.storage.Sessions().FindRecent(ctx, start)
+	// Streaks are computed over full history (365 days back from ref), not
+	// capped to the report window, so load sessions from the earlier bound.
+	since := start
+	if streakSince := ref.AddDate(0, 0, -365); streakSince.Before(since) {
+		since = streakSince
+	}
+	sessions, err := s.storage.Sessions().FindRecent(ctx, since)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sessions: %w", err)
 	}
@@ -46,39 +54,46 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 	daily := map[string]*domain.DayRow{}
 	heat := make(map[int]time.Duration)
 	methods := make(map[domain.Methodology]*domain.MethodologyStat)
-	workDays := make(map[string]bool)
+	workDays := make(map[string]bool)   // in-window days with completed work (highlight hit rate)
+	streakDays := make(map[string]bool) // full-history days with completed work
 
 	for _, s := range sessions {
-		if s.StartedAt.Before(start) || !s.StartedAt.Before(end) {
-			continue
-		}
-
 		isWork := s.IsWorkSession()
 		isCompleted := s.Status == domain.SessionStatusCompleted
 		dayKey := s.StartedAt.Format("2006-01-02")
 
+		if isWork && isCompleted {
+			streakDays[dayKey] = true
+		}
+
+		if s.StartedAt.Before(start) || !s.StartedAt.Before(end) {
+			continue
+		}
+		// Only completed sessions count, matching GetPeriodStats semantics.
+		if !isCompleted {
+			continue
+		}
+
 		if isWork {
 			workDays[dayKey] = true
-			if isCompleted {
-				report.Summary.TotalSessions++
-				report.Summary.TotalWorkTime += s.Duration
-				heat[s.StartedAt.Hour()] += s.Duration
+			report.Summary.TotalSessions++
+			report.Summary.TotalWorkTime += s.Duration
+			heat[s.StartedAt.Local().Hour()] += s.Duration
 
-				m := s.Methodology
-				if m == "" {
-					m = domain.MethodologyPomodoro
-				}
-				meth, ok := methods[m]
-				if !ok {
-					meth = &domain.MethodologyStat{Methodology: m, Label: m.Label()}
-					methods[m] = meth
-				}
-				meth.SessionCount++
-				meth.TotalTime += s.Duration
-				if s.FocusScore != nil {
-					meth.FocusScoreCount++
-					meth.AvgFocusScore += float64(*s.FocusScore)
-				}
+			m := s.Methodology
+			if m == "" {
+				m = domain.MethodologyPomodoro
+			}
+			meth, ok := methods[m]
+			if !ok {
+				meth = &domain.MethodologyStat{Methodology: m, Label: m.Label()}
+				methods[m] = meth
+			}
+			meth.SessionCount++
+			meth.TotalTime += s.Duration
+			if s.FocusScore != nil {
+				meth.FocusScoreCount++
+				meth.AvgFocusScore += float64(*s.FocusScore)
 			}
 			if s.FocusScore != nil {
 				report.Summary.FocusScoreCount++
@@ -89,21 +104,20 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 
 		row, ok := daily[dayKey]
 		if !ok {
-			row = &domain.DayRow{Date: dayKey, Day: s.StartedAt.Format("Mon Jan 2")}
+			day := fmt.Sprintf("%s %s %d", i18n.DayName(s.StartedAt.Weekday()), i18n.MonthName(s.StartedAt.Month()), s.StartedAt.Day())
+			row = &domain.DayRow{Date: dayKey, Day: day}
 			daily[dayKey] = row
 		}
 		switch {
 		case isWork:
 			row.WorkSessions++
-			if isCompleted {
-				row.WorkTime += s.Duration
-			}
+			row.WorkTime += s.Duration
 			if s.FocusScore != nil {
 				row.FocusCount++
 				row.AvgFocusScore += float64(*s.FocusScore)
 			}
 			row.Distractions += len(s.Distractions)
-		case s.IsBreakSession() && isCompleted:
+		case s.IsBreakSession():
 			row.Breaks++
 		}
 	}
@@ -133,7 +147,7 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 		report.Summary.HighlightHitRate = float64(highlightDays) / float64(len(workDays))
 	}
 
-	report.Streaks = computeStreaks(workDays, ref)
+	report.Streaks = computeStreaks(streakDays, ref)
 
 	tags, err := s.storage.Sessions().GetTagStats(ctx, start, end)
 	if err == nil {
@@ -147,9 +161,9 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 func periodLabel(p ReportPeriod, start time.Time) string {
 	switch p {
 	case ReportPeriodMonth:
-		return start.Format("January 2006")
+		return fmt.Sprintf("%s %d", i18n.FullMonthName(start.Month()), start.Year())
 	default:
-		return "Week of " + start.Format("Jan 2")
+		return i18n.T("Week of %s", fmt.Sprintf("%s %d", i18n.MonthName(start.Month()), start.Day()))
 	}
 }
 
@@ -162,11 +176,7 @@ func finalizeDays(daily map[string]*domain.DayRow) []domain.DayRow {
 		}
 		rows = append(rows, *row)
 	}
-	for i := 1; i < len(rows); i++ {
-		for j := i; j > 0 && rows[j].Date < rows[j-1].Date; j-- {
-			rows[j], rows[j-1] = rows[j-1], rows[j]
-		}
-	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Date < rows[j].Date })
 	return rows
 }
 
@@ -179,11 +189,7 @@ func finalizeHeatmap(heat map[int]time.Duration) []domain.HourBucket {
 			Minutes: minutes,
 		})
 	}
-	for i := 1; i < len(buckets); i++ {
-		for j := i; j > 0 && buckets[j].Hour < buckets[j-1].Hour; j-- {
-			buckets[j], buckets[j-1] = buckets[j-1], buckets[j]
-		}
-	}
+	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Hour < buckets[j].Hour })
 	return buckets
 }
 
@@ -196,15 +202,13 @@ func finalizeMethodologies(methods map[domain.Methodology]*domain.MethodologySta
 		}
 		stats = append(stats, *m)
 	}
-	for i := 1; i < len(stats); i++ {
-		for j := i; j > 0 && stats[j].TotalTime > stats[j-1].TotalTime; j-- {
-			stats[j], stats[j-1] = stats[j-1], stats[j]
-		}
-	}
+	sort.Slice(stats, func(i, j int) bool { return stats[i].TotalTime > stats[j].TotalTime })
 	return stats
 }
 
-// computeStreaks derives current and longest consecutive working days.
+// computeStreaks derives current and longest streaks of consecutive days with
+// completed work sessions, walking up to 365 days back from ref. The workDays
+// map must cover full history, not just the report window.
 func computeStreaks(workDays map[string]bool, ref time.Time) domain.StreakInfo {
 	dayKey := func(t time.Time) string { return t.Format("2006-01-02") }
 

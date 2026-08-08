@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
@@ -39,6 +40,10 @@ func init() {
 }
 
 func runReport(cmd *cobra.Command, args []string) error {
+	if reportWeek && reportMonth {
+		return fmt.Errorf("%s", i18n.T("--week and --month are mutually exclusive"))
+	}
+
 	period := services.ReportPeriodWeek
 	if reportMonth {
 		period = services.ReportPeriodMonth
@@ -48,7 +53,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 	svc := services.NewReportService(app.storage)
 	report, err := svc.GetReport(ctx, period)
 	if err != nil {
-		return fmt.Errorf("failed to build report: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to build report"), err)
 	}
 
 	var buf bytes.Buffer
@@ -57,7 +62,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 		enc := json.NewEncoder(&buf)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(report); err != nil {
-			return fmt.Errorf("failed to encode JSON: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to encode JSON"), err)
 		}
 	case reportFormat == "terminal":
 		renderTerminalReport(&buf, report)
@@ -68,14 +73,14 @@ func runReport(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	default:
-		return fmt.Errorf("unknown format %q: use terminal, md, or csv", reportFormat)
+		return fmt.Errorf("%s", i18n.T("unknown format %q: use terminal, md, or csv", reportFormat))
 	}
 
 	out := os.Stdout
 	if reportOut != "" {
 		f, err := os.Create(reportOut) // #nosec G304 -- user-specified output path
 		if err != nil {
-			return fmt.Errorf("failed to create output file: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to create output file"), err)
 		}
 		defer func() { _ = f.Close() }()
 		out = f
@@ -88,26 +93,26 @@ func runReport(cmd *cobra.Command, args []string) error {
 
 func renderMarkdownReport(w *bytes.Buffer, r *domain.Report) {
 	fmt.Fprintf(w, "# %s\n\n", r.Label)
-	fmt.Fprintf(w, "- Period: %s\n", r.Period)
-	fmt.Fprintf(w, "- Range: %s → %s\n",
+	fmt.Fprintf(w, "- %s\n", i18n.T("Period: %s", r.Period))
+	fmt.Fprintf(w, "- %s\n", i18n.T("Range: %s → %s",
 		r.Start.Format("2006-01-02"),
 		r.End.Add(-time.Second).Format("2006-01-02"),
-	)
-	fmt.Fprintf(w, "- Total sessions: %d\n", r.Summary.TotalSessions)
-	fmt.Fprintf(w, "- Total work: %.1fh\n", r.Summary.TotalWorkTime.Hours())
+	))
+	fmt.Fprintf(w, "- %s\n", i18n.T("Total sessions: %d", r.Summary.TotalSessions))
+	fmt.Fprintf(w, "- %s\n", i18n.T("Total work: %.1fh", r.Summary.TotalWorkTime.Hours()))
 	if r.Summary.FocusScoreCount > 0 {
-		fmt.Fprintf(w, "- Avg focus: %.1f/5 (%d sessions)\n", r.Summary.AvgFocusScore, r.Summary.FocusScoreCount)
+		fmt.Fprintf(w, "- %s\n", i18n.T("Avg focus: %.1f/5 (%d sessions)", r.Summary.AvgFocusScore, r.Summary.FocusScoreCount))
 	}
 	if r.Summary.DistractionCount > 0 {
-		fmt.Fprintf(w, "- Distractions: %d\n", r.Summary.DistractionCount)
+		fmt.Fprintf(w, "- %s\n", i18n.T("Distractions: %d", r.Summary.DistractionCount))
 	}
 	if r.Summary.HighlightDays > 0 {
-		fmt.Fprintf(w, "- Highlights set: %d days\n", r.Summary.HighlightDays)
+		fmt.Fprintf(w, "- %s\n", i18n.T("Highlights set: %d days", r.Summary.HighlightDays))
 	}
-	fmt.Fprintf(w, "- Streak: %d days (longest %d)\n\n", r.Streaks.CurrentDays, r.Streaks.LongestDays)
+	fmt.Fprintf(w, "- %s\n\n", i18n.T("Streak: %d days (longest %d)", r.Streaks.CurrentDays, r.Streaks.LongestDays))
 
-	fmt.Fprintf(w, "## Daily\n\n")
-	fmt.Fprintf(w, "| Day | Sessions | Breaks | Work time | Avg focus | Distractions | Highlight |\n")
+	fmt.Fprintf(w, "## %s\n\n", i18n.T("Daily"))
+	fmt.Fprintf(w, "%s\n", i18n.T("| Day | Sessions | Breaks | Work time | Avg focus | Distractions | Highlight |"))
 	fmt.Fprintf(w, "|---|---|---|---|---|---|---|\n")
 	for _, d := range r.Daily {
 		focus := ""
@@ -124,8 +129,8 @@ func renderMarkdownReport(w *bytes.Buffer, r *domain.Report) {
 	fmt.Fprintln(w)
 
 	if len(r.Heatmap) > 0 {
-		fmt.Fprintf(w, "## Deep work heatmap\n\n")
-		fmt.Fprintf(w, "| Hour | Work time |\n")
+		fmt.Fprintf(w, "## %s\n\n", i18n.T("Deep work heatmap"))
+		fmt.Fprintf(w, "%s\n", i18n.T("| Hour | Work time |"))
 		fmt.Fprintf(w, "|---|---|\n")
 		for _, h := range r.Heatmap {
 			fmt.Fprintf(w, "| %s | %s |\n", h.Hour, formatMinutes(h.Minutes))
@@ -134,8 +139,8 @@ func renderMarkdownReport(w *bytes.Buffer, r *domain.Report) {
 	}
 
 	if len(r.Tags) > 0 {
-		fmt.Fprintf(w, "## Top tags\n\n")
-		fmt.Fprintf(w, "| Tag | Time | Sessions |\n")
+		fmt.Fprintf(w, "## %s\n\n", i18n.T("Top tags"))
+		fmt.Fprintf(w, "%s\n", i18n.T("| Tag | Time | Sessions |"))
 		fmt.Fprintf(w, "|---|---|---|\n")
 		for _, t := range r.Tags {
 			fmt.Fprintf(w, "| %s | %s | %d |\n", t.Tag, formatMinutes(t.TotalTime), t.SessionCount)
@@ -144,8 +149,8 @@ func renderMarkdownReport(w *bytes.Buffer, r *domain.Report) {
 	}
 
 	if len(r.Methodologies) > 0 {
-		fmt.Fprintf(w, "## By methodology\n\n")
-		fmt.Fprintf(w, "| Methodology | Sessions | Work time | Avg focus |\n")
+		fmt.Fprintf(w, "## %s\n\n", i18n.T("By methodology"))
+		fmt.Fprintf(w, "%s\n", i18n.T("| Methodology | Sessions | Work time | Avg focus |"))
 		fmt.Fprintf(w, "|---|---|---|---|\n")
 		for _, m := range r.Methodologies {
 			focus := ""
@@ -171,40 +176,40 @@ func renderTerminalReport(w *bytes.Buffer, r *domain.Report) {
 	hours := r.Summary.TotalWorkTime.Hours()
 	hitRate := ""
 	if r.Summary.HighlightHitRate > 0 {
-		hitRate = fmt.Sprintf(", highlight hit rate %s", valueStyle.Render(fmt.Sprintf("%.0f%%", r.Summary.HighlightHitRate*100)))
+		hitRate = i18n.T(", highlight hit rate %s", valueStyle.Render(fmt.Sprintf("%.0f%%", r.Summary.HighlightHitRate*100)))
 	}
 	fmt.Fprintf(w, "  %s  %s\n",
-		dimStyle.Render("Total:"),
-		valueStyle.Render(fmt.Sprintf("%d sessions, %s deep work", r.Summary.TotalSessions, formatHours(hours))),
+		dimStyle.Render(i18n.T("Total:")),
+		valueStyle.Render(i18n.T("%d sessions, %s deep work", r.Summary.TotalSessions, formatHours(hours))),
 	)
 	if r.Summary.FocusScoreCount > 0 {
 		fmt.Fprintf(w, "  %s  %s  %s\n",
-			dimStyle.Render("Avg focus:"),
+			dimStyle.Render(i18n.T("Avg focus:")),
 			valueStyle.Render(fmt.Sprintf("%.1f/5", r.Summary.AvgFocusScore)),
-			dimStyle.Render(fmt.Sprintf("(%d scored sessions)", r.Summary.FocusScoreCount)),
+			dimStyle.Render(i18n.T("(%d scored sessions)", r.Summary.FocusScoreCount)),
 		)
 	}
 	if r.Summary.DistractionCount > 0 {
 		fmt.Fprintf(w, "  %s  %s\n",
-			dimStyle.Render("Distractions:"),
+			dimStyle.Render(i18n.T("Distractions:")),
 			valueStyle.Render(fmt.Sprintf("%d", r.Summary.DistractionCount)),
 		)
 	}
 	if r.Summary.HighlightDays > 0 {
 		fmt.Fprintf(w, "  %s  %s%s\n",
-			dimStyle.Render("Highlights set:"),
-			valueStyle.Render(fmt.Sprintf("%d days", r.Summary.HighlightDays)),
+			dimStyle.Render(i18n.T("Highlights set:")),
+			valueStyle.Render(i18n.T("%d days", r.Summary.HighlightDays)),
 			dimStyle.Render(hitRate),
 		)
 	}
 	if r.Summary.TotalSessions == 0 {
-		fmt.Fprintf(w, "\n  %s\n", dimStyle.Render("No completed sessions in this period."))
+		fmt.Fprintf(w, "\n  %s\n", dimStyle.Render(i18n.T("No completed sessions in this period.")))
 		return
 	}
 	fmt.Fprintln(w)
 
 	// Daily breakdown
-	fmt.Fprintf(w, "  %s\n", dimStyle.Render("Daily"))
+	fmt.Fprintf(w, "  %s\n", dimStyle.Render(i18n.T("Daily")))
 	for _, d := range r.Daily {
 		marker := " "
 		if d.HasHighlight {
@@ -213,7 +218,7 @@ func renderTerminalReport(w *bytes.Buffer, r *domain.Report) {
 		fmt.Fprintf(w, "  %s %-30s %s %s\n",
 			marker,
 			dimStyle.Render(d.Day),
-			valueStyle.Render(fmt.Sprintf("%-3d", d.WorkSessions)+" sessions"),
+			valueStyle.Render(i18n.T("%-3d sessions", d.WorkSessions)),
 			valueStyle.Render(formatMinutes(d.WorkTime)),
 		)
 	}
@@ -221,7 +226,7 @@ func renderTerminalReport(w *bytes.Buffer, r *domain.Report) {
 
 	// Heatmap (24h)
 	if len(r.Heatmap) > 0 {
-		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Deep work heatmap (hour of day)"))
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render(i18n.T("Deep work heatmap (hour of day)")))
 		var max time.Duration
 		for _, h := range r.Heatmap {
 			if h.Minutes > max {
@@ -247,12 +252,12 @@ func renderTerminalReport(w *bytes.Buffer, r *domain.Report) {
 
 	// Tags
 	if len(r.Tags) > 0 {
-		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Top tags"))
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render(i18n.T("Top tags")))
 		for _, t := range r.Tags {
 			fmt.Fprintf(w, "  %-16s %s %s\n",
 				dimStyle.Render(t.Tag),
 				valueStyle.Render(formatMinutes(t.TotalTime)),
-				dimStyle.Render(fmt.Sprintf("(%d sessions)", t.SessionCount)),
+				dimStyle.Render(i18n.T("(%d sessions)", t.SessionCount)),
 			)
 		}
 		fmt.Fprintln(w)
@@ -260,15 +265,15 @@ func renderTerminalReport(w *bytes.Buffer, r *domain.Report) {
 
 	// Methodologies
 	if len(r.Methodologies) > 0 {
-		fmt.Fprintf(w, "  %s\n", dimStyle.Render("By methodology"))
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render(i18n.T("By methodology")))
 		for _, m := range r.Methodologies {
 			focus := ""
 			if m.FocusScoreCount > 0 {
-				focus = fmt.Sprintf("avg focus %s", valueStyle.Render(fmt.Sprintf("%.1f/5", m.AvgFocusScore)))
+				focus = i18n.T("avg focus %s", valueStyle.Render(fmt.Sprintf("%.1f/5", m.AvgFocusScore)))
 			}
 			fmt.Fprintf(w, "  %-12s %s %s\n",
 				dimStyle.Render(m.Label),
-				valueStyle.Render(fmt.Sprintf("%-3d sessions", m.SessionCount)),
+				valueStyle.Render(i18n.T("%-3d sessions", m.SessionCount)),
 				dimStyle.Render(fmt.Sprintf("(%s %s)", formatMinutes(m.TotalTime), focus)),
 			)
 		}
@@ -277,15 +282,16 @@ func renderTerminalReport(w *bytes.Buffer, r *domain.Report) {
 
 	// Streaks
 	fmt.Fprintf(w, "  %s  %s\n",
-		dimStyle.Render("Streak:"),
-		valueStyle.Render(fmt.Sprintf("%d days", r.Streaks.CurrentDays)),
+		dimStyle.Render(i18n.T("Streak:")),
+		valueStyle.Render(i18n.T("%d days", r.Streaks.CurrentDays)),
 	)
 	fmt.Fprintf(w, "  %s  %s\n\n",
-		dimStyle.Render("Longest:"),
-		valueStyle.Render(fmt.Sprintf("%d days", r.Streaks.LongestDays)),
+		dimStyle.Render(i18n.T("Longest:")),
+		valueStyle.Render(i18n.T("%d days", r.Streaks.LongestDays)),
 	)
 }
 
+// CSV output is a data interchange format: headers and values stay in English.
 func renderCSVReport(w *bytes.Buffer, r *domain.Report) error {
 	cw := csv.NewWriter(w)
 	defer cw.Flush()

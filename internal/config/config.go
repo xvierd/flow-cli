@@ -16,6 +16,7 @@ import (
 // Config holds all configuration for the Flow application.
 type Config struct {
 	Methodology   string             `mapstructure:"methodology"`
+	Language      string             `mapstructure:"language"`
 	FirstRun      bool               `mapstructure:"first_run"`
 	Pomodoro      PomodoroConfig     `mapstructure:"pomodoro"`
 	DeepWork      DeepWorkConfig     `mapstructure:"deepwork"`
@@ -200,6 +201,7 @@ func (d Duration) String() string {
 func DefaultConfig() *Config {
 	return &Config{
 		Methodology: "pomodoro",
+		Language:    "en",
 		FirstRun:    true,
 		Pomodoro: PomodoroConfig{
 			WorkDuration:       Duration(25 * time.Minute),
@@ -389,6 +391,7 @@ func GetDBPath(cfg *Config) string {
 // setDefaults sets default values for viper.
 func setDefaults() {
 	viper.SetDefault("methodology", "pomodoro")
+	viper.SetDefault("language", "en")
 	viper.SetDefault("first_run", true)
 	viper.SetDefault("pomodoro.work_duration", "25m")
 	viper.SetDefault("pomodoro.short_break", "5m")

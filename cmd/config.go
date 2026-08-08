@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 var configCmd = &cobra.Command{
@@ -37,45 +38,47 @@ var configCmd = &cobra.Command{
 		}
 
 		fmt.Println()
-		fmt.Println("  Current configuration:")
+		fmt.Println("  " + i18n.T("Current configuration:"))
 		fmt.Println()
-		fmt.Printf("  Methodology:  %s\n", meth.Label())
+		fmt.Printf("  %s\n", i18n.T("Methodology:  %s", meth.Label()))
 		fmt.Println()
-		fmt.Println("  Session presets:")
+		fmt.Println("  " + i18n.T("Session presets:"))
 		for i, p := range presets {
 			fmt.Printf("    [%d] %-8s  %s\n", i+1, p.Name, formatMinutes(p.Duration))
 		}
 		fmt.Println()
 		switch meth {
 		case domain.MethodologyPomodoro:
-			fmt.Printf("    Short break:          %s\n", formatMinutes(time.Duration(app.config.Pomodoro.ShortBreak)))
-			fmt.Printf("    Long break:           %s\n", formatMinutes(time.Duration(app.config.Pomodoro.LongBreak)))
-			fmt.Printf("    Sessions before long:  %d\n", app.config.Pomodoro.SessionsBeforeLong)
-			fmt.Printf("    Auto-break:            %v\n", app.config.Pomodoro.AutoBreak)
+			fmt.Printf("    %s\n", i18n.T("Short break:          %s", formatMinutes(time.Duration(app.config.Pomodoro.ShortBreak))))
+			fmt.Printf("    %s\n", i18n.T("Long break:           %s", formatMinutes(time.Duration(app.config.Pomodoro.LongBreak))))
+			fmt.Printf("    %s\n", i18n.T("Sessions before long:  %d", app.config.Pomodoro.SessionsBeforeLong))
+			fmt.Printf("    %s\n", i18n.T("Auto-break:            %v", app.config.Pomodoro.AutoBreak))
 		case domain.MethodologyDeepWork:
-			fmt.Printf("    Break duration:        %s\n", formatMinutes(time.Duration(app.config.DeepWork.BreakDuration)))
+			fmt.Printf("    %s\n", i18n.T("Break duration:        %s", formatMinutes(time.Duration(app.config.DeepWork.BreakDuration))))
 		case domain.MethodologyMakeTime:
-			fmt.Printf("    Break duration:        %s\n", formatMinutes(time.Duration(app.config.MakeTime.BreakDuration)))
+			fmt.Printf("    %s\n", i18n.T("Break duration:        %s", formatMinutes(time.Duration(app.config.MakeTime.BreakDuration))))
 		}
-		notifStatus := "off"
+		notifStatus := i18n.T("off")
 		if app.config.Notifications.Enabled {
-			notifStatus = "on"
+			notifStatus = i18n.T("on")
 			if app.config.Notifications.Sound {
-				notifStatus = "on (with sound)"
+				notifStatus = i18n.T("on (with sound)")
 			}
 		}
-		fmt.Printf("    Notifications:         %s\n", notifStatus)
+		fmt.Printf("    %s\n", i18n.T("Notifications:         %s", notifStatus))
+		fmt.Printf("    %s\n", i18n.T("Language:              %s", app.config.Language))
 		fmt.Println()
-		fmt.Println("  What would you like to change?")
-		fmt.Println("    [1] Edit preset 1")
-		fmt.Println("    [2] Edit preset 2")
-		fmt.Println("    [3] Edit preset 3")
-		fmt.Println("    [b] Edit break durations")
-		fmt.Println("    [m] Change methodology")
-		fmt.Println("    [p] Change Deep Work philosophy")
-		fmt.Println("    [n] Toggle notifications")
-		fmt.Println("    [q] Quit without saving")
-		fmt.Print("  Choose: ")
+		fmt.Println("  " + i18n.T("What would you like to change?"))
+		fmt.Println("    [1] " + i18n.T("Edit preset 1"))
+		fmt.Println("    [2] " + i18n.T("Edit preset 2"))
+		fmt.Println("    [3] " + i18n.T("Edit preset 3"))
+		fmt.Println("    [b] " + i18n.T("Edit break durations"))
+		fmt.Println("    [m] " + i18n.T("Change methodology"))
+		fmt.Println("    [p] " + i18n.T("Change Deep Work philosophy"))
+		fmt.Println("    [n] " + i18n.T("Toggle notifications"))
+		fmt.Println("    [l] " + i18n.T("Change language"))
+		fmt.Println("    [q] " + i18n.T("Quit without saving"))
+		fmt.Print("  " + i18n.T("Choose: "))
 
 		choice, _ := reader.ReadString('\n')
 		choice = strings.TrimSpace(strings.ToLower(choice))
@@ -95,11 +98,13 @@ var configCmd = &cobra.Command{
 			return editDeepWorkPhilosophy(reader, app.config)
 		case "n":
 			return editNotifications(reader, app.config)
+		case "l":
+			return editLanguage(reader, app.config)
 		case "q", "":
-			fmt.Println("  No changes made.")
+			fmt.Println("  " + i18n.T("No changes made."))
 			return nil
 		default:
-			return fmt.Errorf("invalid choice %q", choice)
+			return fmt.Errorf("%s", i18n.T("invalid choice %q", choice))
 		}
 	},
 }
@@ -123,16 +128,16 @@ func editPreset(reader *bufio.Reader, cfg *config.Config, num int) error {
 
 	p := presets[num-1]
 
-	fmt.Printf("\n  Editing preset %d (currently: %s — %s)\n", num, p.Name, formatMinutes(p.Duration))
+	fmt.Printf("\n  %s\n", i18n.T("Editing preset %d (currently: %s — %s)", num, p.Name, formatMinutes(p.Duration)))
 
-	fmt.Printf("  Name [%s]: ", p.Name)
+	fmt.Printf("  %s", i18n.T("Name [%s]: ", p.Name))
 	name, _ := reader.ReadString('\n')
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = p.Name
 	}
 
-	fmt.Printf("  Duration [%s]: ", formatMinutes(p.Duration))
+	fmt.Printf("  %s", i18n.T("Duration [%s]: ", formatMinutes(p.Duration)))
 	durInput, _ := reader.ReadString('\n')
 	durInput = strings.TrimSpace(durInput)
 
@@ -140,7 +145,7 @@ func editPreset(reader *bufio.Reader, cfg *config.Config, num int) error {
 	if durInput != "" {
 		parsed, err := time.ParseDuration(durInput)
 		if err != nil {
-			return fmt.Errorf("invalid duration %q: %w", durInput, err)
+			return fmt.Errorf("%s: %w", i18n.T("invalid duration %q", durInput), err)
 		}
 		dur = parsed
 	}
@@ -186,10 +191,10 @@ func editPreset(reader *bufio.Reader, cfg *config.Config, num int) error {
 	}
 
 	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
-	fmt.Printf("\n  Saved: [%d] %s — %s\n", num, name, formatMinutes(dur))
+	fmt.Printf("\n  %s\n", i18n.T("Saved: [%d] %s — %s", num, name, formatMinutes(dur)))
 	return nil
 }
 
@@ -211,40 +216,40 @@ func editPomodoroBreaks(reader *bufio.Reader, cfg *config.Config) error {
 	longBreak := time.Duration(cfg.Pomodoro.LongBreak)
 	sessionsBeforeLong := cfg.Pomodoro.SessionsBeforeLong
 
-	fmt.Println("\n  Editing break settings")
+	fmt.Println("\n  " + i18n.T("Editing break settings"))
 
-	fmt.Printf("  Short break [%s]: ", formatMinutes(shortBreak))
+	fmt.Printf("  %s", i18n.T("Short break [%s]: ", formatMinutes(shortBreak)))
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 	if input != "" {
 		parsed, err := time.ParseDuration(input)
 		if err != nil {
-			return fmt.Errorf("invalid duration %q: %w", input, err)
+			return fmt.Errorf("%s: %w", i18n.T("invalid duration %q", input), err)
 		}
 		shortBreak = parsed
 	}
 
-	fmt.Printf("  Long break [%s]: ", formatMinutes(longBreak))
+	fmt.Printf("  %s", i18n.T("Long break [%s]: ", formatMinutes(longBreak)))
 	input, _ = reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 	if input != "" {
 		parsed, err := time.ParseDuration(input)
 		if err != nil {
-			return fmt.Errorf("invalid duration %q: %w", input, err)
+			return fmt.Errorf("%s: %w", i18n.T("invalid duration %q", input), err)
 		}
 		longBreak = parsed
 	}
 
-	fmt.Printf("  Sessions before long break [%d]: ", sessionsBeforeLong)
+	fmt.Printf("  %s", i18n.T("Sessions before long break [%d]: ", sessionsBeforeLong))
 	input, _ = reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 	if input != "" {
 		var n int
 		if _, err := fmt.Sscanf(input, "%d", &n); err != nil {
-			return fmt.Errorf("invalid number %q: %w", input, err)
+			return fmt.Errorf("%s: %w", i18n.T("invalid number %q", input), err)
 		}
 		if n < 1 {
-			return fmt.Errorf("sessions before long break must be at least 1")
+			return fmt.Errorf("%s", i18n.T("sessions before long break must be at least 1"))
 		}
 		sessionsBeforeLong = n
 	}
@@ -254,12 +259,12 @@ func editPomodoroBreaks(reader *bufio.Reader, cfg *config.Config) error {
 	cfg.Pomodoro.SessionsBeforeLong = sessionsBeforeLong
 
 	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
 	fmt.Println()
-	fmt.Printf("  Saved: short break %s, long break %s, long every %d sessions\n",
-		formatMinutes(shortBreak), formatMinutes(longBreak), sessionsBeforeLong)
+	fmt.Printf("  %s\n", i18n.T("Saved: short break %s, long break %s, long every %d sessions",
+		formatMinutes(shortBreak), formatMinutes(longBreak), sessionsBeforeLong))
 	return nil
 }
 
@@ -272,8 +277,8 @@ func editMethodologyBreak(reader *bufio.Reader, cfg *config.Config, meth domain.
 		current = cfg.MakeTime.BreakDuration
 	}
 
-	fmt.Println("\n  Editing break duration")
-	fmt.Printf("  Break duration [%s]: ", formatMinutes(time.Duration(current)))
+	fmt.Println("\n  " + i18n.T("Editing break duration"))
+	fmt.Printf("  %s", i18n.T("Break duration [%s]: ", formatMinutes(time.Duration(current))))
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 
@@ -281,7 +286,7 @@ func editMethodologyBreak(reader *bufio.Reader, cfg *config.Config, meth domain.
 	if input != "" {
 		parsed, err := time.ParseDuration(input)
 		if err != nil {
-			return fmt.Errorf("invalid duration %q: %w", input, err)
+			return fmt.Errorf("%s: %w", i18n.T("invalid duration %q", input), err)
 		}
 		dur = parsed
 	}
@@ -294,10 +299,10 @@ func editMethodologyBreak(reader *bufio.Reader, cfg *config.Config, meth domain.
 	}
 
 	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
-	fmt.Printf("\n  Saved: break duration %s\n", formatMinutes(dur))
+	fmt.Printf("\n  %s\n", i18n.T("Saved: break duration %s", formatMinutes(dur)))
 	return nil
 }
 
@@ -307,11 +312,11 @@ func editMethodology(reader *bufio.Reader, cfg *config.Config) error {
 		current = "pomodoro"
 	}
 
-	fmt.Printf("\n  Current methodology: %s\n\n", domain.Methodology(current).Label())
-	fmt.Println("    [1] Simple Pomodoro — classic 25/5 timer, quick and frictionless")
-	fmt.Println("    [2] Deep Work       — longer sessions, distraction tracking, shutdown ritual")
-	fmt.Println("    [3] Make Time       — daily Highlight, focus scoring, energize reminders")
-	fmt.Print("  Choose: ")
+	fmt.Printf("\n  %s\n\n", i18n.T("Current methodology: %s", domain.Methodology(current).Label()))
+	fmt.Println("    [1] " + i18n.T("Simple Pomodoro — classic 25/5 timer, quick and frictionless"))
+	fmt.Println("    [2] " + i18n.T("Deep Work       — longer sessions, distraction tracking, shutdown ritual"))
+	fmt.Println("    [3] " + i18n.T("Make Time       — daily Highlight, focus scoring, energize reminders"))
+	fmt.Print("  " + i18n.T("Choose: "))
 
 	choice, _ := reader.ReadString('\n')
 	choice = strings.TrimSpace(choice)
@@ -325,33 +330,33 @@ func editMethodology(reader *bufio.Reader, cfg *config.Config) error {
 	case "3":
 		m = "maketime"
 	default:
-		fmt.Println("  No changes made.")
+		fmt.Println("  " + i18n.T("No changes made."))
 		return nil
 	}
 
 	cfg.Methodology = m
 	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
-	fmt.Printf("\n  Saved: methodology set to %s\n", domain.Methodology(m).Label())
+	fmt.Printf("\n  %s\n", i18n.T("Saved: methodology set to %s", domain.Methodology(m).Label()))
 	return nil
 }
 
 func editNotifications(reader *bufio.Reader, cfg *config.Config) error {
-	current := "off"
+	current := i18n.T("off")
 	if cfg.Notifications.Enabled {
-		current = "on"
+		current = i18n.T("on")
 		if cfg.Notifications.Sound {
-			current = "on (with sound)"
+			current = i18n.T("on (with sound)")
 		}
 	}
 
-	fmt.Printf("\n  Current notifications: %s\n\n", current)
-	fmt.Println("    [1] Off")
-	fmt.Println("    [2] On (visual only)")
-	fmt.Println("    [3] On (with sound)")
-	fmt.Print("  Choose: ")
+	fmt.Printf("\n  %s\n\n", i18n.T("Current notifications: %s", current))
+	fmt.Println("    [1] " + i18n.T("Off"))
+	fmt.Println("    [2] " + i18n.T("On (visual only)"))
+	fmt.Println("    [3] " + i18n.T("On (with sound)"))
+	fmt.Print("  " + i18n.T("Choose: "))
 
 	choice, _ := reader.ReadString('\n')
 	choice = strings.TrimSpace(choice)
@@ -367,22 +372,22 @@ func editNotifications(reader *bufio.Reader, cfg *config.Config) error {
 		cfg.Notifications.Enabled = true
 		cfg.Notifications.Sound = true
 	default:
-		fmt.Println("  No changes made.")
+		fmt.Println("  " + i18n.T("No changes made."))
 		return nil
 	}
 
 	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
-	status := "off"
+	status := i18n.T("off")
 	if cfg.Notifications.Enabled {
-		status = "on"
+		status = i18n.T("on")
 		if cfg.Notifications.Sound {
-			status = "on (with sound)"
+			status = i18n.T("on (with sound)")
 		}
 	}
-	fmt.Printf("\n  Saved: notifications %s\n", status)
+	fmt.Printf("\n  %s\n", i18n.T("Saved: notifications %s", status))
 	return nil
 }
 
@@ -392,12 +397,12 @@ func editDeepWorkPhilosophy(reader *bufio.Reader, cfg *config.Config) error {
 		current = "rhythmic"
 	}
 
-	fmt.Printf("\n  Current Deep Work philosophy: %s\n\n", current)
-	fmt.Println("    [1] Rhythmic    — Daily habit, same time each day")
-	fmt.Println("    [2] Bimodal     — Alternate deep/shallow periods")
-	fmt.Println("    [3] Journalistic — Grab depth whenever possible")
-	fmt.Println("    [4] Monastic    — Deep work is your primary work")
-	fmt.Print("  Choose: ")
+	fmt.Printf("\n  %s\n\n", i18n.T("Current Deep Work philosophy: %s", current))
+	fmt.Println("    [1] " + i18n.T("Rhythmic    — Daily habit, same time each day"))
+	fmt.Println("    [2] " + i18n.T("Bimodal     — Alternate deep/shallow periods"))
+	fmt.Println("    [3] " + i18n.T("Journalistic — Grab depth whenever possible"))
+	fmt.Println("    [4] " + i18n.T("Monastic    — Deep work is your primary work"))
+	fmt.Print("  " + i18n.T("Choose: "))
 
 	choice, _ := reader.ReadString('\n')
 	choice = strings.TrimSpace(choice)
@@ -413,15 +418,44 @@ func editDeepWorkPhilosophy(reader *bufio.Reader, cfg *config.Config) error {
 	case "4":
 		p = "monastic"
 	default:
-		fmt.Println("  No changes made.")
+		fmt.Println("  " + i18n.T("No changes made."))
 		return nil
 	}
 
 	cfg.DeepWork.Philosophy = p
 	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
-	fmt.Printf("\n  Saved: Deep Work philosophy set to %s\n", p)
+	fmt.Printf("\n  %s\n", i18n.T("Saved: Deep Work philosophy set to %s", p))
+	return nil
+}
+
+// editLanguage switches the display language and applies it immediately.
+func editLanguage(reader *bufio.Reader, cfg *config.Config) error {
+	fmt.Printf("\n  %s\n\n", i18n.T("Current language: %s", cfg.Language))
+	fmt.Println("    [1] English")
+	fmt.Println("    [2] Español")
+	fmt.Print("  " + i18n.T("Choose: "))
+
+	choice, _ := reader.ReadString('\n')
+	choice = strings.TrimSpace(choice)
+
+	switch choice {
+	case "1":
+		cfg.Language = "en"
+	case "2":
+		cfg.Language = "es"
+	default:
+		fmt.Println("  " + i18n.T("No changes made."))
+		return nil
+	}
+
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
+	}
+
+	i18n.SetLanguage(cfg.Language)
+	fmt.Printf("\n  %s\n", i18n.T("Saved: language set to %s", cfg.Language))
 	return nil
 }

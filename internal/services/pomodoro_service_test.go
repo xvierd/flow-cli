@@ -242,6 +242,64 @@ func TestPomodoroService_StrictMode(t *testing.T) {
 	})
 }
 
+func TestPomodoroService_StrictMode_StopAfterElapsed(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	service.SetStrictMode(true)
+	ctx := context.Background()
+
+	t.Run("elapsed work session can be stopped", func(t *testing.T) {
+		clearSessions(t, store, ctx)
+		session, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: 25 * time.Minute})
+		if err != nil {
+			t.Fatalf("StartPomodoro() error = %v", err)
+		}
+		// Simulate a timer that fully elapsed without being auto-completed.
+		session.StartedAt = time.Now().Add(-26 * time.Minute)
+		if err := store.Sessions().Update(ctx, session); err != nil {
+			t.Fatalf("Update() error = %v", err)
+		}
+
+		stopped, err := service.StopSession(ctx)
+		if err != nil {
+			t.Fatalf("StopSession() error = %v, want nil for a fully elapsed session", err)
+		}
+		if stopped.Status != domain.SessionStatusCompleted {
+			t.Errorf("StopSession() status = %v, want completed", stopped.Status)
+		}
+		if stopped.Duration != 25*time.Minute {
+			t.Errorf("StopSession() duration = %v, want unchanged 25m", stopped.Duration)
+		}
+	})
+
+	t.Run("work session with time remaining stays blocked", func(t *testing.T) {
+		clearSessions(t, store, ctx)
+		if _, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: 25 * time.Minute}); err != nil {
+			t.Fatalf("StartPomodoro() error = %v", err)
+		}
+		if _, err := service.StopSession(ctx); err != domain.ErrStrictFocusBlocked {
+			t.Errorf("StopSession() error = %v, want ErrStrictFocusBlocked", err)
+		}
+	})
+
+	t.Run("paused work session with time remaining stays blocked", func(t *testing.T) {
+		clearSessions(t, store, ctx)
+		session, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: 25 * time.Minute})
+		if err != nil {
+			t.Fatalf("StartPomodoro() error = %v", err)
+		}
+		session.Pause()
+		if err := store.Sessions().Update(ctx, session); err != nil {
+			t.Fatalf("Update() error = %v", err)
+		}
+		if _, err := service.StopSession(ctx); err != domain.ErrStrictFocusBlocked {
+			t.Errorf("StopSession() error = %v, want ErrStrictFocusBlocked", err)
+		}
+	})
+}
+
 func TestPomodoroService_StrictModeOff(t *testing.T) {
 	store, cleanup := setupTestStorage(t)
 	defer cleanup()

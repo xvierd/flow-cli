@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // breakCmd represents the break command
@@ -21,17 +22,17 @@ var breakCmd = &cobra.Command{
 		// Start a break session
 		session, err := app.pomodoro.StartBreak(ctx, workingDir)
 		if err != nil {
-			return fmt.Errorf("failed to start break: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to start break"), err)
 		}
 
-		fmt.Printf("☕ Break started! Duration: %s (%s)\n",
+		fmt.Printf("☕ %s\n", i18n.T("Break started! Duration: %s (%s)",
 			session.Duration,
-			getBreakTypeLabel(session.Type))
+			getBreakTypeLabel(session.Type)))
 
 		// Get the current state for the TUI
 		state, err := app.state.GetCurrentState(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get current state: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to get current state"), err)
 		}
 
 		return launchTUI(ctx, state, workingDir)
@@ -41,10 +42,10 @@ var breakCmd = &cobra.Command{
 func getBreakTypeLabel(sessionType domain.SessionType) string {
 	switch sessionType {
 	case domain.SessionTypeShortBreak:
-		return "Short Break"
+		return i18n.T("Short Break")
 	case domain.SessionTypeLongBreak:
-		return "Long Break"
+		return i18n.T("Long Break")
 	default:
-		return "Break"
+		return i18n.T("Break")
 	}
 }

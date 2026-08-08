@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,11 +15,11 @@ import (
 
 // sessionRepository implements ports.SessionRepository using SQLite.
 type sessionRepository struct {
-	db *sql.DB
+	db executor
 }
 
 // newSessionRepository creates a new session repository.
-func newSessionRepository(db *sql.DB) ports.SessionRepository {
+func newSessionRepository(db executor) ports.SessionRepository {
 	return &sessionRepository{db: db}
 }
 
@@ -28,10 +29,10 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 		INSERT INTO sessions (
 			id, task_id, type, status, duration_ms, started_at, paused_at,
 			completed_at, git_branch, git_commit, git_modified, notes,
-			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
+			methodology, focus_score, distractions, accomplishment, intended_outcome,
 			energize_activity, shutdown_ritual, outcome_achieved
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	modified := strings.Join(session.GitModified, ",")
@@ -40,7 +41,6 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 	if methodology == "" {
 		methodology = string(domain.MethodologyPomodoro)
 	}
-	tags := strings.Join(session.Tags, ",")
 
 	var shutdownRitualJSON []byte
 	if session.ShutdownRitual != nil {
@@ -65,7 +65,6 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 		string(distractionsJSON),
 		session.Accomplishment,
 		session.IntendedOutcome,
-		tags,
 		session.EnergizeActivity,
 		nullableString(shutdownRitualJSON),
 		session.OutcomeAchieved,
@@ -75,7 +74,7 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 		return fmt.Errorf("failed to save session: %w", err)
 	}
 
-	return nil
+	return replaceSessionTags(ctx, r.db, session.ID, session.Tags)
 }
 
 // nullableString returns a *string from bytes, or nil if empty.
@@ -112,12 +111,15 @@ func unmarshalDistractions(data string) []domain.Distraction {
 func (r *sessionRepository) FindByID(ctx context.Context, id string) (*domain.PomodoroSession, error) {
 	query := `
 		SELECT
-			id, task_id, type, status, duration_ms, started_at, paused_at,
-			completed_at, git_branch, git_commit, git_modified, notes,
-			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual, outcome_achieved
-		FROM sessions
-		WHERE id = ?
+			s.id, s.task_id, s.type, s.status, s.duration_ms, s.started_at, s.paused_at,
+			s.completed_at, s.git_branch, s.git_commit, s.git_modified, s.notes,
+			s.methodology, s.focus_score, s.distractions, s.accomplishment, s.intended_outcome,
+			COALESCE(GROUP_CONCAT(st.tag), ''),
+			s.energize_activity, s.shutdown_ritual, s.outcome_achieved
+		FROM sessions s
+		LEFT JOIN session_tags st ON st.session_id = s.id
+		WHERE s.id = ?
+		GROUP BY s.id
 	`
 
 	return r.scanSession(r.db.QueryRowContext(ctx, query, id))
@@ -127,13 +129,16 @@ func (r *sessionRepository) FindByID(ctx context.Context, id string) (*domain.Po
 func (r *sessionRepository) FindActive(ctx context.Context) (*domain.PomodoroSession, error) {
 	query := `
 		SELECT
-			id, task_id, type, status, duration_ms, started_at, paused_at,
-			completed_at, git_branch, git_commit, git_modified, notes,
-			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual, outcome_achieved
-		FROM sessions
-		WHERE status IN (?, ?)
-		ORDER BY started_at DESC
+			s.id, s.task_id, s.type, s.status, s.duration_ms, s.started_at, s.paused_at,
+			s.completed_at, s.git_branch, s.git_commit, s.git_modified, s.notes,
+			s.methodology, s.focus_score, s.distractions, s.accomplishment, s.intended_outcome,
+			COALESCE(GROUP_CONCAT(st.tag), ''),
+			s.energize_activity, s.shutdown_ritual, s.outcome_achieved
+		FROM sessions s
+		LEFT JOIN session_tags st ON st.session_id = s.id
+		WHERE s.status IN (?, ?)
+		GROUP BY s.id
+		ORDER BY s.started_at DESC
 		LIMIT 1
 	`
 
@@ -146,13 +151,16 @@ func (r *sessionRepository) FindActive(ctx context.Context) (*domain.PomodoroSes
 func (r *sessionRepository) FindRecent(ctx context.Context, since time.Time) ([]*domain.PomodoroSession, error) {
 	query := `
 		SELECT
-			id, task_id, type, status, duration_ms, started_at, paused_at,
-			completed_at, git_branch, git_commit, git_modified, notes,
-			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual, outcome_achieved
-		FROM sessions
-		WHERE started_at >= ?
-		ORDER BY started_at DESC
+			s.id, s.task_id, s.type, s.status, s.duration_ms, s.started_at, s.paused_at,
+			s.completed_at, s.git_branch, s.git_commit, s.git_modified, s.notes,
+			s.methodology, s.focus_score, s.distractions, s.accomplishment, s.intended_outcome,
+			COALESCE(GROUP_CONCAT(st.tag), ''),
+			s.energize_activity, s.shutdown_ritual, s.outcome_achieved
+		FROM sessions s
+		LEFT JOIN session_tags st ON st.session_id = s.id
+		WHERE s.started_at >= ?
+		GROUP BY s.id
+		ORDER BY s.started_at DESC
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, since)
@@ -168,13 +176,16 @@ func (r *sessionRepository) FindRecent(ctx context.Context, since time.Time) ([]
 func (r *sessionRepository) FindByTask(ctx context.Context, taskID string) ([]*domain.PomodoroSession, error) {
 	query := `
 		SELECT
-			id, task_id, type, status, duration_ms, started_at, paused_at,
-			completed_at, git_branch, git_commit, git_modified, notes,
-			methodology, focus_score, distractions, accomplishment, intended_outcome, tags,
-			energize_activity, shutdown_ritual, outcome_achieved
-		FROM sessions
-		WHERE task_id = ?
-		ORDER BY started_at DESC
+			s.id, s.task_id, s.type, s.status, s.duration_ms, s.started_at, s.paused_at,
+			s.completed_at, s.git_branch, s.git_commit, s.git_modified, s.notes,
+			s.methodology, s.focus_score, s.distractions, s.accomplishment, s.intended_outcome,
+			COALESCE(GROUP_CONCAT(st.tag), ''),
+			s.energize_activity, s.shutdown_ritual, s.outcome_achieved
+		FROM sessions s
+		LEFT JOIN session_tags st ON st.session_id = s.id
+		WHERE s.task_id = ?
+		GROUP BY s.id
+		ORDER BY s.started_at DESC
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, taskID)
@@ -193,7 +204,7 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 		SET task_id = ?, type = ?, status = ?, duration_ms = ?, started_at = ?,
 		    paused_at = ?, completed_at = ?, git_branch = ?, git_commit = ?, git_modified = ?, notes = ?,
 		    methodology = ?, focus_score = ?, distractions = ?, accomplishment = ?, intended_outcome = ?,
-		    tags = ?, energize_activity = ?, shutdown_ritual = ?, outcome_achieved = ?
+		    energize_activity = ?, shutdown_ritual = ?, outcome_achieved = ?
 		WHERE id = ?
 	`
 
@@ -203,7 +214,6 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 	if methodology == "" {
 		methodology = string(domain.MethodologyPomodoro)
 	}
-	tags := strings.Join(session.Tags, ",")
 
 	var shutdownRitualJSON []byte
 	if session.ShutdownRitual != nil {
@@ -227,7 +237,6 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 		string(distractionsJSON),
 		session.Accomplishment,
 		session.IntendedOutcome,
-		tags,
 		session.EnergizeActivity,
 		nullableString(shutdownRitualJSON),
 		session.OutcomeAchieved,
@@ -243,10 +252,11 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 		return fmt.Errorf("session not found: %s: %w", session.ID, domain.ErrSessionNotFound)
 	}
 
-	return nil
+	return replaceSessionTags(ctx, r.db, session.ID, session.Tags)
 }
 
-// GetDailyStats returns aggregated statistics for a specific date.
+// GetDailyStats returns aggregated session statistics for a specific date.
+// Session data only: TasksCompleted is populated by the service layer.
 func (r *sessionRepository) GetDailyStats(ctx context.Context, date time.Time) (*domain.DailyStats, error) {
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
@@ -276,17 +286,6 @@ func (r *sessionRepository) GetDailyStats(ctx context.Context, date time.Time) (
 	}
 
 	stats.TotalWorkTime = time.Duration(totalWorkMs) * time.Millisecond
-
-	// Count tasks completed on this day (same SQLite database).
-	var tasksCompleted int
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM tasks
-		WHERE status = 'completed' AND completed_at >= ? AND completed_at < ?
-	`, startOfDay, endOfDay).Scan(&tasksCompleted); err != nil {
-		return nil, fmt.Errorf("failed to count completed tasks: %w", err)
-	}
-	stats.TasksCompleted = tasksCompleted
 
 	return stats, nil
 }
@@ -510,14 +509,21 @@ func (r *sessionRepository) GetDeepWorkHours(ctx context.Context, start, end tim
 }
 
 // GetTagStats returns aggregated tag statistics for work sessions in a time range.
-// Tags are stored as a CSV column, so aggregation happens here in Go.
+// Tags live in the session_tags table (normalized at write time); a session
+// counts fully toward each of its tags. Only focus scores > 0 feed averages.
 func (r *sessionRepository) GetTagStats(ctx context.Context, start, end time.Time) ([]domain.TagStat, error) {
 	query := `
-		SELECT tags, duration_ms, focus_score
-		FROM sessions
-		WHERE type = 'work' AND status = 'completed'
-		  AND tags IS NOT NULL AND tags != ''
-		  AND started_at >= ? AND started_at < ?
+		SELECT
+			st.tag,
+			COUNT(*) as session_count,
+			COALESCE(SUM(s.duration_ms), 0) as total_ms,
+			COALESCE(SUM(CASE WHEN s.focus_score > 0 THEN 1 ELSE 0 END), 0) as focus_count,
+			COALESCE(SUM(CASE WHEN s.focus_score > 0 THEN s.focus_score ELSE 0 END), 0) as focus_sum
+		FROM session_tags st
+		JOIN sessions s ON s.id = st.session_id
+		WHERE s.type = 'work' AND s.status = 'completed'
+		  AND s.started_at >= ? AND s.started_at < ?
+		GROUP BY st.tag
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, start, end)
@@ -526,55 +532,31 @@ func (r *sessionRepository) GetTagStats(ctx context.Context, start, end time.Tim
 	}
 	defer func() { _ = rows.Close() }()
 
-	byTag := map[string]*domain.TagStat{}
+	result := make([]domain.TagStat, 0)
 	for rows.Next() {
-		var tagsStr sql.NullString
-		var focusScore sql.NullInt64
-		var durationMs int64
-		if err := rows.Scan(&tagsStr, &durationMs, &focusScore); err != nil {
+		var stat domain.TagStat
+		var totalMs int64
+		var focusSum int64
+		if err := rows.Scan(&stat.Tag, &stat.SessionCount, &totalMs, &stat.FocusScoreCount, &focusSum); err != nil {
 			return nil, fmt.Errorf("failed to scan tag stats: %w", err)
 		}
-
-		for _, tag := range strings.Split(tagsStr.String, ",") {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			stat, ok := byTag[tag]
-			if !ok {
-				stat = &domain.TagStat{Tag: tag}
-				byTag[tag] = stat
-			}
-			stat.SessionCount++
-			stat.TotalTime += time.Duration(durationMs) * time.Millisecond
-			if focusScore.Valid && focusScore.Int64 > 0 {
-				stat.FocusScoreCount++
-				stat.AvgFocusScore += float64(focusScore.Int64)
-			}
+		stat.TotalTime = time.Duration(totalMs) * time.Millisecond
+		if stat.FocusScoreCount > 0 {
+			stat.AvgFocusScore = float64(focusSum) / float64(stat.FocusScoreCount)
 		}
+		result = append(result, stat)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	result := make([]domain.TagStat, 0, len(byTag))
-	for _, stat := range byTag {
-		if stat.FocusScoreCount > 0 {
-			stat.AvgFocusScore /= float64(stat.FocusScoreCount)
-		}
-		result = append(result, *stat)
-	}
 	sortTags(result)
 	return result, nil
 }
 
 // sortTags orders tag stats by total time, descending.
 func sortTags(stats []domain.TagStat) {
-	for i := 1; i < len(stats); i++ {
-		for j := i; j > 0 && stats[j].TotalTime > stats[j-1].TotalTime; j-- {
-			stats[j], stats[j-1] = stats[j-1], stats[j]
-		}
-	}
+	sort.Slice(stats, func(i, j int) bool { return stats[i].TotalTime > stats[j].TotalTime })
 }
 
 // scanSession scans a single session row.

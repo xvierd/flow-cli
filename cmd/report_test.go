@@ -49,6 +49,15 @@ func TestReportCmd_ValidateFormat(t *testing.T) {
 	}
 }
 
+func TestReportCmd_WeekMonthMutuallyExclusive(t *testing.T) {
+	reportWeek, reportMonth = true, true
+	defer func() { reportWeek, reportMonth = false, false }()
+
+	if err := runReport(reportCmd, nil); err == nil {
+		t.Error("expected error when both --week and --month are set")
+	}
+}
+
 // normalizeReportFormat returns the canonical name for a format, or an error if unsupported.
 func normalizeReportFormat(format string) (string, error) {
 	switch format {

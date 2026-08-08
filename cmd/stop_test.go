@@ -43,14 +43,14 @@ func TestOutputJSON(t *testing.T) {
 		"type":       string(session.Type),
 		"status":     string(session.Status),
 		"duration":   session.Duration.String(),
-		"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+		"started_at": session.StartedAt.Format(time.RFC3339),
 		"notes":      session.Notes,
 	}
 	if session.TaskID != nil {
 		data["task_id"] = *session.TaskID
 	}
 	if session.CompletedAt != nil {
-		data["completed_at"] = session.CompletedAt.Format("2006-01-02T15:04:05")
+		data["completed_at"] = session.CompletedAt.Format(time.RFC3339)
 	}
 
 	jsonData, err := json.MarshalIndent(data, "", "  ")
@@ -66,10 +66,10 @@ func TestOutputJSON(t *testing.T) {
 		"work",
 		"completed",
 		"25m0s",
-		"2024-01-15T10:00:00",
+		"2024-01-15T10:00:00Z",
 		"Test notes",
 		"test-task-123",
-		"2024-01-15T10:30:00",
+		"2024-01-15T10:30:00Z",
 	}
 
 	for _, field := range expectedFields {

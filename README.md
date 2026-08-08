@@ -271,6 +271,7 @@ Flow stores config at `~/.flow/config.toml` and data at `~/.flow/flow.db`.
 
 ```toml
 methodology = "pomodoro"  # default mode: pomodoro, deepwork, maketime
+language = "en"           # UI language: en, es (FLOW_LANG env var overrides this)
 first_run = true
 
 [focus]
@@ -320,6 +321,17 @@ color_break = "#4ECDC4"
 icon_app = "🍅"
 ```
 
+## Internationalization
+
+The CLI and TUI are available in English and Spanish. Flow picks the language from the `FLOW_LANG` environment variable first, then the `language` key in `config.toml`, defaulting to English:
+
+```bash
+FLOW_LANG=es flow          # one-off
+flow config                # or set it permanently ([l] Cambiar idioma)
+```
+
+Command help text (`--help`, cobra metadata) stays in English.
+
 ## Architecture
 
 Hexagonal architecture with a clean separation between business logic and external concerns.
@@ -329,8 +341,9 @@ internal/
 ├── domain/       # Entities: Task, Session, State, Report
 ├── ports/        # Interfaces: Storage, Timer, GitDetector, MCP
 ├── services/     # Use cases: TaskService, PomodoroService, StateService, ReportService
+├── i18n/         # en/es message catalogs
 └── adapters/     # Implementations
-    ├── storage/  # SQLite
+    ├── storage/  # SQLite (versioned migrations, transactions, normalized tags)
     ├── tui/      # Bubbletea
     ├── mcp/      # MCP server
     ├── git/      # Git context detection

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 	"github.com/xvierd/flow-cli/internal/ports"
 )
@@ -169,7 +170,7 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 
 	result, err := t.program.Run()
 	if err != nil {
-		return fmt.Errorf("failed to run TUI: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to run TUI"), err)
 	}
 
 	if final, ok := result.(Model); ok {
@@ -235,7 +236,7 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 
 	result, err := t.program.Run()
 	if err != nil {
-		return fmt.Errorf("failed to run inline TUI: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to run inline TUI"), err)
 	}
 	if final, ok := result.(InlineModel); ok {
 		t.PostAction = final.SelectedAction
@@ -359,5 +360,5 @@ func ShowStatus(state *domain.CurrentState, theme *config.ThemeConfig) {
 
 // ShowError displays an error message.
 func ShowError(err error) {
-	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	fmt.Fprintf(os.Stderr, "%s\n", i18n.T("Error: %v", err))
 }

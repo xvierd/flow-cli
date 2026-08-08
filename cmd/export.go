@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
@@ -54,7 +55,7 @@ func runExport(ctx context.Context) error {
 
 	sessions, err := app.storage.Sessions().FindRecent(ctx, since)
 	if err != nil {
-		return fmt.Errorf("failed to fetch sessions: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to fetch sessions"), err)
 	}
 
 	switch exportFormat {
@@ -66,29 +67,29 @@ func runExport(ctx context.Context) error {
 }
 
 func exportMarkdown(sessions []*domain.PomodoroSession) error {
-	fmt.Printf("# Flow Session Export\n\n")
-	fmt.Printf("Generated: %s\n\n", time.Now().Format("2006-01-02 15:04"))
+	fmt.Printf("# %s\n\n", i18n.T("Flow Session Export"))
+	fmt.Printf("%s\n\n", i18n.T("Generated: %s", time.Now().Format("2006-01-02 15:04")))
 
 	for _, s := range sessions {
 		if !s.IsWorkSession() {
 			continue
 		}
 		fmt.Printf("## %s — %s\n", s.StartedAt.Format("2006-01-02"), s.Methodology)
-		fmt.Printf("- Duration: %s\n", s.Duration.String())
+		fmt.Printf("- %s\n", i18n.T("Duration: %s", s.Duration.String()))
 		if s.IntendedOutcome != "" {
-			fmt.Printf("- Goal: %s\n", s.IntendedOutcome)
+			fmt.Printf("- %s\n", i18n.T("Goal: %s", s.IntendedOutcome))
 		}
 		if s.Accomplishment != "" {
-			fmt.Printf("- Accomplished: %s\n", s.Accomplishment)
+			fmt.Printf("- %s\n", i18n.T("Accomplished: %s", s.Accomplishment))
 		}
 		if s.FocusScore != nil {
-			fmt.Printf("- Focus: %d/5\n", *s.FocusScore)
+			fmt.Printf("- %s\n", i18n.T("Focus: %d/5", *s.FocusScore))
 		}
 		if s.EnergizeActivity != "" {
-			fmt.Printf("- Energize: %s\n", s.EnergizeActivity)
+			fmt.Printf("- %s\n", i18n.T("Energize: %s", s.EnergizeActivity))
 		}
 		if len(s.Distractions) > 0 {
-			fmt.Printf("- Distractions (%d):\n", len(s.Distractions))
+			fmt.Printf("- %s\n", i18n.T("Distractions (%d):", len(s.Distractions)))
 			for _, d := range s.Distractions {
 				if d.Category != "" {
 					fmt.Printf("  - [%s] %s\n", d.Category, d.Text)
@@ -99,16 +100,16 @@ func exportMarkdown(sessions []*domain.PomodoroSession) error {
 		}
 		if s.ShutdownRitual != nil {
 			if s.ShutdownRitual.PendingTasksReview != "" {
-				fmt.Printf("- Pending review: %s\n", s.ShutdownRitual.PendingTasksReview)
+				fmt.Printf("- %s\n", i18n.T("Pending review: %s", s.ShutdownRitual.PendingTasksReview))
 			}
 			if s.ShutdownRitual.CalendarReview != "" {
-				fmt.Printf("- Calendar review: %s\n", s.ShutdownRitual.CalendarReview)
+				fmt.Printf("- %s\n", i18n.T("Calendar review: %s", s.ShutdownRitual.CalendarReview))
 			}
 			if s.ShutdownRitual.TomorrowPlan != "" {
-				fmt.Printf("- Tomorrow: %s\n", s.ShutdownRitual.TomorrowPlan)
+				fmt.Printf("- %s\n", i18n.T("Tomorrow: %s", s.ShutdownRitual.TomorrowPlan))
 			}
 			if s.ShutdownRitual.ClosingPhrase != "" {
-				fmt.Printf("- Closing: %s\n", s.ShutdownRitual.ClosingPhrase)
+				fmt.Printf("- %s\n", i18n.T("Closing: %s", s.ShutdownRitual.ClosingPhrase))
 			}
 		}
 		fmt.Println()
@@ -124,7 +125,7 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 		"focus_score", "tags", "energize_activity", "distraction_count",
 		"distractions", "pending_tasks_review", "calendar_review", "tomorrow_plan",
 	}); err != nil {
-		return fmt.Errorf("failed to write CSV header: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to write CSV header"), err)
 	}
 
 	for _, s := range sessions {
@@ -161,12 +162,12 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 			calendarReview,
 			tomorrowPlan,
 		}); err != nil {
-			return fmt.Errorf("failed to write CSV row: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to write CSV row"), err)
 		}
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {
-		return fmt.Errorf("failed to flush CSV output: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to flush CSV output"), err)
 	}
 	return nil
 }

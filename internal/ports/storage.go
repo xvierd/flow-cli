@@ -45,6 +45,9 @@ type TaskRepository interface {
 	// FindTodayHighlight returns the task marked as today's highlight.
 	FindTodayHighlight(ctx context.Context, date time.Time) (*domain.Task, error)
 
+	// CountCompleted returns how many tasks were completed on the given date.
+	CountCompleted(ctx context.Context, date time.Time) (int, error)
+
 	// FindYesterdayHighlight returns yesterday's highlight task if it wasn't completed.
 	FindYesterdayHighlight(ctx context.Context, today time.Time) (*domain.Task, error)
 }
@@ -70,7 +73,9 @@ type SessionRepository interface {
 	// Update modifies an existing session.
 	Update(ctx context.Context, session *domain.PomodoroSession) error
 
-	// GetDailyStats returns aggregated statistics for a specific date.
+	// GetDailyStats returns aggregated session statistics for a specific date.
+	// It reports session data only; DailyStats.TasksCompleted is populated by
+	// the service layer via TaskRepository.CountCompleted.
 	GetDailyStats(ctx context.Context, date time.Time) (*domain.DailyStats, error)
 
 	// GetPeriodStats returns aggregated statistics for a time range.
@@ -106,4 +111,9 @@ type Storage interface {
 
 	// Migrate runs database migrations.
 	Migrate() error
+
+	// WithTx runs fn within a single database transaction. The Storage passed
+	// to fn is transaction-scoped and must not be used after fn returns.
+	// If fn returns an error, the transaction is rolled back.
+	WithTx(ctx context.Context, fn func(tx Storage) error) error
 }

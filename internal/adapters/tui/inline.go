@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 	"github.com/xvierd/flow-cli/internal/ports"
 )
@@ -64,12 +65,9 @@ type InlineModel struct {
 	state                   *domain.CurrentState
 	progress                progress.Model
 	width                   int
-	completed               bool
 	completedType           domain.SessionType
 	completedElapsed        time.Duration // actual time worked, captured at session end
 	notified                bool
-	confirmBreak            bool
-	confirmFinish           bool
 	confirmMode             bool
 	fetchState              func() *domain.CurrentState
 	commandCallback         func(ports.TimerCommand) error
@@ -81,8 +79,6 @@ type InlineModel struct {
 	outcomeAchievedCallback func(sessionID string, achieved string) error
 	completionInfo          *domain.CompletionInfo
 	theme                   config.ThemeConfig
-	strict                  bool
-	strictLocked            bool // transient notice shown when a strict-locked key is pressed
 
 	// Callbacks for session creation (called during setup phase)
 	onStartSession func(presetIndex int, taskName string, intendedOutcome string) error
@@ -112,18 +108,10 @@ func getTerminalWidth() int {
 	return w
 }
 
-// strictWorkBlocked reports whether strict focus mode locks early disengagement:
-// an active (not yet completed) work session cannot be paused, finished, voided,
-// skipped into a break, or cancelled via mode switch.
-func (m InlineModel) strictWorkBlocked() bool {
-	return m.strict && !m.completed && m.state != nil && m.state.ActiveSession != nil && m.state.ActiveSession.IsWorkSession()
-}
-
-// setStrictLocked records a blocked-key notice and clears any confirm states.
+// setStrictLocked records a blocked-key notice and clears any confirm states,
+// including the inline-only mode-switch confirm.
 func (m *InlineModel) setStrictLocked() {
-	m.strictLocked = true
-	m.confirmBreak = false
-	m.confirmFinish = false
+	m.completionState.setStrictLocked()
 	m.confirmMode = false
 }
 
@@ -135,12 +123,12 @@ func NewInlineModel(state *domain.CurrentState, info *domain.CompletionInfo, the
 	pbar.Width = w - 16
 
 	ti := textinput.New()
-	ti.Placeholder = "Enter to skip"
+	ti.Placeholder = i18n.T("Enter to skip")
 	ti.CharLimit = 120
 	ti.Width = w - 10
 
 	oi := textinput.New()
-	oi.Placeholder = "Enter to skip"
+	oi.Placeholder = i18n.T("Enter to skip")
 	oi.CharLimit = 200
 	oi.Width = w - 10
 
@@ -320,7 +308,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notified = false
 			}
 		case "p":
-			if m.strictWorkBlocked() && m.state.ActiveSession.Status == domain.SessionStatusRunning {
+			if m.strictWorkBlocked(m.state) && m.state.ActiveSession.Status == domain.SessionStatusRunning {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -411,7 +399,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "b":
-			if m.strictWorkBlocked() {
+			if m.strictWorkBlocked(m.state) {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -440,7 +428,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.completed || m.state.ActiveSession == nil {
 				return m, nil
 			}
-			if m.strictWorkBlocked() {
+			if m.strictWorkBlocked(m.state) {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -456,7 +444,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.confirmFinish = true
 			m.confirmBreak = false
 		case "v":
-			if m.strictWorkBlocked() {
+			if m.strictWorkBlocked(m.state) {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -471,7 +459,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "m":
 			// Strict focus: cancel via mode switch is locked during a work session.
-			if m.strictWorkBlocked() {
+			if m.strictWorkBlocked(m.state) {
 				m.setStrictLocked()
 				return m, nil
 			}
@@ -641,10 +629,10 @@ func (m InlineModel) viewTimer() string {
 				b.WriteString("\n")
 			}
 		} else {
-			b.WriteString(dim.Render("  No active session"))
+			b.WriteString(dim.Render("  " + i18n.T("No active session")))
 			b.WriteString("\n")
 		}
-		b.WriteString(dim.Render("  [s]tart  [m]ode  [c]lose"))
+		b.WriteString(dim.Render("  " + i18n.T("[s]tart  [m]ode  [c]lose")))
 		b.WriteString("\n")
 		return b.String()
 	}
@@ -656,16 +644,16 @@ func (m InlineModel) viewDailySummary(accent, dim lipgloss.Style) string {
 	var b strings.Builder
 	stats := m.state.TodayStats
 
-	b.WriteString(accent.Render(fmt.Sprintf("  %s Today's Summary", m.theme.IconApp)))
+	b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Today's Summary"))))
 	b.WriteString("\n")
-	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s focused",
-		m.theme.IconStats, stats.WorkSessions, formatMinutesCompact(stats.TotalWorkTime))))
+	b.WriteString(dim.Render(fmt.Sprintf("  %s %s",
+		m.theme.IconStats, i18n.T("%d sessions, %s focused", stats.WorkSessions, formatMinutesCompact(stats.TotalWorkTime)))))
 	if stats.BreaksTaken > 0 {
-		b.WriteString(dim.Render(fmt.Sprintf(", %d breaks", stats.BreaksTaken)))
+		b.WriteString(dim.Render(i18n.T(", %d breaks", stats.BreaksTaken)))
 	}
 	b.WriteString("\n")
 
-	b.WriteString(dim.Render("  Press any key to exit"))
+	b.WriteString(dim.Render("  " + i18n.T("Press any key to exit")))
 	b.WriteString("\n")
 
 	return b.String()
@@ -687,20 +675,20 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	var b strings.Builder
 
 	if session.Status == domain.SessionStatusPaused {
-		b.WriteString(pausedStyle.Render(fmt.Sprintf("  %s %s  %s  %s PAUSED",
-			m.theme.IconApp, displayLabel, timeStr, m.theme.IconPaused)))
+		b.WriteString(pausedStyle.Render(fmt.Sprintf("  %s %s  %s  %s %s",
+			m.theme.IconApp, displayLabel, timeStr, m.theme.IconPaused, i18n.T("PAUSED"))))
 	} else {
 		b.WriteString(accent.Render(fmt.Sprintf("  %s %s  %s", m.theme.IconApp, displayLabel, timeStr)))
 	}
 	if m.strict && session.IsWorkSession() {
-		b.WriteString(accent.Render("  🔒 STRICT"))
+		b.WriteString(accent.Render("  " + i18n.T("🔒 STRICT")))
 	}
 
 	if m.state.ActiveTask != nil {
 		b.WriteString(dim.Render(fmt.Sprintf("  %s %s", m.theme.IconTask, m.state.ActiveTask.Title)))
 	}
 	if session.IntendedOutcome != "" {
-		b.WriteString(dim.Italic(true).Render(fmt.Sprintf("  Goal: %s", session.IntendedOutcome)))
+		b.WriteString(dim.Italic(true).Render("  " + i18n.T("Goal: %s", session.IntendedOutcome)))
 	}
 	if len(session.Tags) > 0 {
 		tagStr := ""
@@ -714,31 +702,31 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	// Make Time: energize reminder
 	if m.energizeTicks > 0 {
 		reminderStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTask))
-		b.WriteString(reminderStyle.Render("  Quick stretch? Take a moment to energize."))
+		b.WriteString(reminderStyle.Render("  " + i18n.T("Quick stretch? Take a moment to energize.")))
 		b.WriteString("  ")
-		b.WriteString(dim.Render("[b]reak"))
+		b.WriteString(dim.Render(i18n.T("[b]reak")))
 		b.WriteString("\n")
 	}
 
 	// Text input overlays
 	if m.distractionMode {
 		if m.distractionCategoryMode {
-			b.WriteString(dim.Render(fmt.Sprintf("  Categorize: %s", m.distractionPendingText)))
+			b.WriteString(dim.Render("  " + i18n.T("Categorize: %s", m.distractionPendingText)))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("  [i]nternal  [e]xternal  [enter] no category  [esc] cancel"))
+			b.WriteString(dim.Render("  " + i18n.T("[i]nternal  [e]xternal  [enter] no category  [esc] cancel")))
 			b.WriteString("\n")
 		} else {
-			b.WriteString(dim.Render("  Distraction: ") + m.distractionInput.View())
+			b.WriteString(dim.Render("  "+i18n.T("Distraction: ")) + m.distractionInput.View())
 			b.WriteString("\n")
-			b.WriteString(dim.Render("  enter save · esc cancel"))
+			b.WriteString(dim.Render("  " + i18n.T("enter save · esc cancel")))
 			b.WriteString("\n")
 		}
 		return b.String()
 	}
 	if m.accomplishmentMode {
-		b.WriteString(dim.Render("  Accomplishment: ") + m.accomplishmentInput.View())
+		b.WriteString(dim.Render("  "+i18n.T("Accomplishment: ")) + m.accomplishmentInput.View())
 		b.WriteString("\n")
-		b.WriteString(dim.Render("  enter save · esc cancel"))
+		b.WriteString(dim.Render("  " + i18n.T("enter save · esc cancel")))
 		b.WriteString("\n")
 		return b.String()
 	}
@@ -762,36 +750,36 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	b.WriteString("\n")
 
 	// Notification indicator
-	notifLabel := "off"
+	notifLabel := i18n.T("off")
 	if m.notificationsEnabled {
-		notifLabel = "on"
+		notifLabel = i18n.T("on")
 	}
 
 	// Help
 	if m.strictLocked {
-		b.WriteString(dim.Render("  🔒 STRICT: pause, finish, void, break and mode are locked — let the session run to completion"))
+		b.WriteString(dim.Render("  " + strictLockMessage(true)))
 	} else if m.confirmMode {
-		b.WriteString(dim.Render("  Switch mode? This cancels the current session  [m] confirm  [esc] cancel"))
+		b.WriteString(dim.Render("  " + i18n.T("Switch mode? This cancels the current session  [m] confirm  [esc] cancel")))
 	} else if m.confirmFinish {
-		b.WriteString(dim.Render("  Stop session? [f] confirm  [esc] cancel  [m]ode"))
+		b.WriteString(dim.Render("  " + i18n.T("Stop session? [f] confirm  [esc] cancel  [m]ode")))
 	} else if m.confirmBreak {
-		b.WriteString(dim.Render("  Start break? [b] confirm  [esc] cancel  [m]ode"))
+		b.WriteString(dim.Render("  " + i18n.T("Start break? [b] confirm  [esc] cancel  [m]ode")))
 	} else if session.IsBreakSession() {
-		b.WriteString(dim.Render(fmt.Sprintf("  [s]kip [p]ause [f]inish [m]ode [c]lose  tab:notify %s", notifLabel)))
+		b.WriteString(dim.Render("  " + i18n.T("[s]kip [p]ause [f]inish [m]ode [c]lose  tab:notify %s", notifLabel)))
 	} else {
-		pauseAction := "[p]ause"
+		pauseAction := i18n.T("[p]ause")
 		if session.Status == domain.SessionStatusPaused {
-			pauseAction = "[p]resume"
+			pauseAction = i18n.T("[p]resume")
 		}
-		helpText := fmt.Sprintf("  %s [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction)
+		helpText := "  " + i18n.T("%s [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction)
 		if m.mode != nil && m.mode.HasDistractionLog() && session.Status == domain.SessionStatusRunning {
 			if len(m.distractions) > 0 {
-				helpText = fmt.Sprintf("  %s [d]istraction(%d) [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction, len(m.distractions))
+				helpText = "  " + i18n.T("%s [d]istraction(%d) [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction, len(m.distractions))
 			} else {
-				helpText = fmt.Sprintf("  %s [d]istraction [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction)
+				helpText = "  " + i18n.T("%s [d]istraction [f]inish [v]oid [b]reak [m]ode [c]lose", pauseAction)
 			}
 		}
-		helpText += fmt.Sprintf("  tab:notify %s", notifLabel)
+		helpText += i18n.T("  tab:notify %s", notifLabel)
 		b.WriteString(dim.Render(helpText))
 	}
 	b.WriteString("\n")
@@ -813,11 +801,11 @@ func (m InlineModel) viewInlineComplete(accent, dim lipgloss.Style) string {
 
 	// Break complete
 	var b strings.Builder
-	b.WriteString(accent.Render(fmt.Sprintf("  %s Break over!", m.theme.IconApp)))
+	b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Break over!"))))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  Start your next session or call it a day."))
+	b.WriteString(dim.Render("  " + i18n.T("Start your next session or call it a day.")))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  [n]ew session  [m]ode  [q]uit"))
+	b.WriteString(dim.Render("  " + i18n.T("[n]ew session  [m]ode  [q]uit")))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -827,27 +815,27 @@ func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) strin
 	var b strings.Builder
 
 	if vd.elapsed > 0 {
-		b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete — %s worked", m.theme.IconApp, formatMinutesCompact(vd.elapsed))))
+		b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Session complete — %s worked", formatMinutesCompact(vd.elapsed)))))
 	} else {
-		b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete!", m.theme.IconApp)))
+		b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Session complete!"))))
 	}
 	b.WriteString("\n")
 
-	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s today",
-		m.theme.IconStats, vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime))))
+	b.WriteString(dim.Render(fmt.Sprintf("  %s %s",
+		m.theme.IconStats, i18n.T("%d sessions, %s today", vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime)))))
 	b.WriteString("\n")
 
 	if m.mode != nil && m.mode.Name() == domain.MethodologyPomodoro {
-		b.WriteString(dim.Render(fmt.Sprintf("  \U0001F345 %d sessions today", vd.statsWorkSessions)))
+		b.WriteString(dim.Render(fmt.Sprintf("  \U0001F345 %s", i18n.T("%d sessions today", vd.statsWorkSessions))))
 		b.WriteString("\n")
 	}
 
 	if m.autoBreakTicks > 0 {
-		b.WriteString(accent.Render(fmt.Sprintf("  Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+		b.WriteString(accent.Render("  " + i18n.T("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
 	} else if vd.hasBreakInfo {
-		b.WriteString(dim.Render(fmt.Sprintf("  [n]ew session  [b]reak %s %s  [m]ode  [q]uit", vd.breakDur, vd.breakLabel)))
+		b.WriteString(dim.Render("  " + i18n.T("[n]ew session  [b]reak %s %s  [m]ode  [q]uit", vd.breakDur, vd.breakLabel)))
 	} else {
-		b.WriteString(dim.Render("  [n]ew session  [b]reak  [m]ode  [q]uit"))
+		b.WriteString(dim.Render("  " + i18n.T("[n]ew session  [b]reak  [m]ode  [q]uit")))
 	}
 	b.WriteString("\n")
 	return b.String()
@@ -856,89 +844,89 @@ func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) strin
 func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) string {
 	vd := buildCompletionViewData(&m.completionState, m.mode, m.state, m.completionInfo, m.completedElapsed)
 	var b strings.Builder
-	b.WriteString(accent.Render(fmt.Sprintf("  %s Deep Work Session Complete.", m.theme.IconApp)))
+	b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Deep Work Session Complete."))))
 	b.WriteString("\n")
 
 	if vd.intendedOutcome != "" {
-		b.WriteString(dim.Render(fmt.Sprintf("  Goal: %s", vd.intendedOutcome)))
+		b.WriteString(dim.Render("  " + i18n.T("Goal: %s", vd.intendedOutcome)))
 		b.WriteString("\n")
 	}
 
 	if vd.distractionCount > 0 {
-		b.WriteString(dim.Render(fmt.Sprintf("  Distractions: %d", vd.distractionCount)))
+		b.WriteString(dim.Render("  " + i18n.T("Distractions: %d", vd.distractionCount)))
 		b.WriteString("\n")
 	}
 
-	b.WriteString(dim.Render(fmt.Sprintf("  Deep Work: %s today (%.0f%% of %.0fh)",
+	b.WriteString(dim.Render("  " + i18n.T("Deep Work: %s today (%.0f%% of %.0fh)",
 		formatMinutesCompact(vd.statsTotalWorkTime), vd.deepWorkPct, vd.deepWorkGoalHours)))
 	b.WriteString("\n")
 
 	if m.shutdownRitualMode {
-		b.WriteString(accent.Render(fmt.Sprintf("  Shutdown Ritual (step %d/4):", m.shutdownStep+1)))
+		b.WriteString(accent.Render("  " + i18n.T("Shutdown Ritual (step %d/4):", m.shutdownStep+1)))
 		b.WriteString("\n")
-		b.WriteString(dim.Render("  " + shutdownStepLabels[m.shutdownStep]))
+		b.WriteString(dim.Render("  " + i18n.T(shutdownStepLabels[m.shutdownStep])))
 		b.WriteString("\n")
 		b.WriteString("  " + m.shutdownInputs[m.shutdownStep].View())
 		b.WriteString("\n")
-		b.WriteString(dim.Render("  enter save/skip step · esc exit ritual"))
+		b.WriteString(dim.Render("  " + i18n.T("enter save/skip step · esc exit ritual")))
 	} else if m.accomplishmentMode {
-		b.WriteString(dim.Render("  Accomplishment: ") + m.accomplishmentInput.View())
+		b.WriteString(dim.Render("  "+i18n.T("Accomplishment: ")) + m.accomplishmentInput.View())
 		b.WriteString("\n")
-		b.WriteString(dim.Render("  enter save · esc cancel"))
+		b.WriteString(dim.Render("  " + i18n.T("enter save · esc cancel")))
 	} else if m.outcomeReviewMode {
-		b.WriteString(accent.Render("  Did you achieve your intended outcome?"))
+		b.WriteString(accent.Render("  " + i18n.T("Did you achieve your intended outcome?")))
 		b.WriteString("\n")
-		b.WriteString(dim.Render(fmt.Sprintf("  Goal: %s", vd.intendedOutcome)))
+		b.WriteString(dim.Render("  " + i18n.T("Goal: %s", vd.intendedOutcome)))
 		b.WriteString("\n")
-		b.WriteString(dim.Render("  [y]es [p]artially [n]o [enter] skip"))
+		b.WriteString(dim.Render("  " + i18n.T("[y]es [p]artially [n]o [enter] skip")))
 	} else if m.distractionReviewMode {
-		b.WriteString(accent.Render("  Distraction Review:"))
+		b.WriteString(accent.Render("  " + i18n.T("Distraction Review:")))
 		b.WriteString("\n")
 		for i, d := range m.distractions {
 			b.WriteString(dim.Render(fmt.Sprintf("    %d. %s", i+1, d)))
 			b.WriteString("\n")
 		}
-		b.WriteString(dim.Render("  Consider batching these for tomorrow."))
+		b.WriteString(dim.Render("  " + i18n.T("Consider batching these for tomorrow.")))
 		b.WriteString("\n")
-		b.WriteString(dim.Render("  enter dismiss"))
+		b.WriteString(dim.Render("  " + i18n.T("enter dismiss")))
 	} else if m.shutdownComplete || m.accomplishmentSaved {
 		if !m.outcomeReviewDone && vd.intendedOutcome != "" {
-			b.WriteString(accent.Render("  Shutdown ritual complete."))
+			b.WriteString(accent.Render("  " + i18n.T("Shutdown ritual complete.")))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("  [o]utcome review"))
+			b.WriteString(dim.Render("  " + i18n.T("[o]utcome review")))
 		} else if vd.distractionCount > 0 && !m.distractionReviewDone {
-			b.WriteString(accent.Render("  Shutdown ritual complete."))
+			b.WriteString(accent.Render("  " + i18n.T("Shutdown ritual complete.")))
 			b.WriteString("\n")
-			b.WriteString(dim.Render(fmt.Sprintf("  [r]eview %d distractions", vd.distractionCount)))
+			b.WriteString(dim.Render("  " + i18n.T("[r]eview %d distractions", vd.distractionCount)))
 		} else {
-			b.WriteString(accent.Render("  Shutdown ritual complete."))
+			b.WriteString(accent.Render("  " + i18n.T("Shutdown ritual complete.")))
 		}
 	}
 	b.WriteString("\n")
 
 	if !m.accomplishmentMode && !m.distractionReviewMode && !m.shutdownRitualMode && !m.outcomeReviewMode {
 		if m.completionPromptsComplete() {
-			b.WriteString(dim.Render("  [n]ew session [b]reak [m]ode [q]uit"))
+			b.WriteString(dim.Render("  " + i18n.T("[n]ew session [b]reak [m]ode [q]uit")))
 		} else if !m.shutdownComplete && !m.accomplishmentSaved {
-			b.WriteString(dim.Render("  → [n]ew session locked: complete the shutdown ritual first"))
+			b.WriteString(dim.Render("  " + i18n.T("→ [n]ew session locked: complete the shutdown ritual first")))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("    Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest."))
+			b.WriteString(dim.Render("    " + i18n.T("Newport: a ritual trains your brain to fully disconnect — without it, work bleeds into rest.")))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("  [a] shutdown ritual [b]reak [m]ode [q]uit"))
+			b.WriteString(dim.Render("  " + i18n.T("[a] shutdown ritual [b]reak [m]ode [q]uit")))
 		} else if vd.intendedOutcome != "" && !m.outcomeReviewDone {
-			b.WriteString(dim.Render("  → [n]ew session locked: review your outcome first"))
+			b.WriteString(dim.Render("  " + i18n.T("→ [n]ew session locked: review your outcome first")))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("    Did you achieve what you set out to do?"))
+			b.WriteString(dim.Render("    " + i18n.T("Did you achieve what you set out to do?")))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("  [o]utcome review [b]reak [m]ode [q]uit"))
+			b.WriteString(dim.Render("  " + i18n.T("[o]utcome review [b]reak [m]ode [q]uit")))
 		} else if vd.distractionCount > 0 && !m.distractionReviewDone {
-			b.WriteString(dim.Render("  → [n]ew session locked: review your distractions first"))
+			b.WriteString(dim.Render("  " + i18n.T("→ [n]ew session locked: review your distractions first")))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("    Newport: batch distractions and schedule them — don't let them follow you into the next block."))
+			b.WriteString(dim.Render("    " + i18n.T("Newport: batch distractions and schedule them — don't let them follow you into the next block.")))
 			b.WriteString("\n")
-			b.WriteString(dim.Render("  [r]eview distractions [b]reak [m]ode [q]uit"))
+			b.WriteString(dim.Render("  " + i18n.T("[r]eview distractions [b]reak [m]ode [q]uit")))
 		} else {
-			b.WriteString(dim.Render("  [b]reak [m]ode [q]uit"))
+			b.WriteString(dim.Render("  " + i18n.T("[b]reak [m]ode [q]uit")))
 		}
 		b.WriteString("\n")
 	}
@@ -948,48 +936,48 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) string {
 	vd := buildCompletionViewData(&m.completionState, m.mode, m.state, m.completionInfo, m.completedElapsed)
 	var b strings.Builder
-	b.WriteString(accent.Render(fmt.Sprintf("  %s Session complete!", m.theme.IconApp)))
+	b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Session complete!"))))
 	b.WriteString("\n")
 
 	if vd.hasHighlightTask {
-		b.WriteString(accent.Render("  You made time for your Highlight today."))
+		b.WriteString(accent.Render("  " + i18n.T("You made time for your Highlight today.")))
 		b.WriteString("\n")
 	}
 
 	if m.focusScoreSaved && m.focusScore != nil {
-		b.WriteString(dim.Render(fmt.Sprintf("  Focus score: %d/5", *m.focusScore)))
+		b.WriteString(dim.Render("  " + i18n.T("Focus score: %d/5", *m.focusScore)))
 	} else {
-		b.WriteString(dim.Render("  How focused? [1] [2] [3] [4] [5]"))
+		b.WriteString(dim.Render("  " + i18n.T("How focused? [1] [2] [3] [4] [5]")))
 	}
 	b.WriteString("\n")
 
 	if m.focusScoreSaved {
 		if m.energizeSaved {
-			b.WriteString(dim.Render(fmt.Sprintf("  Energize: %s", m.energizeActivity)))
+			b.WriteString(dim.Render("  " + i18n.T("Energize: %s", m.energizeActivity)))
 		} else {
-			b.WriteString(dim.Render("  Energize? [w]alk [t]stretch [e]xercise [n]one"))
+			b.WriteString(dim.Render("  " + i18n.T("Energize? [w]alk [t]stretch [e]xercise [n]one")))
 		}
 		b.WriteString("\n")
 	}
 
-	b.WriteString(dim.Render(fmt.Sprintf("  %s %d sessions, %s worked today",
-		m.theme.IconStats, vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime))))
+	b.WriteString(dim.Render(fmt.Sprintf("  %s %s",
+		m.theme.IconStats, i18n.T("%d sessions, %s worked today", vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime)))))
 	b.WriteString("\n")
 
 	if m.completionPromptsComplete() {
-		b.WriteString(dim.Render("  [n]ew session [b]reak [m]ode [q]uit"))
+		b.WriteString(dim.Render("  " + i18n.T("[n]ew session [b]reak [m]ode [q]uit")))
 	} else if !m.focusScoreSaved {
-		b.WriteString(dim.Render("  → [n]ew session locked: rate your focus first"))
+		b.WriteString(dim.Render("  " + i18n.T("→ [n]ew session locked: rate your focus first")))
 		b.WriteString("\n")
-		b.WriteString(dim.Render("    Make Time: tracking focus shows you when you're at your best — skip it and the data disappears."))
+		b.WriteString(dim.Render("    " + i18n.T("Make Time: tracking focus shows you when you're at your best — skip it and the data disappears.")))
 		b.WriteString("\n")
-		b.WriteString(dim.Render("  [1-5] focus score [b]reak [m]ode [q]uit"))
+		b.WriteString(dim.Render("  " + i18n.T("[1-5] focus score [b]reak [m]ode [q]uit")))
 	} else {
-		b.WriteString(dim.Render("  → [n]ew session locked: log how you'll recharge first"))
+		b.WriteString(dim.Render("  " + i18n.T("→ [n]ew session locked: log how you'll recharge first")))
 		b.WriteString("\n")
-		b.WriteString(dim.Render("    Make Time: energy fuels your next Highlight — Knapp says laser focus requires an energized body."))
+		b.WriteString(dim.Render("    " + i18n.T("Make Time: energy fuels your next Highlight — Knapp says laser focus requires an energized body.")))
 		b.WriteString("\n")
-		b.WriteString(dim.Render("  [w]alk [t]stretch [e]xercise [n]one [b]reak [m]ode [q]uit"))
+		b.WriteString(dim.Render("  " + i18n.T("[w]alk [t]stretch [e]xercise [n]one [b]reak [m]ode [q]uit")))
 	}
 	b.WriteString("\n")
 	return b.String()

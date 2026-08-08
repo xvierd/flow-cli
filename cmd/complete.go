@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // completeCmd represents the complete command
@@ -18,10 +19,10 @@ var completeCmd = &cobra.Command{
 		taskID := args[0]
 
 		if err := app.tasks.CompleteTask(ctx, taskID); err != nil {
-			return fmt.Errorf("failed to complete task: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to complete task"), err)
 		}
 
-		fmt.Printf("✅ Task completed (ID: %s)\n", taskID)
+		fmt.Printf("✅ %s\n", i18n.T("Task completed (ID: %s)", taskID))
 		return nil
 	},
 }

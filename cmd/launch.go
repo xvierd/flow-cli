@@ -9,6 +9,7 @@ import (
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 	"github.com/xvierd/flow-cli/internal/ports"
 	"github.com/xvierd/flow-cli/internal/services"
@@ -32,10 +33,10 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 	shortBreakDur, longBreakDur := app.config.GetBreakDurations(app.methodology)
 	var breakInfo string
 	if app.methodology == domain.MethodologyPomodoro {
-		breakInfo = fmt.Sprintf("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
+		breakInfo = i18n.T("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
 			formatMinutes(shortBreakDur), formatMinutes(longBreakDur), app.config.Pomodoro.SessionsBeforeLong)
 	} else {
-		breakInfo = fmt.Sprintf("Break: %s · \"flow config\" to customize", formatMinutes(shortBreakDur))
+		breakInfo = i18n.T("Break: %s · \"flow config\" to customize", formatMinutes(shortBreakDur))
 	}
 
 	// Completion info: next break type and duration.
@@ -89,7 +90,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 		FetchState: func() *domain.CurrentState {
 			newState, err := app.state.GetCurrentState(ctx)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to fetch state: %v\n", err)
+				fmt.Fprintf(os.Stderr, "%s\n", i18n.T("Warning: failed to fetch state: %v", err))
 				return nil
 			}
 			return newState
@@ -119,7 +120,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 				_, err := app.pomodoro.StartBreak(ctx, workingDir)
 				return err
 			default:
-				return fmt.Errorf("unknown command: %v", cmd)
+				return fmt.Errorf("%s", i18n.T("unknown command: %v", cmd))
 			}
 		},
 		DistractionCallback: func(text string, category string) error {
@@ -173,7 +174,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 				err = app.notifier.NotifyBreakComplete("Long")
 			}
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: notification failed: %v\n", err)
+				fmt.Fprintf(os.Stderr, "%s\n", i18n.T("Warning: notification failed: %v", err))
 			}
 		},
 		CompletionInfo: &domain.CompletionInfo{
@@ -206,36 +207,42 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 				taskName, sessionTags = domain.ParseTagsFromInput(taskName)
 			}
 
-			var taskID *string
-			if taskName != "" {
-				task, err := app.tasks.AddTask(ctx, services.AddTaskRequest{
-					Title: taskName,
-				})
-				if err != nil {
-					return err
+			// Task creation, highlight update, and session start are one
+			// atomic unit.
+			return app.storage.WithTx(ctx, func(tx ports.Storage) error {
+				var taskID *string
+				if taskName != "" {
+					task, err := app.tasks.AddTaskWith(ctx, tx, services.AddTaskRequest{
+						Title: taskName,
+					})
+					if err != nil {
+						return err
+					}
+					taskID = &task.ID
+					if currentMode.HasHighlight() {
+						task.SetAsHighlight()
+						if err := tx.Tasks().Update(ctx, task); err != nil {
+							return err
+						}
+					}
 				}
-				taskID = &task.ID
-				if currentMode.HasHighlight() {
-					task.SetAsHighlight()
-					_ = app.storage.Tasks().Update(ctx, task)
-				}
-			}
 
-			_, err := app.pomodoro.StartPomodoro(ctx, services.StartPomodoroRequest{
-				TaskID:          taskID,
-				WorkingDir:      workingDir,
-				Duration:        currentPresets[presetIndex].Duration,
-				Methodology:     app.methodology,
-				Tags:            sessionTags,
-				IntendedOutcome: intendedOutcome,
+				_, err := app.pomodoro.StartPomodoroWith(ctx, tx, services.StartPomodoroRequest{
+					TaskID:          taskID,
+					WorkingDir:      workingDir,
+					Duration:        currentPresets[presetIndex].Duration,
+					Methodology:     app.methodology,
+					Tags:            sessionTags,
+					IntendedOutcome: intendedOutcome,
+				})
+				return err
 			})
-			return err
 		},
 		FirstRun: firstRun,
 	})
 
 	if err := timer.Run(ctx, state); err != nil {
-		return fmt.Errorf("timer error: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("timer error"), err)
 	}
 
 	return nil

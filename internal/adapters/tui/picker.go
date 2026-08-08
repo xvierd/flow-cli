@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/xvierd/flow-cli/internal/config"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // PickerItem represents one option in the picker.
@@ -86,7 +87,7 @@ func (m pickerModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("  ↑/↓ navigate · enter select · esc back") + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("↑/↓ navigate · enter select · esc back")) + "\n")
 
 	return b.String()
 }
@@ -167,7 +168,7 @@ func (m hPickerModel) View() string {
 		b.WriteString(dimStyle.Render("  "+m.footer) + "\n")
 	}
 
-	b.WriteString(dimStyle.Render("  ←/→ navigate · enter select · esc back") + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("←/→ navigate · enter select · esc back")) + "\n")
 
 	return b.String()
 }
@@ -265,7 +266,7 @@ func (m textPromptModel) View() string {
 	b.WriteString(titleStyle.Render("  "+m.title) + " ")
 	b.WriteString(m.input.View())
 	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("  enter confirm · esc back") + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("enter confirm · esc back")) + "\n")
 
 	return b.String()
 }

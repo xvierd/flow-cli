@@ -551,3 +551,30 @@ func TestState_GetFocusReport(t *testing.T) {
 		t.Errorf("DistractionCount = %d, want 1", report.DistractionCount)
 	}
 }
+
+func TestState_GetDailySummary_TasksCompleted(t *testing.T) {
+	svc, store, _, _ := newStateWithServices(t)
+	ctx := context.Background()
+
+	// The service combines session stats with the task repository's count.
+	complete := func(title string) {
+		task, err := domain.NewTask(title)
+		if err != nil {
+			t.Fatalf("NewTask() error = %v", err)
+		}
+		task.Complete()
+		if err := store.Tasks().Save(ctx, task); err != nil {
+			t.Fatalf("Save() task error = %v", err)
+		}
+	}
+	complete("done one")
+	complete("done two")
+
+	stats, err := svc.GetDailySummary(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("GetDailySummary() error = %v", err)
+	}
+	if stats.TasksCompleted != 2 {
+		t.Errorf("TasksCompleted = %d, want 2", stats.TasksCompleted)
+	}
+}

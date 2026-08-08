@@ -2,10 +2,14 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/ports"
 )
 
 func TestNewMemory(t *testing.T) {
@@ -229,6 +233,7 @@ func TestSessionRepository_SaveAndFind(t *testing.T) {
 
 	t.Run("save work session", func(t *testing.T) {
 		session := domain.NewPomodoroSession(config, nil)
+		session.Complete() // completed: the unique index allows only one active session
 		err := repo.Save(ctx, session)
 		if err != nil {
 			t.Errorf("Save() error = %v", err)
@@ -237,6 +242,7 @@ func TestSessionRepository_SaveAndFind(t *testing.T) {
 
 	t.Run("save break session", func(t *testing.T) {
 		session := domain.NewBreakSession(config, 1)
+		session.Complete() // completed: the unique index allows only one active session
 		err := repo.Save(ctx, session)
 		if err != nil {
 			t.Errorf("Save() error = %v", err)
@@ -394,13 +400,12 @@ func TestSessionRepository_GetDailyStats(t *testing.T) {
 	}
 }
 
-func TestSessionRepository_GetDailyStats_TasksCompleted(t *testing.T) {
+func TestTaskRepository_CountCompleted(t *testing.T) {
 	storage, _ := NewMemory()
 	defer func() { _ = storage.Close() }()
 
 	ctx := context.Background()
 	taskRepo := storage.Tasks()
-	sessionRepo := storage.Sessions()
 
 	t.Run("counts tasks completed on the day", func(t *testing.T) {
 		complete := func(title string) string {
@@ -429,12 +434,12 @@ func TestSessionRepository_GetDailyStats_TasksCompleted(t *testing.T) {
 			t.Fatalf("Save() old task error = %v", err)
 		}
 
-		stats, err := sessionRepo.GetDailyStats(ctx, time.Now())
+		count, err := taskRepo.CountCompleted(ctx, time.Now())
 		if err != nil {
-			t.Fatalf("GetDailyStats() error = %v", err)
+			t.Fatalf("CountCompleted() error = %v", err)
 		}
-		if stats.TasksCompleted != 2 {
-			t.Errorf("TasksCompleted = %d, want 2", stats.TasksCompleted)
+		if count != 2 {
+			t.Errorf("CountCompleted() = %d, want 2", count)
 		}
 	})
 }
@@ -1114,10 +1119,14 @@ func TestSessionRepository_FindByTask(t *testing.T) {
 	}
 
 	s1 := domain.NewPomodoroSession(config, &task.ID)
+	s1.Complete() // completed: the unique index allows only one active session
 	_ = repo.Save(ctx, s1)
 	s2 := domain.NewPomodoroSession(config, &task.ID)
+	s2.Complete()
 	_ = repo.Save(ctx, s2)
-	_ = repo.Save(ctx, domain.NewPomodoroSession(config, &other.ID))
+	s3 := domain.NewPomodoroSession(config, &other.ID)
+	s3.Complete()
+	_ = repo.Save(ctx, s3)
 
 	sessions, err := repo.FindByTask(ctx, task.ID)
 	if err != nil {
@@ -1150,5 +1159,163 @@ func TestStorage_MigrateIdempotent(t *testing.T) {
 	ctx := context.Background()
 	if err := storage.Sessions().Save(ctx, domain.NewPomodoroSession(domain.DefaultPomodoroConfig(), nil)); err != nil {
 		t.Errorf("Save() after repeat migrates error = %v", err)
+	}
+}
+
+func TestStorage_WithTx_Commit(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	config := domain.DefaultPomodoroConfig()
+
+	task, _ := domain.NewTask("tx task")
+	session := domain.NewPomodoroSession(config, &task.ID)
+
+	err := storage.WithTx(ctx, func(tx ports.Storage) error {
+		if err := tx.Tasks().Save(ctx, task); err != nil {
+			return err
+		}
+		return tx.Sessions().Save(ctx, session)
+	})
+	if err != nil {
+		t.Fatalf("WithTx() error = %v", err)
+	}
+
+	// Both writes are visible through the root storage after commit.
+	if found, err := storage.Tasks().FindByID(ctx, task.ID); err != nil || found == nil {
+		t.Errorf("task not visible after commit: found=%v err=%v", found, err)
+	}
+	if found, err := storage.Sessions().FindByID(ctx, session.ID); err != nil || found == nil {
+		t.Errorf("session not visible after commit: found=%v err=%v", found, err)
+	}
+}
+
+func TestStorage_WithTx_Rollback(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	config := domain.DefaultPomodoroConfig()
+
+	task, _ := domain.NewTask("tx rollback task")
+	session := domain.NewPomodoroSession(config, &task.ID)
+
+	boom := errors.New("boom")
+	err := storage.WithTx(ctx, func(tx ports.Storage) error {
+		if err := tx.Tasks().Save(ctx, task); err != nil {
+			return err
+		}
+		if err := tx.Sessions().Save(ctx, session); err != nil {
+			return err
+		}
+		return boom
+	})
+	if err != boom {
+		t.Fatalf("WithTx() error = %v, want %v", err, boom)
+	}
+
+	// Neither write persisted.
+	if _, err := storage.Tasks().FindByID(ctx, task.ID); err != domain.ErrTaskNotFound {
+		t.Errorf("FindByID() after rollback error = %v, want ErrTaskNotFound", err)
+	}
+	if found, err := storage.Sessions().FindByID(ctx, session.ID); err != nil || found != nil {
+		t.Errorf("session persisted despite rollback: found=%v err=%v", found, err)
+	}
+}
+
+func TestStorage_WithTx_NestingRejected(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	err := storage.WithTx(ctx, func(tx ports.Storage) error {
+		return tx.WithTx(ctx, func(inner ports.Storage) error {
+			return nil
+		})
+	})
+	if err != errNestedTx {
+		t.Errorf("nested WithTx() error = %v, want %v", err, errNestedTx)
+	}
+}
+
+func TestStorage_WithTx_InterleavedSingleConnection(t *testing.T) {
+	// With the pool pinned to one connection (SetMaxOpenConns(1)), a
+	// transaction holds that connection for its whole lifetime. This would
+	// deadlock if any code path inside WithTx queried through the root
+	// storage, and the in-memory database would diverge if transactions and
+	// plain calls used different pooled connections.
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	config := domain.DefaultPomodoroConfig()
+
+	for i := 0; i < 3; i++ {
+		task, _ := domain.NewTask(fmt.Sprintf("interleave task %d", i))
+		if err := storage.Tasks().Save(ctx, task); err != nil {
+			t.Fatalf("Save() task error = %v", err)
+		}
+
+		session := domain.NewPomodoroSession(config, &task.ID)
+		session.Complete()
+		err := storage.WithTx(ctx, func(tx ports.Storage) error {
+			if _, err := tx.Tasks().FindByID(ctx, task.ID); err != nil {
+				return err
+			}
+			task.Start()
+			if err := tx.Tasks().Update(ctx, task); err != nil {
+				return err
+			}
+			return tx.Sessions().Save(ctx, session)
+		})
+		if err != nil {
+			t.Fatalf("WithTx() iteration %d error = %v", i, err)
+		}
+
+		if _, err := storage.Sessions().FindRecent(ctx, time.Now().Add(-time.Hour)); err != nil {
+			t.Fatalf("FindRecent() iteration %d error = %v", i, err)
+		}
+	}
+
+	tasks, err := storage.Tasks().FindAll(ctx, nil)
+	if err != nil {
+		t.Fatalf("FindAll() error = %v", err)
+	}
+	if len(tasks) != 3 {
+		t.Errorf("FindAll() returned %d tasks, want 3", len(tasks))
+	}
+}
+
+func TestSessionRepository_OneActiveSessionIndex(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	repo := storage.Sessions()
+	config := domain.DefaultPomodoroConfig()
+
+	first := domain.NewPomodoroSession(config, nil)
+	if err := repo.Save(ctx, first); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	// A second active session violates the partial unique index.
+	second := domain.NewPomodoroSession(config, nil)
+	err := repo.Save(ctx, second)
+	if err == nil {
+		t.Fatal("Save() of second running session should violate idx_sessions_one_active")
+	}
+	if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		t.Errorf("Save() error = %v, want UNIQUE constraint violation", err)
+	}
+
+	// Once the first session is completed, a new active session is allowed.
+	first.Complete()
+	if err := repo.Update(ctx, first); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if err := repo.Save(ctx, second); err != nil {
+		t.Errorf("Save() after completing active session error = %v", err)
 	}
 }

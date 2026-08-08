@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
@@ -38,9 +39,11 @@ func (s *PomodoroService) SetStrictMode(enabled bool) {
 }
 
 // enforceStrict returns ErrStrictFocusBlocked when strict mode is active and the
-// given session is an in-progress work session being disengaged early.
+// given session is a work session with time still on the clock. A work session
+// whose timer has fully elapsed is exempt: ending it is completion, not early
+// disengagement.
 func (s *PomodoroService) enforceStrict(session *domain.PomodoroSession) error {
-	if s.strictMode && session.IsWorkSession() {
+	if s.strictMode && session.IsWorkSession() && session.RemainingTime() > 0 {
 		return domain.ErrStrictFocusBlocked
 	}
 	return nil
@@ -57,9 +60,31 @@ type StartPomodoroRequest struct {
 }
 
 // StartPomodoro begins a new pomodoro work session.
+// The task update and session insert run in a single transaction.
 func (s *PomodoroService) StartPomodoro(ctx context.Context, req StartPomodoroRequest) (*domain.PomodoroSession, error) {
+	var session *domain.PomodoroSession
+	err := s.storage.WithTx(ctx, func(tx ports.Storage) error {
+		var err error
+		session, err = s.startPomodoro(ctx, tx, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// StartPomodoroWith is StartPomodoro without its own transaction: it runs
+// against the given storage, which may be transaction-scoped, so callers can
+// compose it into a larger WithTx transaction.
+func (s *PomodoroService) StartPomodoroWith(ctx context.Context, storage ports.Storage, req StartPomodoroRequest) (*domain.PomodoroSession, error) {
+	return s.startPomodoro(ctx, storage, req)
+}
+
+// startPomodoro implements StartPomodoro against the given storage.
+func (s *PomodoroService) startPomodoro(ctx context.Context, storage ports.Storage, req StartPomodoroRequest) (*domain.PomodoroSession, error) {
 	// Check if there's already an active session
-	active, err := s.storage.Sessions().FindActive(ctx)
+	active, err := storage.Sessions().FindActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check active sessions: %w", err)
 	}
@@ -69,12 +94,12 @@ func (s *PomodoroService) StartPomodoro(ctx context.Context, req StartPomodoroRe
 
 	// If task ID provided, verify it exists and mark it as active
 	if req.TaskID != nil {
-		task, err := s.storage.Tasks().FindByID(ctx, *req.TaskID)
+		task, err := storage.Tasks().FindByID(ctx, *req.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("task not found: %w", err)
 		}
 		task.Start()
-		if err := s.storage.Tasks().Update(ctx, task); err != nil {
+		if err := storage.Tasks().Update(ctx, task); err != nil {
 			return nil, fmt.Errorf("failed to update task: %w", err)
 		}
 	}
@@ -102,11 +127,22 @@ func (s *PomodoroService) StartPomodoro(ctx context.Context, req StartPomodoroRe
 		}
 	}
 
-	if err := s.storage.Sessions().Save(ctx, session); err != nil {
+	if err := storage.Sessions().Save(ctx, session); err != nil {
+		// The partial unique index idx_sessions_one_active closes the race
+		// between the FindActive check above and this insert.
+		if isUniqueConstraintError(err) {
+			return nil, domain.ErrSessionAlreadyActive
+		}
 		return nil, fmt.Errorf("failed to save session: %w", err)
 	}
 
 	return session, nil
+}
+
+// isUniqueConstraintError reports whether err wraps a SQLite UNIQUE
+// constraint violation.
+func isUniqueConstraintError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 // StartBreak begins a new break session.
@@ -179,6 +215,8 @@ func (s *PomodoroService) ResumeSession(ctx context.Context) (*domain.PomodoroSe
 }
 
 // StopSession completes the active session.
+// In strict focus mode a work session can only be stopped once its timer has
+// fully elapsed; stopping it earlier returns ErrStrictFocusBlocked.
 func (s *PomodoroService) StopSession(ctx context.Context) (*domain.PomodoroSession, error) {
 	session, err := s.storage.Sessions().FindActive(ctx)
 	if err != nil {

@@ -37,7 +37,7 @@ func (s *StateService) GetCurrentState(ctx context.Context) (*domain.CurrentStat
 		activeSession = nil
 	}
 
-	todayStats, err := s.storage.Sessions().GetDailyStats(ctx, time.Now())
+	todayStats, err := s.dailyStats(ctx, time.Now())
 	if err != nil {
 		todayStats = &domain.DailyStats{}
 	}
@@ -83,6 +83,8 @@ func (s *StateService) StartPomodoro(ctx context.Context, taskID *string, durati
 }
 
 // StartSession implements ports.MCPStateProvider.
+// Task resolution (fuzzy match or creation) and session start run in a
+// single transaction.
 func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionRequest) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
 		return nil, domain.ErrServiceNotConfigured
@@ -94,43 +96,53 @@ func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionR
 		}
 	}
 
-	// Resolve the task: explicit ID wins, then a title match, then a new task.
-	if req.TaskID == nil && strings.TrimSpace(req.TaskTitle) != "" {
-		matches, err := s.storage.Tasks().FindByTitle(ctx, strings.TrimSpace(req.TaskTitle))
-		if err == nil {
-			for _, m := range matches {
-				if strings.EqualFold(m.Title, strings.TrimSpace(req.TaskTitle)) {
-					id := m.ID
-					req.TaskID = &id
-					break
+	var session *domain.PomodoroSession
+	err := s.storage.WithTx(ctx, func(tx ports.Storage) error {
+		// Resolve the task: explicit ID wins, then a title match, then a new task.
+		if req.TaskID == nil && strings.TrimSpace(req.TaskTitle) != "" {
+			matches, err := tx.Tasks().FindByTitle(ctx, strings.TrimSpace(req.TaskTitle))
+			if err == nil {
+				for _, m := range matches {
+					if strings.EqualFold(m.Title, strings.TrimSpace(req.TaskTitle)) {
+						id := m.ID
+						req.TaskID = &id
+						break
+					}
 				}
 			}
-		}
-		if req.TaskID == nil {
-			if s.taskService == nil {
-				return nil, domain.ErrServiceNotConfigured
+			if req.TaskID == nil {
+				if s.taskService == nil {
+					return domain.ErrServiceNotConfigured
+				}
+				task, err := s.taskService.addTask(ctx, tx, AddTaskRequest{
+					Title: strings.TrimSpace(req.TaskTitle),
+					Tags:  req.Tags,
+				})
+				if err != nil {
+					return err
+				}
+				req.TaskID = &task.ID
 			}
-			task, err := s.taskService.AddTask(ctx, AddTaskRequest{
-				Title: strings.TrimSpace(req.TaskTitle),
-				Tags:  req.Tags,
-			})
-			if err != nil {
-				return nil, err
-			}
-			req.TaskID = &task.ID
 		}
-	}
 
-	svcReq := StartPomodoroRequest{
-		TaskID:          req.TaskID,
-		Methodology:     req.Methodology,
-		IntendedOutcome: req.IntendedOutcome,
-		Tags:            req.Tags,
+		svcReq := StartPomodoroRequest{
+			TaskID:          req.TaskID,
+			Methodology:     req.Methodology,
+			IntendedOutcome: req.IntendedOutcome,
+			Tags:            req.Tags,
+		}
+		if req.DurationMinutes != nil && *req.DurationMinutes > 0 {
+			svcReq.Duration = time.Duration(*req.DurationMinutes) * time.Minute
+		}
+
+		var err error
+		session, err = s.pomodoroSvc.startPomodoro(ctx, tx, svcReq)
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	if req.DurationMinutes != nil && *req.DurationMinutes > 0 {
-		svcReq.Duration = time.Duration(*req.DurationMinutes) * time.Minute
-	}
-	return s.pomodoroSvc.StartPomodoro(ctx, svcReq)
+	return session, nil
 }
 
 // StartBreak implements ports.MCPStateProvider.
@@ -308,7 +320,23 @@ func (s *StateService) SetHighlight(ctx context.Context, taskID string) (*domain
 
 // GetDailySummary implements ports.MCPStateProvider.
 func (s *StateService) GetDailySummary(ctx context.Context, date time.Time) (*domain.DailyStats, error) {
-	return s.storage.Sessions().GetDailyStats(ctx, date)
+	return s.dailyStats(ctx, date)
+}
+
+// dailyStats combines session statistics with the number of tasks completed
+// on the given date. The session repository reports session-only stats;
+// the task count lives on the task repository.
+func (s *StateService) dailyStats(ctx context.Context, date time.Time) (*domain.DailyStats, error) {
+	stats, err := s.storage.Sessions().GetDailyStats(ctx, date)
+	if err != nil {
+		return nil, err
+	}
+	completed, err := s.storage.Tasks().CountCompleted(ctx, date)
+	if err != nil {
+		return nil, err
+	}
+	stats.TasksCompleted = completed
+	return stats, nil
 }
 
 // GetPeriodStats implements ports.MCPStateProvider.

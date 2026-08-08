@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // statusCmd represents the status command
@@ -19,7 +20,7 @@ var statusCmd = &cobra.Command{
 
 		state, err := app.state.GetCurrentState(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get current state: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to get current state"), err)
 		}
 
 		if jsonOutput {
@@ -33,9 +34,9 @@ var statusCmd = &cobra.Command{
 		if app.methodology == domain.MethodologyMakeTime {
 			highlight, _ := app.state.GetTodayHighlight(ctx)
 			if highlight != nil {
-				fmt.Printf("\nHighlight: %s\n", highlight.Title)
+				fmt.Printf("\n%s\n", i18n.T("Highlight: %s", highlight.Title))
 			} else if state.ActiveTask != nil {
-				fmt.Printf("\nHighlight: %s\n", state.ActiveTask.Title)
+				fmt.Printf("\n%s\n", i18n.T("Highlight: %s", state.ActiveTask.Title))
 			}
 		}
 

@@ -12,6 +12,7 @@ import (
 	"github.com/xvierd/flow-cli/internal/adapters/storage"
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 	"github.com/xvierd/flow-cli/internal/ports"
 	"github.com/xvierd/flow-cli/internal/services"
@@ -44,6 +45,13 @@ func initializeServices() error {
 		app.config = config.DefaultConfig()
 	}
 
+	// Resolve display language: FLOW_LANG env > config file > "en".
+	lang := os.Getenv("FLOW_LANG")
+	if lang == "" {
+		lang = app.config.Language
+	}
+	i18n.SetLanguage(lang)
+
 	// Initialize notifier
 	app.notifier = notification.New(&app.config.Notifications)
 
@@ -55,13 +63,13 @@ func initializeServices() error {
 	// Ensure directory exists
 	dbDir := getDir(dbPath)
 	if err := os.MkdirAll(dbDir, 0750); err != nil {
-		return fmt.Errorf("failed to create database directory: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to create database directory"), err)
 	}
 
 	// Initialize storage
 	app.storage, err = storage.New(dbPath)
 	if err != nil {
-		return fmt.Errorf("failed to initialize storage: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to initialize storage"), err)
 	}
 
 	// Initialize git detector
@@ -99,7 +107,7 @@ func initializeServices() error {
 	}
 	m, err := domain.ValidateMethodology(modeStr)
 	if err != nil {
-		return fmt.Errorf("invalid mode: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("invalid mode"), err)
 	}
 	app.methodology = m
 	app.mode = methodology.ForMethodology(app.methodology, app.config)

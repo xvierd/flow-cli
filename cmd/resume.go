@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // resumeCmd represents the resume command
@@ -17,10 +18,10 @@ var resumeCmd = &cobra.Command{
 
 		session, err := app.pomodoro.ResumeSession(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to resume session: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to resume session"), err)
 		}
 
-		fmt.Printf("▶️  Session resumed. Remaining: %s\n", session.RemainingTime())
+		fmt.Printf("▶️  %s\n", i18n.T("Session resumed. Remaining: %s", session.RemainingTime()))
 		return nil
 	},
 }

@@ -8,9 +8,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // stopCmd represents the stop command
@@ -23,7 +25,7 @@ var stopCmd = &cobra.Command{
 
 		session, err := app.pomodoro.StopSession(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to stop session: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to stop session"), err)
 		}
 
 		// Methodology-aware prompts (only in interactive mode)
@@ -32,9 +34,9 @@ var stopCmd = &cobra.Command{
 			case domain.MethodologyDeepWork:
 				scanner := bufio.NewScanner(os.Stdin)
 				fmt.Println()
-				fmt.Println("  — Shutdown Ritual —")
+				fmt.Println("  " + i18n.T("— Shutdown Ritual —"))
 
-				fmt.Print("  What did you accomplish? (Enter to skip): ")
+				fmt.Print("  " + i18n.T("What did you accomplish? (Enter to skip): "))
 				var accomplishment string
 				if scanner.Scan() {
 					accomplishment = strings.TrimSpace(scanner.Text())
@@ -43,25 +45,25 @@ var stopCmd = &cobra.Command{
 					}
 				}
 
-				fmt.Print("  Pending tasks to review (Enter to skip): ")
+				fmt.Print("  " + i18n.T("Pending tasks to review (Enter to skip): "))
 				var pendingReview string
 				if scanner.Scan() {
 					pendingReview = strings.TrimSpace(scanner.Text())
 				}
 
-				fmt.Print("  Review tomorrow's calendar — any conflicts? (Enter to skip): ")
+				fmt.Print("  " + i18n.T("Review tomorrow's calendar — any conflicts? (Enter to skip): "))
 				var calendarReview string
 				if scanner.Scan() {
 					calendarReview = strings.TrimSpace(scanner.Text())
 				}
 
-				fmt.Print("  Plan for tomorrow (Enter to skip): ")
+				fmt.Print("  " + i18n.T("Plan for tomorrow (Enter to skip): "))
 				var tomorrowPlan string
 				if scanner.Scan() {
 					tomorrowPlan = strings.TrimSpace(scanner.Text())
 				}
 
-				fmt.Print("  Closing phrase (e.g. 'Shutdown complete', Enter to skip): ")
+				fmt.Print("  " + i18n.T("Closing phrase (e.g. 'Shutdown complete', Enter to skip): "))
 				var closingPhrase string
 				if scanner.Scan() {
 					closingPhrase = strings.TrimSpace(scanner.Text())
@@ -80,8 +82,8 @@ var stopCmd = &cobra.Command{
 				// Outcome review: ask if intended outcome was achieved
 				if session.IntendedOutcome != "" {
 					fmt.Println()
-					fmt.Printf("  Did you achieve your intended outcome? (y/p/n): %s\n", session.IntendedOutcome)
-					fmt.Print("  Answer [y]es/[p]artially/[n]o: ")
+					fmt.Printf("  %s\n", i18n.T("Did you achieve your intended outcome? (y/p/n): %s", session.IntendedOutcome))
+					fmt.Print("  " + i18n.T("Answer [y]es/[p]artially/[n]o: "))
 					if scanner.Scan() {
 						answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
 						if answer == "y" || answer == "p" || answer == "n" {
@@ -93,9 +95,9 @@ var stopCmd = &cobra.Command{
 			case domain.MethodologyMakeTime:
 				scanner := bufio.NewScanner(os.Stdin)
 				fmt.Println()
-				fmt.Println("  — Make Time Reflection —")
+				fmt.Println("  " + i18n.T("— Make Time Reflection —"))
 
-				fmt.Print("  Focus score (1-5, Enter to skip): ")
+				fmt.Print("  " + i18n.T("Focus score (1-5, Enter to skip): "))
 				if scanner.Scan() {
 					text := strings.TrimSpace(scanner.Text())
 					if text != "" {
@@ -106,7 +108,7 @@ var stopCmd = &cobra.Command{
 					}
 				}
 
-				fmt.Print("  How did you energize? (walk, nap, exercise… Enter to skip): ")
+				fmt.Print("  " + i18n.T("How did you energize? (walk, nap, exercise… Enter to skip): "))
 				if scanner.Scan() {
 					activity := strings.TrimSpace(scanner.Text())
 					if activity != "" {
@@ -116,7 +118,7 @@ var stopCmd = &cobra.Command{
 				fmt.Println()
 			default:
 				// Pomodoro: prompt for notes
-				fmt.Print("Add session notes (optional, press Enter to skip): ")
+				fmt.Print(i18n.T("Add session notes (optional, press Enter to skip): "))
 				scanner := bufio.NewScanner(os.Stdin)
 				if scanner.Scan() {
 					notes := strings.TrimSpace(scanner.Text())
@@ -143,12 +145,12 @@ var stopCmd = &cobra.Command{
 			return outputJSON(session)
 		}
 
-		fmt.Printf("Session completed! Duration: %s\n", session.Duration)
+		fmt.Printf("%s\n", i18n.T("Session completed! Duration: %s", session.Duration))
 		if session.TaskID != nil {
-			fmt.Printf("   Task ID: %s\n", *session.TaskID)
+			fmt.Printf("%s\n", i18n.T("   Task ID: %s", *session.TaskID))
 		}
 		if session.Notes != "" {
-			fmt.Printf("   Notes: %s\n", session.Notes)
+			fmt.Printf("%s\n", i18n.T("   Notes: %s", session.Notes))
 		}
 
 		return nil
@@ -162,19 +164,19 @@ func outputJSON(session *domain.PomodoroSession) error {
 		"type":       string(session.Type),
 		"status":     string(session.Status),
 		"duration":   session.Duration.String(),
-		"started_at": session.StartedAt.Format("2006-01-02T15:04:05"),
+		"started_at": session.StartedAt.Format(time.RFC3339),
 		"notes":      session.Notes,
 	}
 	if session.TaskID != nil {
 		data["task_id"] = *session.TaskID
 	}
 	if session.CompletedAt != nil {
-		data["completed_at"] = session.CompletedAt.Format("2006-01-02T15:04:05")
+		data["completed_at"] = session.CompletedAt.Format(time.RFC3339)
 	}
 
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal session: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to marshal session"), err)
 	}
 	fmt.Println(string(jsonData))
 	return nil

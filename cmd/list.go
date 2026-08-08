@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
@@ -34,7 +35,7 @@ var listCmd = &cobra.Command{
 
 		tasks, err := app.tasks.ListTasks(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to list tasks: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to list tasks"), err)
 		}
 
 		if jsonOutput {
@@ -55,23 +56,23 @@ var listCmd = &cobra.Command{
 			}
 			jsonData, err := json.MarshalIndent(data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal tasks: %w", err)
+				return fmt.Errorf("%s: %w", i18n.T("failed to marshal tasks"), err)
 			}
 			fmt.Println(string(jsonData))
 			return nil
 		}
 
 		if len(tasks) == 0 {
-			fmt.Println("No tasks found.")
+			fmt.Println(i18n.T("No tasks found."))
 			return nil
 		}
 
-		fmt.Printf("📋 Tasks (%d):\n\n", len(tasks))
+		fmt.Printf("📋 %s\n\n", i18n.T("Tasks (%d):", len(tasks)))
 		for _, task := range tasks {
 			statusIcon := getStatusIcon(task.Status)
 			fmt.Printf("%s %s (ID: %s)\n", statusIcon, task.Title, task.ID[:8])
 			if len(task.Tags) > 0 {
-				fmt.Printf("   Tags: %v\n", task.Tags)
+				fmt.Printf("%s\n", i18n.T("   Tags: %v", task.Tags))
 			}
 		}
 

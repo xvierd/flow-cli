@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
@@ -39,37 +40,37 @@ an active task, that task will be used.`,
 		// Check for active session and prompt user
 		state, err := app.state.GetCurrentState(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get current state: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to get current state"), err)
 		}
 
 		if state.ActiveSession != nil {
 			active := state.ActiveSession
 			remaining := active.RemainingTime()
 			sessionType := domain.GetSessionTypeLabel(active.Type)
-			sessionInfo := fmt.Sprintf("%s session (%s remaining)", sessionType, formatCmdDuration(remaining))
+			sessionInfo := i18n.T("%s session (%s remaining)", sessionType, formatCmdDuration(remaining))
 
 			if state.ActiveTask != nil {
-				sessionInfo = fmt.Sprintf("%s for task \"%s\" (%s remaining)", sessionType, state.ActiveTask.Title, formatCmdDuration(remaining))
+				sessionInfo = i18n.T("%s for task \"%s\" (%s remaining)", sessionType, state.ActiveTask.Title, formatCmdDuration(remaining))
 			}
 
-			fmt.Printf("⚠️  A %s is already running: %s\n", strings.ToLower(sessionType), sessionInfo)
-			fmt.Printf("   Session ID: %s\n", active.ID[:8])
-			fmt.Print("Do you want to stop it and start a new one? [y/N] ")
+			fmt.Printf("%s\n", i18n.T("⚠️  A %s is already running: %s", strings.ToLower(sessionType), sessionInfo))
+			fmt.Printf("%s\n", i18n.T("   Session ID: %s", active.ID[:8]))
+			fmt.Print(i18n.T("Do you want to stop it and start a new one? [y/N] "))
 
 			var answer string
 			_, _ = fmt.Scanln(&answer)
 			answer = strings.TrimSpace(strings.ToLower(answer))
 
 			if answer != "y" && answer != "yes" {
-				fmt.Println("Keeping current session.")
+				fmt.Println(i18n.T("Keeping current session."))
 				return nil
 			}
 
 			_, err := app.pomodoro.StopSession(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to stop current session: %w", err)
+				return fmt.Errorf("%s: %w", i18n.T("failed to stop current session"), err)
 			}
-			fmt.Println("⏹️  Previous session stopped.")
+			fmt.Println(i18n.T("⏹️  Previous session stopped."))
 		}
 
 		// Parse tags
@@ -92,18 +93,18 @@ an active task, that task will be used.`,
 
 		session, err := app.pomodoro.StartPomodoro(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to start pomodoro: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to start pomodoro"), err)
 		}
 
-		fmt.Printf("🍅 Pomodoro started! Duration: %s\n", session.Duration)
+		fmt.Printf("🍅 %s\n", i18n.T("Pomodoro started! Duration: %s", session.Duration))
 		if taskID != nil {
-			fmt.Printf("   Task ID: %s\n", *taskID)
+			fmt.Printf("%s\n", i18n.T("   Task ID: %s", *taskID))
 		}
 
 		// Refresh state and launch TUI
 		state, err = app.state.GetCurrentState(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get current state: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to get current state"), err)
 		}
 
 		return launchTUI(ctx, state, workingDir)

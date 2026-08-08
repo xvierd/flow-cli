@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 var voidCmd = &cobra.Command{
@@ -18,10 +19,10 @@ disrupted and the session no longer represents focused work.`,
 
 		session, err := app.pomodoro.VoidSession(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to void session: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to void session"), err)
 		}
 
-		fmt.Printf("Session voided. Duration: %s (not counted in stats)\n", session.Duration)
+		fmt.Printf("%s\n", i18n.T("Session voided. Duration: %s (not counted in stats)", session.Duration))
 		return nil
 	},
 }

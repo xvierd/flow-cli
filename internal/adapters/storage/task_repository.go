@@ -14,29 +14,26 @@ import (
 
 // taskRepository implements ports.TaskRepository using SQLite.
 type taskRepository struct {
-	db *sql.DB
+	db executor
 }
 
 // newTaskRepository creates a new task repository.
-func newTaskRepository(db *sql.DB) ports.TaskRepository {
+func newTaskRepository(db executor) ports.TaskRepository {
 	return &taskRepository{db: db}
 }
 
 // Save persists a task to storage.
 func (r *taskRepository) Save(ctx context.Context, task *domain.Task) error {
 	query := `
-		INSERT INTO tasks (id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (id, title, description, status, created_at, updated_at, completed_at, highlight_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
-
-	tags := strings.Join(task.Tags, ",")
 
 	_, err := r.db.ExecContext(ctx, query,
 		task.ID,
 		task.Title,
 		task.Description,
 		string(task.Status),
-		tags,
 		task.CreatedAt,
 		task.UpdatedAt,
 		task.CompletedAt,
@@ -47,15 +44,17 @@ func (r *taskRepository) Save(ctx context.Context, task *domain.Task) error {
 		return fmt.Errorf("failed to save task: %w", err)
 	}
 
-	return nil
+	return replaceTaskTags(ctx, r.db, task.ID, task.Tags)
 }
 
 // FindByID retrieves a task by its unique identifier.
 func (r *taskRepository) FindByID(ctx context.Context, id string) (*domain.Task, error) {
 	query := `
-		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
-		FROM tasks
-		WHERE id = ?
+		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
+		FROM tasks t
+		LEFT JOIN task_tags tt ON tt.task_id = t.id
+		WHERE t.id = ?
+		GROUP BY t.id
 	`
 
 	var task domain.Task
@@ -103,17 +102,21 @@ func (r *taskRepository) FindAll(ctx context.Context, status *domain.TaskStatus)
 
 	if status != nil {
 		query = `
-			SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
-			FROM tasks
-			WHERE status = ?
-			ORDER BY created_at DESC
+			SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
+			FROM tasks t
+			LEFT JOIN task_tags tt ON tt.task_id = t.id
+			WHERE t.status = ?
+			GROUP BY t.id
+			ORDER BY t.created_at DESC
 		`
 		args = append(args, string(*status))
 	} else {
 		query = `
-			SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
-			FROM tasks
-			ORDER BY created_at DESC
+			SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
+			FROM tasks t
+			LEFT JOIN task_tags tt ON tt.task_id = t.id
+			GROUP BY t.id
+			ORDER BY t.created_at DESC
 		`
 	}
 
@@ -129,16 +132,18 @@ func (r *taskRepository) FindAll(ctx context.Context, status *domain.TaskStatus)
 // FindPending returns all tasks that are not completed or cancelled.
 func (r *taskRepository) FindPending(ctx context.Context) ([]*domain.Task, error) {
 	query := `
-		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
-		FROM tasks
-		WHERE status NOT IN (?, ?)
-		ORDER BY 
-			CASE status
+		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
+		FROM tasks t
+		LEFT JOIN task_tags tt ON tt.task_id = t.id
+		WHERE t.status NOT IN (?, ?)
+		GROUP BY t.id
+		ORDER BY
+			CASE t.status
 				WHEN 'in_progress' THEN 0
 				WHEN 'pending' THEN 1
 				ELSE 2
 			END,
-			updated_at DESC
+			t.updated_at DESC
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, string(domain.StatusCompleted), string(domain.StatusCancelled))
@@ -153,10 +158,12 @@ func (r *taskRepository) FindPending(ctx context.Context) ([]*domain.Task, error
 // FindActive returns the currently active task (in_progress).
 func (r *taskRepository) FindActive(ctx context.Context) (*domain.Task, error) {
 	query := `
-		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
-		FROM tasks
-		WHERE status = ?
-		ORDER BY updated_at DESC
+		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
+		FROM tasks t
+		LEFT JOIN task_tags tt ON tt.task_id = t.id
+		WHERE t.status = ?
+		GROUP BY t.id
+		ORDER BY t.updated_at DESC
 		LIMIT 1
 	`
 
@@ -249,18 +256,16 @@ func (r *taskRepository) Delete(ctx context.Context, id string) error {
 func (r *taskRepository) Update(ctx context.Context, task *domain.Task) error {
 	query := `
 		UPDATE tasks
-		SET title = ?, description = ?, status = ?, tags = ?, updated_at = ?, completed_at = ?, highlight_date = ?
+		SET title = ?, description = ?, status = ?, updated_at = ?, completed_at = ?, highlight_date = ?
 		WHERE id = ?
 	`
 
-	tags := strings.Join(task.Tags, ",")
 	task.UpdatedAt = time.Now()
 
 	result, err := r.db.ExecContext(ctx, query,
 		task.Title,
 		task.Description,
 		string(task.Status),
-		tags,
 		task.UpdatedAt,
 		task.CompletedAt,
 		task.HighlightDate,
@@ -276,7 +281,25 @@ func (r *taskRepository) Update(ctx context.Context, task *domain.Task) error {
 		return domain.ErrTaskNotFound
 	}
 
-	return nil
+	return replaceTaskTags(ctx, r.db, task.ID, task.Tags)
+}
+
+// CountCompleted returns how many tasks were completed on the given date.
+func (r *taskRepository) CountCompleted(ctx context.Context, date time.Time) (int, error) {
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM tasks
+		WHERE status = ? AND completed_at >= ? AND completed_at < ?
+	`, string(domain.StatusCompleted), startOfDay, endOfDay).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count completed tasks: %w", err)
+	}
+
+	return count, nil
 }
 
 // scanTasks scans multiple task rows.
@@ -327,7 +350,7 @@ func (r *taskRepository) scanTasks(rows *sql.Rows) ([]*domain.Task, error) {
 // ordered by most recent session start time.
 func (r *taskRepository) FindRecentTasks(ctx context.Context, limit int) ([]*domain.Task, error) {
 	query := `
-		SELECT t.id, t.title, t.description, t.status, t.tags, t.created_at, t.updated_at, t.completed_at, t.highlight_date
+		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
 		FROM tasks t
 		INNER JOIN (
 			SELECT task_id, MAX(started_at) AS last_session
@@ -335,6 +358,8 @@ func (r *taskRepository) FindRecentTasks(ctx context.Context, limit int) ([]*dom
 			WHERE task_id IS NOT NULL
 			GROUP BY task_id
 		) s ON t.id = s.task_id
+		LEFT JOIN task_tags tt ON tt.task_id = t.id
+		GROUP BY t.id
 		ORDER BY s.last_session DESC
 		LIMIT ?
 	`
@@ -354,10 +379,12 @@ func (r *taskRepository) FindTodayHighlight(ctx context.Context, date time.Time)
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := `
-		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
-		FROM tasks
-		WHERE highlight_date >= ? AND highlight_date < ?
-		ORDER BY updated_at DESC
+		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
+		FROM tasks t
+		LEFT JOIN task_tags tt ON tt.task_id = t.id
+		WHERE t.highlight_date >= ? AND t.highlight_date < ?
+		GROUP BY t.id
+		ORDER BY t.updated_at DESC
 		LIMIT 1
 	`
 
@@ -406,11 +433,13 @@ func (r *taskRepository) FindYesterdayHighlight(ctx context.Context, today time.
 	endOfYesterday := yesterday.Add(24 * time.Hour)
 
 	query := `
-		SELECT id, title, description, status, tags, created_at, updated_at, completed_at, highlight_date
-		FROM tasks
-		WHERE highlight_date >= ? AND highlight_date < ?
-		  AND status != ?
-		ORDER BY updated_at DESC
+		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
+		FROM tasks t
+		LEFT JOIN task_tags tt ON tt.task_id = t.id
+		WHERE t.highlight_date >= ? AND t.highlight_date < ?
+		  AND t.status != ?
+		GROUP BY t.id
+		ORDER BY t.updated_at DESC
 		LIMIT 1
 	`
 

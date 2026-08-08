@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
@@ -47,12 +48,11 @@ var reflectCmd = &cobra.Command{
 		accentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))
 
 		fmt.Println()
-		fmt.Printf("  %s\n", titleStyle.Render(fmt.Sprintf("Weekly Reflection — %s", weekStart.Format("Jan 2"))))
+		fmt.Printf("  %s\n", titleStyle.Render(i18n.T("Weekly Reflection — %s", fmt.Sprintf("%s %d", i18n.MonthName(weekStart.Month()), weekStart.Day()))))
 		fmt.Printf("  %s\n\n", dimStyle.Render(strings.Repeat("─", 45)))
 
 		// Day-by-day breakdown
-		dayNames := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-		fmt.Printf("  %s\n", dimStyle.Render("Day       Sessions   Work Time"))
+		fmt.Printf("  %s\n", dimStyle.Render(i18n.T("Day       Sessions   Work Time")))
 		fmt.Printf("  %s\n", dimStyle.Render(strings.Repeat("─", 35)))
 
 		totalSessions := 0
@@ -77,7 +77,7 @@ var reflectCmd = &cobra.Command{
 			}
 
 			isToday := day.Day() == now.Day() && day.Month() == now.Month()
-			dayLabel := dayNames[i]
+			dayLabel := i18n.DayName(day.Weekday())
 			if isToday {
 				dayLabel = dayLabel + "*"
 			}
@@ -94,7 +94,7 @@ var reflectCmd = &cobra.Command{
 
 		fmt.Printf("  %s\n", dimStyle.Render(strings.Repeat("─", 35)))
 		fmt.Printf("  %-10s %s    %s\n\n",
-			dimStyle.Render("Total"),
+			dimStyle.Render(i18n.T("Total")),
 			valueStyle.Render(fmt.Sprintf("%-8d", totalSessions)),
 			valueStyle.Render(formatMinutes(totalWork)),
 		)
@@ -104,15 +104,15 @@ var reflectCmd = &cobra.Command{
 		if err == nil {
 			if periodStats.FocusScoreCount > 0 {
 				fmt.Printf("  %s  %s  %s\n",
-					dimStyle.Render("Avg focus score:"),
+					dimStyle.Render(i18n.T("Avg focus score:")),
 					valueStyle.Render(fmt.Sprintf("%.1f/5", periodStats.AvgFocusScore)),
-					dimStyle.Render(fmt.Sprintf("(%d sessions)", periodStats.FocusScoreCount)),
+					dimStyle.Render(i18n.T("(%d sessions)", periodStats.FocusScoreCount)),
 				)
 			}
 
 			if periodStats.DistractionCount > 0 {
 				fmt.Printf("  %s  %s\n",
-					dimStyle.Render("Distractions:"),
+					dimStyle.Render(i18n.T("Distractions:")),
 					valueStyle.Render(fmt.Sprintf("%d", periodStats.DistractionCount)),
 				)
 			}
@@ -123,7 +123,7 @@ var reflectCmd = &cobra.Command{
 		}
 
 		// Highlights for the week
-		fmt.Printf("  %s\n", dimStyle.Render("Highlights this week"))
+		fmt.Printf("  %s\n", dimStyle.Render(i18n.T("Highlights this week")))
 		foundHighlight := false
 		for i := 0; i < 7; i++ {
 			day := weekStart.AddDate(0, 0, i)
@@ -140,26 +140,26 @@ var reflectCmd = &cobra.Command{
 				status = accentStyle.Render("  ")
 			}
 			fmt.Printf("  %s %s %s\n",
-				dimStyle.Render(day.Format("Mon")),
+				dimStyle.Render(i18n.DayName(day.Weekday())),
 				status,
 				valueStyle.Render(highlight.Title),
 			)
 		}
 		if !foundHighlight {
-			fmt.Printf("  %s\n", dimStyle.Render("No highlights set this week."))
+			fmt.Printf("  %s\n", dimStyle.Render(i18n.T("No highlights set this week.")))
 		}
 		fmt.Println()
 
 		// Energize correlation
 		energizeStats, err := app.storage.Sessions().GetEnergizeStats(ctx, weekStart, weekEnd)
 		if err == nil && len(energizeStats) > 0 {
-			fmt.Printf("  %s\n", dimStyle.Render("Energize vs Focus"))
+			fmt.Printf("  %s\n", dimStyle.Render(i18n.T("Energize vs Focus")))
 			fmt.Printf("  %s\n", dimStyle.Render(strings.Repeat("─", 35)))
 			for _, es := range energizeStats {
 				fmt.Printf("  %-12s %s  %s\n",
 					dimStyle.Render(es.Activity),
 					valueStyle.Render(fmt.Sprintf("%.1f/5", es.AvgFocusScore)),
-					dimStyle.Render(fmt.Sprintf("(%d sessions)", es.SessionCount)),
+					dimStyle.Render(i18n.T("(%d sessions)", es.SessionCount)),
 				)
 			}
 			fmt.Println()
@@ -238,9 +238,9 @@ func outputReflectJSON(ctx context.Context, weekStart, weekEnd, now time.Time) e
 
 // outputReflectTodayJSON renders today's daily stats as JSON.
 func outputReflectTodayJSON(ctx context.Context, now time.Time) error {
-	stats, err := app.storage.Sessions().GetDailyStats(ctx, now)
+	stats, err := app.state.GetDailySummary(ctx, now)
 	if err != nil {
-		return fmt.Errorf("failed to get today's stats: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to get today's stats"), err)
 	}
 	return jsonOut(map[string]interface{}{
 		"date":            now.Format("2006-01-02"),
@@ -259,17 +259,17 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 	accentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))
 
 	fmt.Println()
-	fmt.Printf("  %s\n", titleStyle.Render(fmt.Sprintf("Today's Reflection — %s", now.Format("Mon Jan 2"))))
+	fmt.Printf("  %s\n", titleStyle.Render(i18n.T("Today's Reflection — %s", fmt.Sprintf("%s %s %d", i18n.DayName(now.Weekday()), i18n.MonthName(now.Month()), now.Day()))))
 	fmt.Printf("  %s\n\n", dimStyle.Render(strings.Repeat("─", 45)))
 
 	// Today's stats (common to all methodologies)
 	stats, err := app.storage.Sessions().GetDailyStats(ctx, now)
 	if err != nil {
-		return fmt.Errorf("failed to get today's stats: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to get today's stats"), err)
 	}
 
-	fmt.Printf("  %s  %s\n", dimStyle.Render("Sessions:"), valueStyle.Render(fmt.Sprintf("%d", stats.WorkSessions)))
-	fmt.Printf("  %s  %s\n", dimStyle.Render("Work time:"), valueStyle.Render(formatMinutes(stats.TotalWorkTime)))
+	fmt.Printf("  %s  %s\n", dimStyle.Render(i18n.T("Sessions:")), valueStyle.Render(fmt.Sprintf("%d", stats.WorkSessions)))
+	fmt.Printf("  %s  %s\n", dimStyle.Render(i18n.T("Work time:")), valueStyle.Render(formatMinutes(stats.TotalWorkTime)))
 	fmt.Println()
 
 	// Fetch today's sessions for methodology-specific stats and persistence
@@ -328,21 +328,20 @@ func runReflectPomodoro(
 		}
 	}
 
-	fmt.Printf("  %s\n", dimStyle.Render("— Pomodoro Review —"))
+	fmt.Printf("  %s\n", dimStyle.Render(i18n.T("— Pomodoro Review —")))
 	fmt.Println()
 	interruptedStr := ""
 	if interrupted > 0 {
-		interruptedStr = fmt.Sprintf(" · %d interrupted", interrupted)
+		interruptedStr = i18n.T(" · %d interrupted", interrupted)
 	}
-	fmt.Printf("  %s %s completed today%s\n",
+	fmt.Printf("  %s\n", i18n.T("%s sessions completed today%s",
 		valueStyle.Render(fmt.Sprintf("%d", completed)),
-		dimStyle.Render("sessions"),
 		dimStyle.Render(interruptedStr),
-	)
+	))
 	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Printf("  %s ", dimStyle.Render("Que aprendiste hoy? (Enter to skip):"))
+	fmt.Printf("  %s ", dimStyle.Render(i18n.T("What did you learn today? (Enter to skip):")))
 	if scanner.Scan() {
 		answer := strings.TrimSpace(scanner.Text())
 		if answer != "" && lastWorkSession != nil {
@@ -361,25 +360,25 @@ func runReflectMakeTime(
 	lastWorkSession *domain.PomodoroSession,
 	dimStyle, valueStyle, accentStyle lipgloss.Style,
 ) {
-	fmt.Printf("  %s\n", dimStyle.Render("— Make Time · Reflect —"))
+	fmt.Printf("  %s\n", dimStyle.Render(i18n.T("— Make Time · Reflect —")))
 	fmt.Println()
 
 	// Show today's highlight
 	highlight, _ := app.storage.Tasks().FindTodayHighlight(ctx, now)
 	if highlight != nil {
-		statusLabel := dimStyle.Render("in progress")
+		statusLabel := dimStyle.Render(i18n.T("in progress"))
 		if highlight.Status == "completed" {
-			statusLabel = accentStyle.Render("completed")
+			statusLabel = accentStyle.Render(i18n.T("completed"))
 		}
 		fmt.Printf("  %s  %s (%s)\n",
-			dimStyle.Render("Highlight de hoy:"),
+			dimStyle.Render(i18n.T("Today's Highlight:")),
 			valueStyle.Render(fmt.Sprintf("%q", highlight.Title)),
 			statusLabel,
 		)
 	} else {
 		fmt.Printf("  %s  %s\n",
-			dimStyle.Render("Highlight de hoy:"),
-			dimStyle.Render("No highlight set"),
+			dimStyle.Render(i18n.T("Today's Highlight:")),
+			dimStyle.Render(i18n.T("No highlight set")),
 		)
 	}
 
@@ -394,9 +393,9 @@ func runReflectMakeTime(
 			pct = 100
 		}
 		fmt.Printf("  %s  %s %s\n",
-			dimStyle.Render("Highlight target:"),
+			dimStyle.Render(i18n.T("Highlight target:")),
 			valueStyle.Render(formatMinutes(target)),
-			dimStyle.Render(fmt.Sprintf("(%d%% complete)", pct)),
+			dimStyle.Render(i18n.T("(%d%% complete)", pct)),
 		)
 	}
 
@@ -414,9 +413,9 @@ func runReflectMakeTime(
 		}
 		avg := float64(sum) / float64(len(focusScores))
 		fmt.Printf("  %s  %s  %s\n",
-			dimStyle.Render("Avg focus:"),
+			dimStyle.Render(i18n.T("Avg focus:")),
 			valueStyle.Render(fmt.Sprintf("%.1f/5", avg)),
-			dimStyle.Render(fmt.Sprintf("(%d sessions)", len(focusScores))),
+			dimStyle.Render(i18n.T("(%d sessions)", len(focusScores))),
 		)
 	}
 
@@ -425,13 +424,13 @@ func runReflectMakeTime(
 	// Interactive reflection prompts
 	scanner := bufio.NewScanner(os.Stdin)
 
-	fmt.Printf("  %s ", dimStyle.Render("Hiciste tiempo para tu Highlight? (s/n, Enter to skip):"))
+	fmt.Printf("  %s ", dimStyle.Render(i18n.T("Did you make time for your Highlight? (y/n, Enter to skip):")))
 	if scanner.Scan() {
 		// Display-only, no persistence needed
 		_ = strings.TrimSpace(scanner.Text())
 	}
 
-	fmt.Printf("  %s ", dimStyle.Render("Que funciono bien hoy? (Enter to skip):"))
+	fmt.Printf("  %s ", dimStyle.Render(i18n.T("What worked well today? (Enter to skip):")))
 	if scanner.Scan() {
 		answer := strings.TrimSpace(scanner.Text())
 		if answer != "" && lastWorkSession != nil {
@@ -439,14 +438,14 @@ func runReflectMakeTime(
 		}
 	}
 
-	fmt.Printf("  %s ", dimStyle.Render("Que cambiarias manana? (Enter to skip):"))
+	fmt.Printf("  %s ", dimStyle.Render(i18n.T("What would you change tomorrow? (Enter to skip):")))
 	if scanner.Scan() {
 		// Display-only prompt; no domain field for this yet
 		_ = strings.TrimSpace(scanner.Text())
 	}
 
 	fmt.Println()
-	fmt.Printf("  %s\n", accentStyle.Render("Reflect completado. Manana elige un nuevo Highlight."))
+	fmt.Printf("  %s\n", accentStyle.Render(i18n.T("Reflection complete. Tomorrow, pick a new Highlight.")))
 	fmt.Println()
 }
 
@@ -459,7 +458,7 @@ func runReflectDeepWork(
 	lastWorkSession *domain.PomodoroSession,
 	dimStyle, valueStyle lipgloss.Style,
 ) {
-	fmt.Printf("  %s\n", dimStyle.Render("— Deep Work · Review —"))
+	fmt.Printf("  %s\n", dimStyle.Render(i18n.T("— Deep Work · Review —")))
 	fmt.Println()
 
 	// Show depth vs goal
@@ -467,8 +466,8 @@ func runReflectDeepWork(
 	if goalHours > 0 {
 		depthHours := stats.TotalWorkTime.Hours()
 		fmt.Printf("  %s  %s\n",
-			dimStyle.Render("Profundidad hoy:"),
-			valueStyle.Render(fmt.Sprintf("%.1fh / %.1fh (goal)", depthHours, goalHours)),
+			dimStyle.Render(i18n.T("Depth today:")),
+			valueStyle.Render(i18n.T("%.1fh / %.1fh (goal)", depthHours, goalHours)),
 		)
 	}
 
@@ -477,8 +476,8 @@ func runReflectDeepWork(
 	streak, err := app.pomodoro.GetDeepWorkStreak(ctx, threshold)
 	if err == nil && streak > 0 {
 		fmt.Printf("  %s  %s\n",
-			dimStyle.Render("Racha:"),
-			valueStyle.Render(fmt.Sprintf("%d dias", streak)),
+			dimStyle.Render(i18n.T("Streak:")),
+			valueStyle.Render(i18n.T("%d days", streak)),
 		)
 	}
 
@@ -496,9 +495,9 @@ func runReflectDeepWork(
 		}
 		avg := float64(sum) / float64(len(focusScores))
 		fmt.Printf("  %s  %s  %s\n",
-			dimStyle.Render("Avg focus:"),
+			dimStyle.Render(i18n.T("Avg focus:")),
 			valueStyle.Render(fmt.Sprintf("%.1f/5", avg)),
-			dimStyle.Render(fmt.Sprintf("(%d sessions)", len(focusScores))),
+			dimStyle.Render(i18n.T("(%d sessions)", len(focusScores))),
 		)
 	}
 
@@ -506,11 +505,10 @@ func runReflectDeepWork(
 
 	// Interactive shutdown ritual question
 	scanner := bufio.NewScanner(os.Stdin)
-	shutdownQ := "Completaste el shutdown ritual? (s/n, Enter to skip):" //nolint:misspell
-	fmt.Printf("  %s ", dimStyle.Render(shutdownQ))
+	fmt.Printf("  %s ", dimStyle.Render(i18n.T("Did you complete the shutdown ritual? (y/n, Enter to skip):")))
 	if scanner.Scan() {
 		answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
-		if answer == "s" && lastWorkSession != nil {
+		if (answer == "y" || answer == "s") && lastWorkSession != nil {
 			// Record that shutdown ritual was completed
 			_ = app.pomodoro.SetShutdownRitual(ctx, lastWorkSession.ID, domain.ShutdownRitual{
 				ClosingPhrase: "Shutdown complete",

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // jsonOut prints a value as indented JSON. Returns the marshal error so callers
@@ -11,7 +13,7 @@ import (
 func jsonOut(v interface{}) error {
 	jsonData, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON output: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("failed to marshal JSON output"), err)
 	}
 	fmt.Println(string(jsonData))
 	return nil
@@ -38,6 +40,14 @@ func formatWizardDuration(d time.Duration) string {
 	m := int(d.Minutes())
 	s := int(d.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", m, s)
+}
+
+// sessionCountLabel returns a localized "1 session" / "N sessions" label.
+func sessionCountLabel(n int) string {
+	if n == 1 {
+		return i18n.T("1 session")
+	}
+	return i18n.T("%d sessions", n)
 }
 
 // getDir returns the directory of a file path.

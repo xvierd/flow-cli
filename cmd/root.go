@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 var (
@@ -22,7 +23,9 @@ var (
 	strictFlag bool
 )
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd represents the base command when called without any subcommands.
+// NOTE: cobra metadata (Use/Short/Long) and flag descriptions are registered
+// at init time, before the display language is resolved, so they stay English.
 var rootCmd = &cobra.Command{
 	Use:   "flow",
 	Short: "Flow - A Pomodoro CLI timer with task tracking",
@@ -44,7 +47,7 @@ Run "flow" with no arguments to start a quick session interactively.`,
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", i18n.T("Error: %v", err))
 		os.Exit(1)
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/config"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 var resetForce bool
@@ -30,26 +31,26 @@ This cannot be undone. Use --force to skip the confirmation prompt.`,
 		}
 
 		if !resetForce {
-			fmt.Printf("This will permanently delete: %s\n", path)
-			fmt.Print("Are you sure? Type 'yes' to confirm: ")
+			fmt.Printf("%s\n", i18n.T("This will permanently delete: %s", path))
+			fmt.Print(i18n.T("Are you sure? Type 'yes' to confirm: "))
 			reader := bufio.NewReader(os.Stdin)
 			input, _ := reader.ReadString('\n')
 			input = strings.TrimSpace(strings.ToLower(input))
 			if input != "yes" {
-				fmt.Println("Aborted.")
+				fmt.Println(i18n.T("Aborted."))
 				return nil
 			}
 		}
 
 		if err := os.Remove(path); err != nil {
 			if os.IsNotExist(err) {
-				fmt.Println("Nothing to reset — database does not exist.")
+				fmt.Println(i18n.T("Nothing to reset — database does not exist."))
 				return nil
 			}
-			return fmt.Errorf("failed to delete database: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to delete database"), err)
 		}
 
-		fmt.Println("Database deleted. Fresh start.")
+		fmt.Println(i18n.T("Database deleted. Fresh start."))
 		return nil
 	},
 }

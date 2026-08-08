@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 )
 
@@ -54,6 +55,17 @@ type completionState struct {
 	autoBreak      bool
 	autoBreakTicks int
 
+	// Session completion flag (set when the active session ends)
+	completed bool
+
+	// Strict focus mode
+	strict       bool
+	strictLocked bool // transient notice shown when a strict-locked key is pressed
+
+	// Confirm states for destructive keys
+	confirmBreak  bool
+	confirmFinish bool
+
 	// Shared: captured at session completion (Deep Work)
 	completedIntendedOutcome string
 	// completedSessionID is the ID of the session that just completed, captured
@@ -80,6 +92,29 @@ func (c *completionState) reset() {
 	c.shutdownComplete = false
 	c.completedIntendedOutcome = ""
 	c.completedSessionID = ""
+}
+
+// strictWorkBlocked reports whether strict focus mode locks early disengagement:
+// an active (not yet completed) work session cannot be paused, finished, voided,
+// or skipped into a break.
+func (c *completionState) strictWorkBlocked(state *domain.CurrentState) bool {
+	return c.strict && !c.completed && state != nil && state.ActiveSession != nil && state.ActiveSession.IsWorkSession()
+}
+
+// setStrictLocked records a blocked-key notice and clears any confirm states.
+func (c *completionState) setStrictLocked() {
+	c.strictLocked = true
+	c.confirmBreak = false
+	c.confirmFinish = false
+}
+
+// strictLockMessage returns the strict-mode lock notice. The inline variant also
+// mentions mode switching, which only exists in the inline UI.
+func strictLockMessage(inline bool) string {
+	if inline {
+		return i18n.T("🔒 STRICT: pause, finish, void, break and mode are locked — let the session run to completion")
+	}
+	return i18n.T("🔒 STRICT: pause, finish, void and break are locked — let the session run to completion")
 }
 
 // promptsDone returns true when all mode-specific completion prompts are satisfied,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
@@ -37,7 +38,7 @@ var addCmd = &cobra.Command{
 
 		task, err := app.tasks.AddTask(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to add task: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to add task"), err)
 		}
 
 		if jsonOutput {
@@ -51,13 +52,13 @@ var addCmd = &cobra.Command{
 			}
 			jsonData, err := json.MarshalIndent(data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal task: %w", err)
+				return fmt.Errorf("%s: %w", i18n.T("failed to marshal task"), err)
 			}
 			fmt.Println(string(jsonData))
 			return nil
 		}
 
-		fmt.Printf("✅ Task added: %s (ID: %s)\n", task.Title, task.ID)
+		fmt.Printf("✅ %s\n", i18n.T("Task added: %s (ID: %s)", task.Title, task.ID))
 		return nil
 	},
 }

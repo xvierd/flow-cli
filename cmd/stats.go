@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
@@ -35,14 +36,14 @@ var statsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		label := fmt.Sprintf("Week of %s", start.Format("Jan 2"))
+		label := i18n.T("Week of %s", fmt.Sprintf("%s %d", i18n.MonthName(start.Month()), start.Day()))
 		if period == services.ReportPeriodMonth {
-			label = now.Format("January 2006")
+			label = fmt.Sprintf("%s %d", i18n.FullMonthName(now.Month()), now.Year())
 		}
 
 		stats, err := app.storage.Sessions().GetPeriodStats(ctx, start, end)
 		if err != nil {
-			return fmt.Errorf("failed to get stats: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to get stats"), err)
 		}
 		stats.Label = label
 
@@ -141,13 +142,13 @@ func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, en
 
 	// Summary line
 	hours := stats.TotalWorkTime.Hours()
-	fmt.Printf("  Total: %s sessions, %s deep work\n\n",
+	fmt.Printf("  %s\n\n", i18n.T("Total: %s sessions, %s deep work",
 		valueStyle.Render(fmt.Sprintf("%d", stats.TotalSessions)),
 		valueStyle.Render(formatHours(hours)),
-	)
+	))
 
 	if stats.TotalSessions == 0 {
-		fmt.Printf("  %s\n\n", dimStyle.Render("No completed sessions in this period."))
+		fmt.Printf("  %s\n\n", dimStyle.Render(i18n.T("No completed sessions in this period.")))
 		return
 	}
 
@@ -157,7 +158,7 @@ func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, en
 	}
 
 	// Bar chart: sessions per methodology
-	fmt.Printf("  %s\n", dimStyle.Render("Sessions by mode"))
+	fmt.Printf("  %s\n", dimStyle.Render(i18n.T("Sessions by mode")))
 	maxCount := 0
 	for _, m := range stats.ByMethodology {
 		if m.SessionCount > maxCount {
@@ -188,16 +189,16 @@ func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, en
 	// Focus score (Make Time)
 	if stats.FocusScoreCount > 0 {
 		fmt.Printf("  %s  %s  %s\n",
-			dimStyle.Render("Avg focus score:"),
+			dimStyle.Render(i18n.T("Avg focus score:")),
 			valueStyle.Render(fmt.Sprintf("%.1f/5", stats.AvgFocusScore)),
-			dimStyle.Render(fmt.Sprintf("(%d sessions)", stats.FocusScoreCount)),
+			dimStyle.Render(i18n.T("(%d sessions)", stats.FocusScoreCount)),
 		)
 	}
 
 	// Distraction count (Deep Work)
 	if stats.DistractionCount > 0 {
 		fmt.Printf("  %s  %s\n",
-			dimStyle.Render("Distractions:"),
+			dimStyle.Render(i18n.T("Distractions:")),
 			valueStyle.Render(fmt.Sprintf("%d", stats.DistractionCount)),
 		)
 	}
@@ -220,15 +221,12 @@ func renderEnergizeInsights(energize []domain.EnergizeStat, dimStyle, valueStyle
 		return
 	}
 
-	fmt.Printf("  %s\n", titleStyle.Render("Energize → Focus correlation"))
+	fmt.Printf("  %s\n", titleStyle.Render(i18n.T("Energize → Focus correlation")))
 	for _, e := range energize {
-		plural := "s"
-		if e.SessionCount == 1 {
-			plural = ""
-		}
-		fmt.Printf("  %-12s  %-15s  avg focus %s\n",
+		fmt.Printf("  %-12s  %-15s  %s %s\n",
 			dimStyle.Render(e.Activity),
-			dimStyle.Render(fmt.Sprintf("%d session%s", e.SessionCount, plural)),
+			dimStyle.Render(sessionCountLabel(e.SessionCount)),
+			dimStyle.Render(i18n.T("avg focus")),
 			valueStyle.Render(fmt.Sprintf("%.1f/5", e.AvgFocusScore)),
 		)
 	}
@@ -255,7 +253,7 @@ func renderHourlyProductivity(hourly map[int]time.Duration, dimStyle, valueStyle
 		return entries[i].Duration > entries[j].Duration
 	})
 
-	fmt.Printf("  %s\n", dimStyle.Render("Your most productive hours (last 30 days)"))
+	fmt.Printf("  %s\n", dimStyle.Render(i18n.T("Your most productive hours (last 30 days)")))
 	top := 3
 	if len(entries) < top {
 		top = len(entries)
@@ -304,16 +302,16 @@ func renderPhilosophyContext(philosophy string, stats *domain.PeriodStats, strea
 			progress = (dwHours / expectedHours) * 100
 		}
 
-		fmt.Printf("  %s  %s", dimStyle.Render("Streak:"), valueStyle.Render(fmt.Sprintf("%d days", streak)))
+		fmt.Printf("  %s  %s", dimStyle.Render(i18n.T("Streak:")), valueStyle.Render(i18n.T("%d days", streak)))
 		if progress > 0 {
-			fmt.Printf("  %s  %s", dimStyle.Render("Weekly progress:"), valueStyle.Render(fmt.Sprintf("%.0f%%", progress)))
+			fmt.Printf("  %s  %s", dimStyle.Render(i18n.T("Weekly progress:")), valueStyle.Render(fmt.Sprintf("%.0f%%", progress)))
 		}
 		fmt.Println()
 		fmt.Println()
 
 	case "journalistic":
 		// Show this week vs last week — no daily pressure, just totals.
-		fmt.Printf("  %s  %s", dimStyle.Render("This week:"), valueStyle.Render(formatHours(dwHours)))
+		fmt.Printf("  %s  %s", dimStyle.Render(i18n.T("This week:")), valueStyle.Render(formatHours(dwHours)))
 		if prevWeekHours > 0 {
 			change := ""
 			if dwHours > prevWeekHours.Hours() {
@@ -324,16 +322,16 @@ func renderPhilosophyContext(philosophy string, stats *domain.PeriodStats, strea
 				change = "—"
 			}
 			fmt.Printf("  %s  %s  %s",
-				dimStyle.Render("Last week:"),
+				dimStyle.Render(i18n.T("Last week:")),
 				valueStyle.Render(formatHours(prevWeekHours.Hours())),
 				valueStyle.Render(change),
 			)
 		}
-		fmt.Printf("  %s\n\n", dimStyle.Render("(grab depth when you can)"))
+		fmt.Printf("  %s\n\n", dimStyle.Render(i18n.T("(grab depth when you can)")))
 
 	case "bimodal":
 		// Show this week vs last week
-		fmt.Printf("  %s  %s", dimStyle.Render("This week:"), valueStyle.Render(formatHours(dwHours)))
+		fmt.Printf("  %s  %s", dimStyle.Render(i18n.T("This week:")), valueStyle.Render(formatHours(dwHours)))
 		if prevWeekHours > 0 {
 			change := ""
 			if dwHours > prevWeekHours.Hours() {
@@ -344,7 +342,7 @@ func renderPhilosophyContext(philosophy string, stats *domain.PeriodStats, strea
 				change = "—"
 			}
 			fmt.Printf("  %s  %s  %s",
-				dimStyle.Render("Last week:"),
+				dimStyle.Render(i18n.T("Last week:")),
 				valueStyle.Render(formatHours(prevWeekHours.Hours())),
 				valueStyle.Render(change),
 			)
@@ -355,9 +353,9 @@ func renderPhilosophyContext(philosophy string, stats *domain.PeriodStats, strea
 	case "monastic":
 		// Show monthly hours
 		fmt.Printf("  %s  %s  %s\n\n",
-			dimStyle.Render("Monthly Deep Work:"),
+			dimStyle.Render(i18n.T("Monthly Deep Work:")),
 			valueStyle.Render(formatHours(monthHours.Hours())),
-			dimStyle.Render("(monastic view)"),
+			dimStyle.Render(i18n.T("(monastic view)")),
 		)
 	}
 }

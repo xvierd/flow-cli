@@ -300,6 +300,144 @@ func TestReportService_Streaks_CurrentAndLongest(t *testing.T) {
 	}
 }
 
+func TestReportService_Streaks_ExtendBeyondWindow(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// 10 consecutive days with completed work, ending today — longer than the
+	// 7-day week window, so most of the streak predates the report range.
+	for i := 0; i < 10; i++ {
+		day := now.AddDate(0, 0, -i)
+		at := time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, day.Location())
+		s := &domain.PomodoroSession{
+			ID:          fmt.Sprintf("hist-%d", i),
+			Type:        domain.SessionTypeWork,
+			Status:      domain.SessionStatusCompleted,
+			Duration:    25 * time.Minute,
+			StartedAt:   at,
+			Methodology: domain.MethodologyPomodoro,
+		}
+		c := s.StartedAt
+		s.CompletedAt = &c
+		if err := store.Sessions().Save(ctx, s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	report, err := NewReportService(store).GetReport(ctx, ReportPeriodWeek)
+	if err != nil {
+		t.Fatalf("GetReport() error = %v", err)
+	}
+	if report.Streaks.CurrentDays != 10 {
+		t.Errorf("CurrentDays = %d, want 10 (streak must not be capped to the report window)", report.Streaks.CurrentDays)
+	}
+	if report.Streaks.LongestDays != 10 {
+		t.Errorf("LongestDays = %d, want 10", report.Streaks.LongestDays)
+	}
+}
+
+func TestReportService_ExcludesNonCompletedSessions(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now()
+	start, end, _ := PeriodRange(ReportPeriodWeek, now)
+
+	score := func(v int) *int { return &v }
+	seed := func(s *domain.PomodoroSession) {
+		c := s.StartedAt
+		s.CompletedAt = &c
+		if err := store.Sessions().Save(ctx, s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	// Completed session: the only one that should count.
+	seed(&domain.PomodoroSession{
+		ID:           "done",
+		Type:         domain.SessionTypeWork,
+		Status:       domain.SessionStatusCompleted,
+		Duration:     25 * time.Minute,
+		StartedAt:    start.Add(24 * time.Hour),
+		Methodology:  domain.MethodologyMakeTime,
+		FocusScore:   score(4),
+		Distractions: []domain.Distraction{{Text: "email", Category: "external"}},
+	})
+	// Cancelled session with a focus score and distractions: must be excluded.
+	seed(&domain.PomodoroSession{
+		ID:           "cancelled",
+		Type:         domain.SessionTypeWork,
+		Status:       domain.SessionStatusCancelled,
+		Duration:     50 * time.Minute,
+		StartedAt:    start.Add(25 * time.Hour),
+		Methodology:  domain.MethodologyMakeTime,
+		FocusScore:   score(5),
+		Distractions: []domain.Distraction{{Text: "a"}, {Text: "b"}},
+	})
+	// Running session with a focus score and distractions: must be excluded.
+	seed(&domain.PomodoroSession{
+		ID:           "running",
+		Type:         domain.SessionTypeWork,
+		Status:       domain.SessionStatusRunning,
+		Duration:     90 * time.Minute,
+		StartedAt:    start.Add(26 * time.Hour),
+		Methodology:  domain.MethodologyMakeTime,
+		FocusScore:   score(1),
+		Distractions: []domain.Distraction{{Text: "x"}, {Text: "y"}, {Text: "z"}},
+	})
+
+	report, err := NewReportService(store).GetReport(ctx, ReportPeriodWeek)
+	if err != nil {
+		t.Fatalf("GetReport() error = %v", err)
+	}
+
+	if report.Summary.TotalSessions != 1 {
+		t.Errorf("TotalSessions = %d, want 1 (cancelled/running excluded)", report.Summary.TotalSessions)
+	}
+	if report.Summary.TotalWorkTime != 25*time.Minute {
+		t.Errorf("TotalWorkTime = %s, want 25m", report.Summary.TotalWorkTime)
+	}
+	if report.Summary.FocusScoreCount != 1 {
+		t.Errorf("FocusScoreCount = %d, want 1", report.Summary.FocusScoreCount)
+	}
+	if report.Summary.AvgFocusScore != 4.0 {
+		t.Errorf("AvgFocusScore = %f, want 4.0", report.Summary.AvgFocusScore)
+	}
+	if report.Summary.DistractionCount != 1 {
+		t.Errorf("DistractionCount = %d, want 1", report.Summary.DistractionCount)
+	}
+
+	// Daily rows must only count completed sessions and sum to the headline totals.
+	dailySessions, dailyDistractions := 0, 0
+	for _, d := range report.Daily {
+		dailySessions += d.WorkSessions
+		dailyDistractions += d.Distractions
+	}
+	if dailySessions != report.Summary.TotalSessions {
+		t.Errorf("daily WorkSessions sum = %d, want %d (headline total)", dailySessions, report.Summary.TotalSessions)
+	}
+	if dailyDistractions != report.Summary.DistractionCount {
+		t.Errorf("daily Distractions sum = %d, want %d (headline total)", dailyDistractions, report.Summary.DistractionCount)
+	}
+
+	// Cross-check against GetPeriodStats for the same period.
+	stats, err := store.Sessions().GetPeriodStats(ctx, start, end)
+	if err != nil {
+		t.Fatalf("GetPeriodStats() error = %v", err)
+	}
+	if stats.TotalSessions != report.Summary.TotalSessions ||
+		stats.TotalWorkTime != report.Summary.TotalWorkTime ||
+		stats.FocusScoreCount != report.Summary.FocusScoreCount ||
+		stats.AvgFocusScore != report.Summary.AvgFocusScore ||
+		stats.DistractionCount != report.Summary.DistractionCount {
+		t.Errorf("report summary %+v does not match GetPeriodStats %+v", report.Summary, stats)
+	}
+}
+
 func TestPeriodRange_InvalidPeriod(t *testing.T) {
 	if _, _, err := PeriodRange(ReportPeriod("year"), time.Now()); err == nil {
 		t.Error("expected error for unsupported period 'year'")

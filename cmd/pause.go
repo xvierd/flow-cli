@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // pauseCmd represents the pause command
@@ -17,10 +18,10 @@ var pauseCmd = &cobra.Command{
 
 		session, err := app.pomodoro.PauseSession(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to pause session: %w", err)
+			return fmt.Errorf("%s: %w", i18n.T("failed to pause session"), err)
 		}
 
-		fmt.Printf("⏸️  Session paused. Remaining: %s\n", session.RemainingTime())
+		fmt.Printf("⏸️  %s\n", i18n.T("Session paused. Remaining: %s", session.RemainingTime()))
 		return nil
 	},
 }

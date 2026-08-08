@@ -29,6 +29,18 @@ type AddTaskRequest struct {
 
 // AddTask creates a new task.
 func (s *TaskService) AddTask(ctx context.Context, req AddTaskRequest) (*domain.Task, error) {
+	return s.addTask(ctx, s.storage, req)
+}
+
+// AddTaskWith is AddTask against the given storage, which may be
+// transaction-scoped, so callers can compose it into a larger WithTx
+// transaction.
+func (s *TaskService) AddTaskWith(ctx context.Context, storage ports.Storage, req AddTaskRequest) (*domain.Task, error) {
+	return s.addTask(ctx, storage, req)
+}
+
+// addTask implements AddTask against the given storage.
+func (s *TaskService) addTask(ctx context.Context, storage ports.Storage, req AddTaskRequest) (*domain.Task, error) {
 	task, err := domain.NewTask(req.Title)
 	if err != nil {
 		return nil, fmt.Errorf("invalid task: %w", err)
@@ -39,7 +51,7 @@ func (s *TaskService) AddTask(ctx context.Context, req AddTaskRequest) (*domain.
 		task.AddTag(tag)
 	}
 
-	if err := s.storage.Tasks().Save(ctx, task); err != nil {
+	if err := storage.Tasks().Save(ctx, task); err != nil {
 		return nil, fmt.Errorf("failed to save task: %w", err)
 	}
 

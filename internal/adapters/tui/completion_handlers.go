@@ -4,6 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 )
 
@@ -214,12 +215,12 @@ func handleDistractionReview(cs *completionState, msg tea.Msg) tea.Cmd {
 // Exported for reuse in NewModel and NewInlineModel.
 func newCompletionInputs(width int) (distraction, accomplishment textinput.Model, shutdown [4]textinput.Model) {
 	distraction = textinput.New()
-	distraction.Placeholder = "What distracted you?"
+	distraction.Placeholder = i18n.T("What distracted you?")
 	distraction.CharLimit = 200
 	distraction.Width = width
 
 	accomplishment = textinput.New()
-	accomplishment.Placeholder = "What did you accomplish?"
+	accomplishment.Placeholder = i18n.T("What did you accomplish?")
 	accomplishment.CharLimit = 200
 	accomplishment.Width = width
 
@@ -231,10 +232,10 @@ func newCompletionInputs(width int) (distraction, accomplishment textinput.Model
 		si.Width = width
 		return si
 	}
-	shutdown[0] = newShutdownInput("Review pending tasks — anything urgent?")
-	shutdown[1] = newShutdownInput("Review tomorrow's calendar — any conflicts?")
-	shutdown[2] = newShutdownInput("Plan for tomorrow")
-	shutdown[3] = newShutdownInput("Closing phrase (e.g. 'Shutdown complete')")
+	shutdown[0] = newShutdownInput(i18n.T("Review pending tasks — anything urgent?"))
+	shutdown[1] = newShutdownInput(i18n.T("Review tomorrow's calendar — any conflicts?"))
+	shutdown[2] = newShutdownInput(i18n.T("Plan for tomorrow"))
+	shutdown[3] = newShutdownInput(i18n.T("Closing phrase (e.g. 'Shutdown complete')"))
 	return
 }
 

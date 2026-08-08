@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/xvierd/flow-cli/internal/domain"
+	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 )
 
@@ -29,18 +30,17 @@ func viewIdleMethodologyInfo(state *domain.CurrentState, mode methodology.Mode, 
 
 func viewIdlePomodoro(state *domain.CurrentState) string {
 	sessions := state.TodayStats.WorkSessions
-	label := "sessions"
 	if sessions == 1 {
-		label = "session"
+		return fmt.Sprintf("  🍅 %s", i18n.T("1 session today"))
 	}
-	return fmt.Sprintf("  🍅 %d %s today", sessions, label)
+	return fmt.Sprintf("  🍅 %s", i18n.T("%d sessions today", sessions))
 }
 
 func viewIdleMakeTime(state *domain.CurrentState) string {
 	if state.ActiveTask != nil && state.ActiveTask.IsTodayHighlight() {
-		return fmt.Sprintf("  ★ Highlight: \"%s\"", state.ActiveTask.Title)
+		return "  ★ " + i18n.T("Highlight: \"%s\"", state.ActiveTask.Title)
 	}
-	return "  No Highlight set for today"
+	return "  " + i18n.T("No Highlight set for today")
 }
 
 func viewIdleDeepWork(state *domain.CurrentState, mode methodology.Mode, completionInfo *domain.CompletionInfo) string {
@@ -75,7 +75,7 @@ func viewIdleDeepWork(state *domain.CurrentState, mode methodology.Mode, complet
 
 	var parts []string
 	if streak > 0 {
-		parts = append(parts, fmt.Sprintf("Streak: %d days", streak))
+		parts = append(parts, i18n.T("Streak: %d days", streak))
 	}
 	if philosophy != "" {
 		// Capitalize first letter

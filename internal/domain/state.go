@@ -2,6 +2,8 @@ package domain
 
 import (
 	"time"
+
+	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
 // CurrentState represents the global application state.
@@ -96,13 +98,13 @@ func (cs *CurrentState) CanStartSession() bool {
 func GetSessionTypeLabel(t SessionType) string {
 	switch t {
 	case SessionTypeWork:
-		return "Work"
+		return i18n.T("Work")
 	case SessionTypeShortBreak:
-		return "Short Break"
+		return i18n.T("Short Break")
 	case SessionTypeLongBreak:
-		return "Long Break"
+		return i18n.T("Long Break")
 	default:
-		return "Unknown"
+		return i18n.T("Unknown")
 	}
 }
 
@@ -110,16 +112,16 @@ func GetSessionTypeLabel(t SessionType) string {
 func GetStatusLabel(s SessionStatus) string {
 	switch s {
 	case SessionStatusRunning:
-		return "Running"
+		return i18n.T("Running")
 	case SessionStatusPaused:
-		return "Paused"
+		return i18n.T("Paused")
 	case SessionStatusCompleted:
-		return "Completed"
+		return i18n.T("Completed")
 	case SessionStatusCancelled:
-		return "Cancelled"
+		return i18n.T("Cancelled")
 	case SessionStatusInterrupted:
-		return "Interrupted"
+		return i18n.T("Interrupted")
 	default:
-		return "Unknown"
+		return i18n.T("Unknown")
 	}
 }
