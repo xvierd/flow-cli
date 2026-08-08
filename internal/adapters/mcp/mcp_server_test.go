@@ -63,6 +63,9 @@ func (m *mockStateProvider) GetRecentSessions(ctx context.Context, limit int) ([
 }
 
 func (m *mockStateProvider) StartPomodoro(ctx context.Context, taskID *string, durationMinutes *int) (*domain.PomodoroSession, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	config := domain.DefaultPomodoroConfig()
 	if durationMinutes != nil {
 		config.WorkDuration = time.Duration(*durationMinutes) * time.Minute
@@ -140,6 +143,9 @@ func (m *mockStateProvider) CreateTask(ctx context.Context, title string, descri
 }
 
 func (m *mockStateProvider) CompleteTask(ctx context.Context, taskID string) (*domain.Task, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	task, _ := domain.NewTask("Completed Task")
 	task.ID = taskID
 	task.Complete()
@@ -164,6 +170,9 @@ func (m *mockStateProvider) StartTask(ctx context.Context, taskID string) error 
 }
 
 func (m *mockStateProvider) AddSessionNotes(ctx context.Context, sessionID string, notes string) (*domain.PomodoroSession, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	s := newMockSession()
 	s.ID = sessionID
 	s.Notes = notes
@@ -177,30 +186,36 @@ func (m *mockStateProvider) LogDistraction(ctx context.Context, sessionID string
 }
 
 func (m *mockStateProvider) SetFocusScore(ctx context.Context, sessionID string, score int) error {
-	return nil
+	return m.err
 }
 
 func (m *mockStateProvider) SetAccomplishment(ctx context.Context, sessionID string, text string) error {
-	return nil
+	return m.err
 }
 
 func (m *mockStateProvider) SetShutdownRitual(ctx context.Context, sessionID string, ritual domain.ShutdownRitual) error {
-	return nil
+	return m.err
 }
 
 func (m *mockStateProvider) SetEnergizeActivity(ctx context.Context, sessionID string, activity string) error {
-	return nil
+	return m.err
 }
 
 func (m *mockStateProvider) SetOutcomeAchieved(ctx context.Context, sessionID string, achieved string) error {
-	return nil
+	return m.err
 }
 
 func (m *mockStateProvider) GetTodayHighlight(ctx context.Context) (*domain.Task, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	return m.highlight, nil
 }
 
 func (m *mockStateProvider) SetHighlight(ctx context.Context, taskID string) (*domain.Task, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	task, _ := domain.NewTask("Highlight")
 	task.ID = taskID
 	task.SetAsHighlight()
@@ -897,6 +912,239 @@ func TestServer_handleStartTask_RequiresID(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("start_task should require task_id")
+	}
+}
+
+func TestServer_handleGetTodayHighlight_NoHighlight(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	result, err := server.handleGetTodayHighlight(context.Background(), request(map[string]interface{}{}))
+	if err != nil {
+		t.Fatalf("handleGetTodayHighlight() error = %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("handleGetTodayHighlight() error result: %+v", result)
+	}
+	if !strings.Contains(resultToText(t, result), "No highlight set") {
+		t.Errorf("expected no-highlight message: %s", resultToText(t, result))
+	}
+}
+
+func TestServer_handleGetTodayHighlight_WithHighlight(t *testing.T) {
+	task, _ := domain.NewTask("Daily highlight")
+	mock := &mockStateProvider{highlight: task}
+	server := newTestServer(mock)
+
+	result, err := server.handleGetTodayHighlight(context.Background(), request(map[string]interface{}{}))
+	if err != nil {
+		t.Fatalf("handleGetTodayHighlight() error = %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("handleGetTodayHighlight() error result: %+v", result)
+	}
+	if !strings.Contains(resultToText(t, result), "Daily highlight") {
+		t.Errorf("highlight missing from result: %s", resultToText(t, result))
+	}
+}
+
+func TestServer_handleSetHighlight_MissingTaskID(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	result, err := server.handleSetHighlight(context.Background(), request(map[string]interface{}{}))
+	if err != nil {
+		t.Fatalf("handleSetHighlight() error = %v", err)
+	}
+	if !result.IsError {
+		t.Error("set_highlight should require task_id")
+	}
+}
+
+func TestServer_handleAddSessionNotes_Success(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	result, err := server.handleAddSessionNotes(context.Background(), request(map[string]interface{}{
+		"session_id": "s1",
+		"notes":      "finished the design review",
+	}))
+	if err != nil {
+		t.Fatalf("handleAddSessionNotes() error = %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("handleAddSessionNotes() error result: %+v", result)
+	}
+	if !strings.Contains(resultToText(t, result), "finished the design review") {
+		t.Errorf("notes missing from result: %s", resultToText(t, result))
+	}
+	if mock.lastNotes != "finished the design review" {
+		t.Errorf("notes not forwarded to provider: %q", mock.lastNotes)
+	}
+}
+
+func TestServer_handleAddSessionNotes_MissingArgs(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	for name, args := range map[string]map[string]interface{}{
+		"missing-session-id": {"notes": "x"},
+		"missing-notes":      {"session_id": "s1"},
+	} {
+		result, err := server.handleAddSessionNotes(context.Background(), request(args))
+		if err != nil {
+			t.Fatalf("handleAddSessionNotes(%s) error = %v", name, err)
+		}
+		if !result.IsError {
+			t.Errorf("%s: expected error result", name)
+		}
+	}
+}
+
+func TestServer_handleStartPomodoro_WithArgs(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	result, err := server.handleStartPomodoro(context.Background(), request(map[string]interface{}{
+		"task_id":          "t1",
+		"duration_minutes": 50.0,
+	}))
+	if err != nil {
+		t.Fatalf("handleStartPomodoro() error = %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("handleStartPomodoro() error result: %+v", result)
+	}
+	body := resultToText(t, result)
+	if !strings.Contains(body, `"task_id": "t1"`) || !strings.Contains(body, "50m0s") {
+		t.Errorf("start_pomodoro args not honored: %s", body)
+	}
+}
+
+func TestServer_handleStartPomodoro_DurationAsString(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	result, err := server.handleStartPomodoro(context.Background(), request(map[string]interface{}{
+		"duration_minutes": "40",
+	}))
+	if err != nil {
+		t.Fatalf("handleStartPomodoro() error = %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("handleStartPomodoro() error result: %+v", result)
+	}
+	if !strings.Contains(resultToText(t, result), "40m0s") {
+		t.Errorf("duration string not parsed: %s", resultToText(t, result))
+	}
+}
+
+func TestServer_handleResumePomodoro(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	result, err := server.handleResumePomodoro(context.Background(), request(map[string]interface{}{}))
+	if err != nil {
+		t.Fatalf("handleResumePomodoro() error = %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("handleResumePomodoro() error result: %+v", result)
+	}
+}
+
+func TestServer_handleCompleteTask_RequiresID(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	result, err := server.handleCompleteTask(context.Background(), request(map[string]interface{}{}))
+	if err != nil {
+		t.Fatalf("handleCompleteTask() error = %v", err)
+	}
+	if !result.IsError {
+		t.Error("complete_task should require task_id")
+	}
+}
+
+func TestServer_handleCompleteTask_Success(t *testing.T) {
+	mock := &mockStateProvider{}
+	server := newTestServer(mock)
+
+	result, err := server.handleCompleteTask(context.Background(), request(map[string]interface{}{
+		"task_id": "t1",
+	}))
+	if err != nil {
+		t.Fatalf("handleCompleteTask() error = %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("handleCompleteTask() error result: %+v", result)
+	}
+	if !strings.Contains(resultToText(t, result), "completed") {
+		t.Errorf("completion status missing: %s", resultToText(t, result))
+	}
+}
+
+func TestServer_ProviderErrorSurfacedAsToolResult(t *testing.T) {
+	mock := &mockStateProvider{err: domain.ErrNoActiveSession}
+	server := newTestServer(mock)
+
+	tests := []struct {
+		name    string
+		handler func(context.Context) (*mcp.CallToolResult, error)
+	}{
+		{"start_pomodoro", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleStartPomodoro(ctx, request(map[string]interface{}{}))
+		}},
+		{"resume_pomodoro", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleResumePomodoro(ctx, request(map[string]interface{}{}))
+		}},
+		{"complete_task", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleCompleteTask(ctx, request(map[string]interface{}{"task_id": "t1"}))
+		}},
+		{"set_highlight", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleSetHighlight(ctx, request(map[string]interface{}{"task_id": "t1"}))
+		}},
+		{"get_today_highlight", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleGetTodayHighlight(ctx, request(map[string]interface{}{}))
+		}},
+		{"add_session_notes", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleAddSessionNotes(ctx, request(map[string]interface{}{
+				"session_id": "s1",
+				"notes":      "x",
+			}))
+		}},
+		{"set_accomplishment", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleSetAccomplishment(ctx, request(map[string]interface{}{
+				"session_id": "s1",
+				"text":       "shipped",
+			}))
+		}},
+		{"set_shutdown_ritual", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleSetShutdownRitual(ctx, request(map[string]interface{}{"session_id": "s1"}))
+		}},
+		{"set_energize_activity", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleSetEnergizeActivity(ctx, request(map[string]interface{}{
+				"session_id": "s1",
+				"activity":   "walk",
+			}))
+		}},
+		{"set_outcome_achieved", func(ctx context.Context) (*mcp.CallToolResult, error) {
+			return server.handleSetOutcomeAchieved(ctx, request(map[string]interface{}{
+				"session_id": "s1",
+				"outcome":    "y",
+			}))
+		}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.handler(context.Background())
+			if err != nil {
+				t.Fatalf("expected tool error result, got transport error: %v", err)
+			}
+			if result == nil || !result.IsError {
+				t.Fatal("expected IsError=true result conveying the provider error")
+			}
+		})
 	}
 }
 

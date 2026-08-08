@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -214,5 +215,132 @@ func TestReportService_TotalWork(t *testing.T) {
 	}
 	if len(report.Heatmap) == 0 {
 		t.Error("Heatmap should have entries for a completed work session")
+	}
+}
+
+func TestReportService_GetReportForRange_Scope(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	start := time.Now().AddDate(0, 0, -7)
+	end := start.AddDate(0, 0, 7)
+
+	seed := func(id string, at time.Time, status domain.SessionStatus) {
+		s := &domain.PomodoroSession{
+			ID:          id,
+			Type:        domain.SessionTypeWork,
+			Status:      status,
+			Duration:    25 * time.Minute,
+			StartedAt:   at,
+			Methodology: domain.MethodologyPomodoro,
+		}
+		c := at
+		s.CompletedAt = &c
+		if err := store.Sessions().Save(ctx, s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	seed("inside1", start.Add(24*time.Hour), domain.SessionStatusCompleted)
+	seed("inside2", start.Add(48*time.Hour), domain.SessionStatusCompleted)
+	seed("running", start.Add(72*time.Hour), domain.SessionStatusRunning)        // not counted in totals
+	seed("outside-before", start.Add(-time.Hour), domain.SessionStatusCompleted) // outside range
+	seed("at-end", end.Add(-time.Minute), domain.SessionStatusCompleted)         // just inside [start, end)
+
+	report, err := NewReportService(store).GetReportForRange(ctx, ReportPeriodWeek, start, end, time.Now())
+	if err != nil {
+		t.Fatalf("GetReportForRange() error = %v", err)
+	}
+	if report.Summary.TotalSessions != 3 {
+		t.Errorf("TotalSessions = %d, want 3 (running and pre-range excluded)", report.Summary.TotalSessions)
+	}
+	if report.Summary.TotalWorkTime != 75*time.Minute {
+		t.Errorf("TotalWorkTime = %s, want 75m", report.Summary.TotalWorkTime)
+	}
+}
+
+func TestReportService_Streaks_CurrentAndLongest(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	ref := time.Now()
+	start := ref.AddDate(0, 0, -14)
+	end := start.AddDate(0, 0, 28)
+
+	// Work on each of the last 4 consecutive days.
+	for i := 0; i <= 3; i++ {
+		day := ref.AddDate(0, 0, -i)
+		at := time.Date(day.Year(), day.Month(), day.Day(), 10, 30, 0, 0, day.Location())
+		s := &domain.PomodoroSession{
+			ID:          fmt.Sprintf("streak-%d", i),
+			Type:        domain.SessionTypeWork,
+			Status:      domain.SessionStatusCompleted,
+			Duration:    25 * time.Minute,
+			StartedAt:   at,
+			Methodology: domain.MethodologyPomodoro,
+		}
+		c := s.StartedAt
+		s.CompletedAt = &c
+		if err := store.Sessions().Save(ctx, s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	report, err := NewReportService(store).GetReportForRange(ctx, ReportPeriodWeek, start, end, ref)
+	if err != nil {
+		t.Fatalf("GetReportForRange() error = %v", err)
+	}
+	if report.Streaks.CurrentDays != 4 {
+		t.Errorf("CurrentDays = %d, want 4", report.Streaks.CurrentDays)
+	}
+	if report.Streaks.LongestDays != 4 {
+		t.Errorf("LongestDays = %d, want 4", report.Streaks.LongestDays)
+	}
+}
+
+func TestPeriodRange_InvalidPeriod(t *testing.T) {
+	if _, _, err := PeriodRange(ReportPeriod("year"), time.Now()); err == nil {
+		t.Error("expected error for unsupported period 'year'")
+	}
+}
+
+func TestReportService_HighlightHitRate(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now()
+
+	s := &domain.PomodoroSession{
+		ID:          "h1",
+		Type:        domain.SessionTypeWork,
+		Status:      domain.SessionStatusCompleted,
+		Duration:    25 * time.Minute,
+		StartedAt:   now.Add(-2 * time.Hour),
+		Methodology: domain.MethodologyPomodoro,
+	}
+	c := s.StartedAt
+	s.CompletedAt = &c
+	if err := store.Sessions().Save(ctx, s); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	task, _ := domain.NewTask("highlight me")
+	task.SetAsHighlight()
+	if err := store.Tasks().Save(ctx, task); err != nil {
+		t.Fatalf("Save() task error = %v", err)
+	}
+
+	report, err := NewReportService(store).GetReport(ctx, ReportPeriodWeek)
+	if err != nil {
+		t.Fatalf("GetReport() error = %v", err)
+	}
+	if report.Summary.HighlightDays != 1 {
+		t.Errorf("HighlightDays = %d, want 1", report.Summary.HighlightDays)
+	}
+	if report.Summary.HighlightHitRate != 1.0 {
+		t.Errorf("HighlightHitRate = %f, want 1.0", report.Summary.HighlightHitRate)
 	}
 }

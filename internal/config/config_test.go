@@ -46,3 +46,41 @@ func TestDefaultConfig_FocusStrictFalse(t *testing.T) {
 		t.Error("expected focus.strict to default to false")
 	}
 }
+
+func TestConfig_LoadSaveRoundTrip(t *testing.T) {
+	// Isolate the config file under a fresh HOME.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := DefaultConfig()
+	cfg.Methodology = "deepwork"
+	cfg.Pomodoro.WorkDuration = Duration(45 * time.Minute)
+	cfg.Pomodoro.SessionsBeforeLong = 6
+	cfg.Focus.Strict = true
+	cfg.Notifications.Enabled = false
+
+	if err := Save(cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if loaded.Methodology != "deepwork" {
+		t.Errorf("methodology = %q, want deepwork", loaded.Methodology)
+	}
+	if time.Duration(loaded.Pomodoro.WorkDuration) != 45*time.Minute {
+		t.Errorf("work_duration = %v, want 45m", loaded.Pomodoro.WorkDuration)
+	}
+	if loaded.Pomodoro.SessionsBeforeLong != 6 {
+		t.Errorf("sessions_before_long = %d, want 6", loaded.Pomodoro.SessionsBeforeLong)
+	}
+	if !loaded.Focus.Strict {
+		t.Error("focus.strict should round-trip as true")
+	}
+	if loaded.Notifications.Enabled {
+		t.Error("notifications.enabled should round-trip as false")
+	}
+}

@@ -1014,3 +1014,104 @@ func TestStorage_DistractionPersistence(t *testing.T) {
 		t.Errorf("second distraction = %+v, want {Text:random thought Category:internal}", found.Distractions[1])
 	}
 }
+
+func TestSessionRepository_GetDeepWorkHours(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	repo := storage.Sessions()
+	config := domain.DefaultPomodoroConfig()
+	now := time.Now()
+
+	seed := func(methodology domain.Methodology, status domain.SessionStatus, dur time.Duration, startedAt time.Time) {
+		s := domain.NewPomodoroSession(config, nil)
+		s.Methodology = methodology
+		s.Duration = dur
+		s.StartedAt = startedAt
+		if status == domain.SessionStatusCompleted {
+			s.Complete()
+		}
+		if err := repo.Save(ctx, s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	start := now.Add(-7 * 24 * time.Hour)
+	end := now
+
+	seed(domain.MethodologyDeepWork, domain.SessionStatusCompleted, 90*time.Minute, now.Add(-24*time.Hour))
+	seed(domain.MethodologyDeepWork, domain.SessionStatusCompleted, 30*time.Minute, now.Add(-48*time.Hour))
+	// Not completed → excluded.
+	seed(domain.MethodologyDeepWork, domain.SessionStatusRunning, 60*time.Minute, now)
+	// Wrong methodology → excluded.
+	seed(domain.MethodologyPomodoro, domain.SessionStatusCompleted, 25*time.Minute, now.Add(-2*time.Hour))
+	// Out of range → excluded.
+	seed(domain.MethodologyDeepWork, domain.SessionStatusCompleted, 45*time.Minute, now.AddDate(0, 0, 30))
+
+	total, err := repo.GetDeepWorkHours(ctx, start, end)
+	if err != nil {
+		t.Fatalf("GetDeepWorkHours() error = %v", err)
+	}
+	if total != 2*time.Hour {
+		t.Errorf("GetDeepWorkHours() = %v, want 2h", total)
+	}
+}
+
+func TestSessionRepository_FindByTask(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	ctx := context.Background()
+	repo := storage.Sessions()
+	taskRepo := storage.Tasks()
+	config := domain.DefaultPomodoroConfig()
+
+	task, _ := domain.NewTask("linked task")
+	if err := taskRepo.Save(ctx, task); err != nil {
+		t.Fatalf("Save() task error = %v", err)
+	}
+	other, _ := domain.NewTask("other task")
+	if err := taskRepo.Save(ctx, other); err != nil {
+		t.Fatalf("Save() task error = %v", err)
+	}
+
+	s1 := domain.NewPomodoroSession(config, &task.ID)
+	_ = repo.Save(ctx, s1)
+	s2 := domain.NewPomodoroSession(config, &task.ID)
+	_ = repo.Save(ctx, s2)
+	_ = repo.Save(ctx, domain.NewPomodoroSession(config, &other.ID))
+
+	sessions, err := repo.FindByTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("FindByTask() error = %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("FindByTask() returned %d sessions, want 2", len(sessions))
+	}
+	ids := map[string]bool{}
+	for _, s := range sessions {
+		ids[s.ID] = true
+	}
+	if !ids[s1.ID] || !ids[s2.ID] {
+		t.Errorf("FindByTask() sessions = %v, want to include %s and %s", ids, s1.ID, s2.ID)
+	}
+}
+
+func TestStorage_MigrateIdempotent(t *testing.T) {
+	storage, _ := NewMemory()
+	defer func() { _ = storage.Close() }()
+
+	// NewMemory already ran Migrate; running it again must be a no-op.
+	if err := storage.Migrate(); err != nil {
+		t.Fatalf("second Migrate() error = %v", err)
+	}
+	if err := storage.Migrate(); err != nil {
+		t.Fatalf("third Migrate() error = %v", err)
+	}
+
+	ctx := context.Background()
+	if err := storage.Sessions().Save(ctx, domain.NewPomodoroSession(domain.DefaultPomodoroConfig(), nil)); err != nil {
+		t.Errorf("Save() after repeat migrates error = %v", err)
+	}
+}

@@ -431,7 +431,6 @@ func TestPomodoroService_GetDeepWorkStreak_CustomThreshold(t *testing.T) {
 	service := NewPomodoroService(store, nil)
 	ctx := context.Background()
 
-	// Create a deep work session for today with 90 min duration
 	session := &domain.PomodoroSession{
 		ID:          "dw-streak-test",
 		Type:        domain.SessionTypeWork,
@@ -471,5 +470,164 @@ func TestPomodoroService_GetDeepWorkStreak_CustomThreshold(t *testing.T) {
 	}
 	if streak != 0 {
 		t.Errorf("streak = %d, want 0 with default 4h threshold", streak)
+	}
+}
+
+func TestPomodoroService_OperationalErrorsNoSession(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+	clearSessions(t, store, ctx)
+
+	if _, err := service.PauseSession(ctx); err != domain.ErrNoActiveSession {
+		t.Errorf("PauseSession() error = %v, want ErrNoActiveSession", err)
+	}
+	if _, err := service.ResumeSession(ctx); err != domain.ErrNoActiveSession {
+		t.Errorf("ResumeSession() error = %v, want ErrNoActiveSession", err)
+	}
+	if _, err := service.StopSession(ctx); err != domain.ErrNoActiveSession {
+		t.Errorf("StopSession() error = %v, want ErrNoActiveSession", err)
+	}
+	if _, err := service.VoidSession(ctx); err != domain.ErrNoActiveSession {
+		t.Errorf("VoidSession() error = %v, want ErrNoActiveSession", err)
+	}
+	if err := service.CancelSession(ctx); err != domain.ErrNoActiveSession {
+		t.Errorf("CancelSession() error = %v, want ErrNoActiveSession", err)
+	}
+}
+
+func TestPomodoroService_StopSession_ClipsDuration(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	t.Run("immediate stop keeps configured duration", func(t *testing.T) {
+		clearSessions(t, store, ctx)
+		session, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: time.Hour})
+		if err != nil {
+			t.Fatalf("StartPomodoro() error = %v", err)
+		}
+		// Anchor StartedAt so elapsed is well under 1s.
+		session.StartedAt = time.Now()
+		_ = store.Sessions().Update(ctx, session)
+
+		stopped, err := service.StopSession(ctx)
+		if err != nil {
+			t.Fatalf("StopSession() error = %v", err)
+		}
+		if stopped.Duration != time.Hour {
+			t.Errorf("StopSession() duration = %v, want unchanged 1h", stopped.Duration)
+		}
+	})
+
+	t.Run("early stop clips duration to elapsed", func(t *testing.T) {
+		clearSessions(t, store, ctx)
+		session, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: time.Hour})
+		if err != nil {
+			t.Fatalf("StartPomodoro() error = %v", err)
+		}
+		session.StartedAt = time.Now().Add(-30 * time.Second)
+		_ = store.Sessions().Update(ctx, session)
+
+		stopped, err := service.StopSession(ctx)
+		if err != nil {
+			t.Fatalf("StopSession() error = %v", err)
+		}
+		if stopped.Duration < 30*time.Second || stopped.Duration > 31*time.Second {
+			t.Errorf("StopSession() duration = %v, want ~30s (clipped)", stopped.Duration)
+		}
+	})
+}
+
+func TestPomodoroService_SetFocusScore_Validation(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+	clearSessions(t, store, ctx)
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+
+	if err := service.SetFocusScore(ctx, session.ID, 0); err == nil {
+		t.Error("SetFocusScore(0) should be rejected")
+	}
+	if err := service.SetFocusScore(ctx, session.ID, 6); err == nil {
+		t.Error("SetFocusScore(6) should be rejected")
+	}
+	if err := service.SetFocusScore(ctx, session.ID, 3); err != nil {
+		t.Fatalf("SetFocusScore(3) error = %v", err)
+	}
+	found, _ := store.Sessions().FindByID(ctx, session.ID)
+	if found.FocusScore == nil || *found.FocusScore != 3 {
+		t.Errorf("stored focus score = %v, want 3", found.FocusScore)
+	}
+}
+
+func TestPomodoroService_SetOutcomeAchieved_Validation(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+	clearSessions(t, store, ctx)
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+
+	if err := service.SetOutcomeAchieved(ctx, session.ID, "maybe"); err == nil {
+		t.Error("SetOutcomeAchieved('maybe') should be rejected")
+	}
+	if err := service.SetOutcomeAchieved(ctx, session.ID, "y"); err != nil {
+		t.Errorf("SetOutcomeAchieved('y') error = %v", err)
+	}
+	found, _ := store.Sessions().FindByID(ctx, session.ID)
+	if found.OutcomeAchieved != "y" {
+		t.Errorf("stored outcome = %q, want y", found.OutcomeAchieved)
+	}
+}
+
+func TestPomodoroService_SessionWrites_MissingSession(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+	clearSessions(t, store, ctx)
+
+	if err := service.LogDistraction(ctx, "does-not-exist", "x", "internal"); err != domain.ErrNoActiveSession {
+		t.Errorf("LogDistraction() error = %v, want ErrNoActiveSession", err)
+	}
+	if _, err := service.AddSessionNotes(ctx, "does-not-exist", "note"); err != domain.ErrNoActiveSession {
+		t.Errorf("AddSessionNotes() error = %v, want ErrNoActiveSession", err)
+	}
+}
+
+func TestPomodoroService_AddSessionNotes(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+	clearSessions(t, store, ctx)
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+
+	_, err = service.AddSessionNotes(ctx, session.ID, "take nothing for granted")
+	if err != nil {
+		t.Fatalf("AddSessionNotes() error = %v", err)
+	}
+	found, _ := store.Sessions().FindByID(ctx, session.ID)
+	if found.Notes != "take nothing for granted" {
+		t.Errorf("notes = %q, want 'take nothing for granted'", found.Notes)
 	}
 }

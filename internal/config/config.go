@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"github.com/xvierd/flow-cli/internal/domain"
 )
@@ -283,7 +284,10 @@ func Load() (*Config, error) {
 	}
 
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	// go-viper/mapstructure/v2 does not apply encoding.TextUnmarshaler
+	// automatically — register the hook so string durations ("45m0s") written
+	// by Save() decode back into config.Duration.
+	if err := viper.Unmarshal(&cfg, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
