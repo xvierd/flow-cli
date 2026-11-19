@@ -2,7 +2,11 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +33,13 @@ type mockStateProvider struct {
 	// err, when set, is returned by session lifecycle ops to simulate failures
 	// (e.g. strict focus mode blocks).
 	err error
+
+	// readErr, when set, is returned by the read-only state queries
+	// (GetCurrentState, ListTasks, GetTaskHistory).
+	readErr error
+
+	// panicOnBreak makes StartBreak panic, to exercise handler recovery.
+	panicOnBreak bool
 }
 
 func newMockSession() *domain.PomodoroSession {
@@ -38,6 +49,9 @@ func newMockSession() *domain.PomodoroSession {
 }
 
 func (m *mockStateProvider) GetCurrentState(ctx context.Context) (*domain.CurrentState, error) {
+	if m.readErr != nil {
+		return nil, m.readErr
+	}
 	if m.currentState == nil {
 		m.currentState = &domain.CurrentState{}
 	}
@@ -45,10 +59,16 @@ func (m *mockStateProvider) GetCurrentState(ctx context.Context) (*domain.Curren
 }
 
 func (m *mockStateProvider) ListTasks(ctx context.Context, status *domain.TaskStatus) ([]*domain.Task, error) {
+	if m.readErr != nil {
+		return nil, m.readErr
+	}
 	return m.tasks, nil
 }
 
 func (m *mockStateProvider) GetTaskHistory(ctx context.Context, taskID string) ([]*domain.PomodoroSession, error) {
+	if m.readErr != nil {
+		return nil, m.readErr
+	}
 	if sessions, ok := m.taskHistory[taskID]; ok {
 		return sessions, nil
 	}
@@ -90,6 +110,9 @@ func (m *mockStateProvider) StartSession(ctx context.Context, req ports.StartSes
 }
 
 func (m *mockStateProvider) StartBreak(ctx context.Context) (*domain.PomodoroSession, error) {
+	if m.panicOnBreak {
+		panic("integer divide by zero")
+	}
 	return domain.NewBreakSession(domain.DefaultPomodoroConfig(), 1), nil
 }
 
@@ -1155,5 +1178,188 @@ func TestServer_Stop(t *testing.T) {
 	// Stop before Start should not panic
 	if err := server.Stop(); err != nil {
 		t.Errorf("Stop() error = %v", err)
+	}
+}
+
+// callTool sends a raw tools/call through the MCP server's full request
+// pipeline (including tool middleware), unlike calling handlers directly.
+func callTool(t *testing.T, s *Server, id int, name string, args map[string]interface{}) *mcp.CallToolResult {
+	t.Helper()
+	msg, err := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"method":  "tools/call",
+		"params":  map[string]interface{}{"name": name, "arguments": args},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := s.server.HandleMessage(context.Background(), msg)
+	switch r := resp.(type) {
+	case mcp.JSONRPCResponse:
+		raw, err := json.Marshal(r.Result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result mcp.CallToolResult
+		if err := json.Unmarshal(raw, &result); err != nil {
+			t.Fatalf("decode tool result: %v (%s)", err, raw)
+		}
+		return &result
+	case mcp.JSONRPCError:
+		t.Fatalf("%s returned a protocol error instead of a tool result: %+v", name, r.Error)
+	default:
+		t.Fatalf("%s: unexpected response type %T", name, resp)
+	}
+	return nil
+}
+
+func TestServer_HandlerPanicBecomesToolError(t *testing.T) {
+	mock := &mockStateProvider{panicOnBreak: true}
+	s := newTestServer(mock)
+
+	result := callTool(t, s, 1, "start_break", map[string]interface{}{})
+	if !result.IsError {
+		t.Fatal("a panicking handler must surface as an IsError tool result")
+	}
+
+	// The server keeps serving after the panic.
+	mock.panicOnBreak = false
+	if result := callTool(t, s, 2, "start_break", map[string]interface{}{}); result.IsError {
+		t.Fatalf("server should keep working after a recovered panic: %+v", result)
+	}
+}
+
+// TestServer_ConcurrentToolCallsSerialized: the mock's LogDistraction does an
+// unsynchronized append, standing in for the services' non-atomic
+// read-modify-write. Under -race this fails unless tool calls are serialized,
+// and without serialization writes are lost.
+func TestServer_ConcurrentToolCallsSerialized(t *testing.T) {
+	mock := &mockStateProvider{}
+	s := newTestServer(mock)
+
+	const n = 50
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			msg := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"log_distraction","arguments":{"session_id":"s1","text":"d%d"}}}`, i+1, i)
+			s.server.HandleMessage(context.Background(), []byte(msg))
+		}(i)
+	}
+	wg.Wait()
+
+	if got := len(mock.distractionCalls); got != n {
+		t.Errorf("persisted %d distractions, want %d", got, n)
+	}
+}
+
+func TestServer_ReadToolErrorsAreToolResults(t *testing.T) {
+	mock := &mockStateProvider{readErr: errors.New("no such table: sessions")}
+	s := newTestServer(mock)
+
+	tests := []struct {
+		name string
+		args map[string]interface{}
+	}{
+		{"get_current_state", map[string]interface{}{}},
+		{"list_tasks", map[string]interface{}{}},
+		{"get_task_history", map[string]interface{}{"task_id": "t1"}},
+	}
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := callTool(t, s, i+1, tc.name, tc.args)
+			if !result.IsError {
+				t.Fatal("expected IsError=true result conveying the provider error")
+			}
+			if text := resultToText(t, result); !strings.Contains(text, "no such table") {
+				t.Errorf("error text = %q, want the provider error", text)
+			}
+		})
+	}
+}
+
+func TestParseDurationMinutes(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    map[string]interface{}
+		want    int
+		absent  bool
+		wantErr bool
+	}{
+		{name: "absent", args: map[string]interface{}{}, absent: true},
+		{name: "null", args: map[string]interface{}{"duration_minutes": nil}, absent: true},
+		{name: "number", args: map[string]interface{}{"duration_minutes": 50.0}, want: 50},
+		{name: "numeric string", args: map[string]interface{}{"duration_minutes": "40"}, want: 40},
+		{name: "min", args: map[string]interface{}{"duration_minutes": 1.0}, want: 1},
+		{name: "max", args: map[string]interface{}{"duration_minutes": 1440.0}, want: 1440},
+		{name: "zero", args: map[string]interface{}{"duration_minutes": 0.0}, wantErr: true},
+		{name: "negative", args: map[string]interface{}{"duration_minutes": -5.0}, wantErr: true},
+		{name: "fractional", args: map[string]interface{}{"duration_minutes": 0.5}, wantErr: true},
+		{name: "fractional string", args: map[string]interface{}{"duration_minutes": "25.5"}, wantErr: true},
+		{name: "non-numeric", args: map[string]interface{}{"duration_minutes": "abc"}, wantErr: true},
+		{name: "too large", args: map[string]interface{}{"duration_minutes": 1441.0}, wantErr: true},
+		{name: "overflow", args: map[string]interface{}{"duration_minutes": 4e8}, wantErr: true},
+		{name: "huge", args: map[string]interface{}{"duration_minutes": 1e12}, wantErr: true},
+		{name: "bool", args: map[string]interface{}{"duration_minutes": true}, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseDurationMinutes(request(tc.args))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got %v", *got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.absent {
+				if got != nil {
+					t.Fatalf("expected nil for absent argument, got %d", *got)
+				}
+				return
+			}
+			if got == nil || *got != tc.want {
+				t.Fatalf("got %v, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestServer_InvalidDurationIsToolError(t *testing.T) {
+	mock := &mockStateProvider{}
+	s := newTestServer(mock)
+
+	for _, tool := range []string{"start_pomodoro", "start_session"} {
+		for _, bad := range []interface{}{-5.0, 0.5, "abc", 2e8} {
+			result := callTool(t, s, 1, tool, map[string]interface{}{"duration_minutes": bad})
+			if !result.IsError {
+				t.Errorf("%s(duration_minutes=%v) should be an IsError result, got %s", tool, bad, resultToText(t, result))
+			}
+		}
+	}
+}
+
+func TestServer_handleLogDistraction_BlankText(t *testing.T) {
+	mock := &mockStateProvider{}
+	s := newTestServer(mock)
+
+	for _, text := range []string{"", "   "} {
+		result, err := s.handleLogDistraction(context.Background(), request(map[string]interface{}{
+			"session_id": "s1",
+			"text":       text,
+		}))
+		if err != nil {
+			t.Fatalf("unexpected transport error: %v", err)
+		}
+		if !result.IsError {
+			t.Errorf("log_distraction with text %q should be rejected", text)
+		}
+	}
+	if len(mock.distractionCalls) != 0 {
+		t.Errorf("blank distractions must not be logged, got %v", mock.distractionCalls)
 	}
 }

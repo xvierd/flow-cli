@@ -34,17 +34,15 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 	var breakInfo string
 	if app.methodology == domain.MethodologyPomodoro {
 		breakInfo = i18n.T("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
-			formatMinutes(shortBreakDur), formatMinutes(longBreakDur), app.config.Pomodoro.SessionsBeforeLong)
+			formatMinutes(shortBreakDur), formatMinutes(longBreakDur), effectiveSessionsBeforeLong(app.config, app.methodology))
 	} else {
 		breakInfo = i18n.T("Break: %s · \"flow config\" to customize", formatMinutes(shortBreakDur))
 	}
 
 	// Completion info: next break type and duration.
-	_, _, _, sessionsBeforeLong := app.config.ToPomodoroDomainConfig()
-	// Pomodoro Technique rule: long break always after every 4 work sessions.
-	if app.methodology == domain.MethodologyPomodoro {
-		sessionsBeforeLong = 4
-	}
+	// Always > 0 (Pomodoro forces 4; a non-positive config falls back to 4),
+	// so the modulo below is safe.
+	sessionsBeforeLong := effectiveSessionsBeforeLong(app.config, app.methodology)
 	workSessions := state.TodayStats.WorkSessions + 1
 	sessionsUntilLong := sessionsBeforeLong - (workSessions % sessionsBeforeLong)
 	if sessionsUntilLong == sessionsBeforeLong {
@@ -71,11 +69,11 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 	timer.Configure(tui.TimerConfig{
 		Mode:       app.mode,
 		ModeLocked: modeFlag != "",
-		OnModeSelected: func(m domain.Methodology) {
-			app.methodology = m
-			app.mode = methodology.ForMethodology(m, app.config)
+		OnModeSelected: func(m domain.Methodology) methodology.Mode {
+			setMethodology(m)
 			presets = app.mode.Presets()
 			timer.SetMode(app.mode)
+			return app.mode
 		},
 		AutoBreak:            app.config.Pomodoro.AutoBreak,
 		NotificationsEnabled: app.config.Notifications.Enabled,
@@ -220,8 +218,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 					}
 					taskID = &task.ID
 					if currentMode.HasHighlight() {
-						task.SetAsHighlight()
-						if err := tx.Tasks().Update(ctx, task); err != nil {
+						if _, err := app.tasks.SetHighlightWith(ctx, tx, task.ID); err != nil {
 							return err
 						}
 					}

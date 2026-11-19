@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -22,7 +24,18 @@ type Server struct {
 	stateProvider ports.MCPStateProvider
 	ctx           context.Context
 	cancel        context.CancelFunc
+
+	// toolMu serializes tool handlers. mcp-go dispatches tools/call to a
+	// worker pool, and the service layer's read-modify-write updates are not
+	// atomic, so concurrent calls would otherwise lose writes.
+	toolMu sync.Mutex
 }
+
+// Duration bounds accepted for the duration_minutes tool argument.
+const (
+	minDurationMinutes = 1
+	maxDurationMinutes = 1440 // 24h
+)
 
 // NewServer creates a new MCP server instance.
 func NewServer(stateProvider ports.MCPStateProvider, version string) *Server {
@@ -38,12 +51,29 @@ func NewServer(stateProvider ports.MCPStateProvider, version string) *Server {
 		"flow",
 		version,
 		server.WithLogging(),
+		server.WithToolHandlerMiddleware(s.toolMiddleware),
 	)
 
 	// Register tools
 	s.registerTools()
 
 	return s
+}
+
+// toolMiddleware serializes tool calls and converts a handler panic into an
+// IsError tool result so a single bad call cannot take the server down.
+func (s *Server) toolMiddleware(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (result *mcp.CallToolResult, err error) {
+		s.toolMu.Lock()
+		defer s.toolMu.Unlock()
+		defer func() {
+			if r := recover(); r != nil {
+				result = mcp.NewToolResultError(fmt.Sprintf("internal error in %s: %v", request.Params.Name, r))
+				err = nil
+			}
+		}()
+		return next(ctx, request)
+	}
 }
 
 // registerTools registers all available MCP tools.
@@ -91,7 +121,7 @@ func (s *Server) registerTools() {
 		),
 		mcp.WithNumber(
 			"duration_minutes",
-			mcp.Description("Optional custom duration in minutes (default: 25)"),
+			mcp.Description("Optional custom duration in whole minutes, 1-1440 (default: the configured work duration)"),
 		),
 	)
 	s.server.AddTool(startPomodoroTool, s.handleStartPomodoro)
@@ -251,7 +281,7 @@ func (s *Server) registerTools() {
 		),
 		mcp.WithNumber(
 			"duration_minutes",
-			mcp.Description("Optional custom duration in minutes"),
+			mcp.Description("Optional custom duration in whole minutes, 1-1440 (default: the configured work duration)"),
 		),
 		mcp.WithArray(
 			"tags",
@@ -483,7 +513,7 @@ var _ ports.MCPHandler = (*Server)(nil)
 func (s *Server) handleGetCurrentState(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	state, err := s.stateProvider.GetCurrentState(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current state: %w", err)
+		return toolError("failed to get current state", err)
 	}
 
 	result := map[string]interface{}{
@@ -548,7 +578,7 @@ func (s *Server) handleListTasks(ctx context.Context, request mcp.CallToolReques
 
 	tasks, err := s.stateProvider.ListTasks(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tasks: %w", err)
+		return toolError("failed to list tasks", err)
 	}
 
 	// Filter by status if provided
@@ -593,7 +623,7 @@ func (s *Server) handleGetTaskHistory(ctx context.Context, request mcp.CallToolR
 
 	sessions, err := s.stateProvider.GetTaskHistory(ctx, taskID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get task history: %w", err)
+		return toolError("failed to get task history", err)
 	}
 
 	var sessionList []map[string]interface{}
@@ -666,15 +696,9 @@ func (s *Server) handleStartPomodoro(ctx context.Context, request mcp.CallToolRe
 		taskID = &t
 	}
 
-	var durationMinutes *int
-	// Try to get duration from arguments using GetFloat first (JSON numbers are float64)
-	if d := request.GetFloat("duration_minutes", 0); d > 0 {
-		m := int(d)
-		durationMinutes = &m
-	} else if rawDuration := request.GetString("duration_minutes", ""); rawDuration != "" {
-		if m, err := strconv.Atoi(rawDuration); err == nil {
-			durationMinutes = &m
-		}
+	durationMinutes, err := parseDurationMinutes(request)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	session, err := s.stateProvider.StartPomodoro(ctx, taskID, durationMinutes)
@@ -853,6 +877,9 @@ func (s *Server) handleLogDistraction(ctx context.Context, request mcp.CallToolR
 	text, err := request.RequireString("text")
 	if err != nil {
 		return mcp.NewToolResultError("text is required: " + err.Error()), nil
+	}
+	if strings.TrimSpace(text) == "" {
+		return mcp.NewToolResultError("text must not be empty"), nil
 	}
 
 	category := request.GetString("category", "")
@@ -1123,6 +1150,47 @@ func jsonResult(data map[string]interface{}) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultText(string(b)), nil
 }
 
+// parseDurationMinutes reads the optional duration_minutes argument. It
+// returns nil when the argument is absent; when present it must be a whole
+// number (JSON number or numeric string) in [minDurationMinutes,
+// maxDurationMinutes].
+func parseDurationMinutes(request mcp.CallToolRequest) (*int, error) {
+	raw, ok := request.GetArguments()["duration_minutes"]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	var f float64
+	switch v := raw.(type) {
+	case float64:
+		f = v
+	case int:
+		f = float64(v)
+	case int64:
+		f = float64(v)
+	case json.Number:
+		parsed, err := v.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("duration_minutes must be a number, got %q", v.String())
+		}
+		f = parsed
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return nil, fmt.Errorf("duration_minutes must be a number, got %q", v)
+		}
+		f = parsed
+	default:
+		return nil, fmt.Errorf("duration_minutes must be a number, got %T", raw)
+	}
+	if math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) ||
+		f < minDurationMinutes || f > maxDurationMinutes {
+		return nil, fmt.Errorf("duration_minutes must be a whole number between %d and %d, got %v",
+			minDurationMinutes, maxDurationMinutes, raw)
+	}
+	m := int(f)
+	return &m, nil
+}
+
 // toolError returns a consistent error tool result.
 func toolError(msg string, err error) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultError(fmt.Sprintf("%s: %v", msg, err)), nil
@@ -1141,14 +1209,11 @@ func (s *Server) handleStartSession(ctx context.Context, request mcp.CallToolReq
 	if t := request.GetString("task_id", ""); t != "" {
 		req.TaskID = &t
 	}
-	if d := request.GetFloat("duration_minutes", 0); d > 0 {
-		m := int(d)
-		req.DurationMinutes = &m
-	} else if rawDur := request.GetString("duration_minutes", ""); rawDur != "" {
-		if m, err := strconv.Atoi(rawDur); err == nil && m > 0 {
-			req.DurationMinutes = &m
-		}
+	durationMinutes, err := parseDurationMinutes(request)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
+	req.DurationMinutes = durationMinutes
 
 	session, err := s.stateProvider.StartSession(ctx, req)
 	if err != nil {

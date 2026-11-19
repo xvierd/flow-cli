@@ -33,7 +33,7 @@ type Timer struct {
 	onStartSession          func(presetIndex int, taskName string, intendedOutcome string) error
 	mode                    methodology.Mode
 	modeLocked              bool
-	onModeSelected          func(domain.Methodology)
+	onModeSelected          func(domain.Methodology) methodology.Mode
 	fetchRecentTasks        func(limit int) []*domain.Task
 	fetchYesterdayHighlight func() *domain.Task
 	autoBreak               bool
@@ -83,7 +83,7 @@ type TimerConfig struct {
 	OnStartSession          func(presetIndex int, taskName string, intendedOutcome string) error
 	Mode                    methodology.Mode
 	ModeLocked              bool
-	OnModeSelected          func(domain.Methodology)
+	OnModeSelected          func(domain.Methodology) methodology.Mode
 	FetchRecentTasks        func(limit int) []*domain.Task
 	FetchYesterdayHighlight func() *domain.Task
 	FirstRun                bool
@@ -128,7 +128,9 @@ func (t *Timer) SetModeLocked(locked bool) {
 }
 
 // SetOnModeSelected sets a callback for when the user picks a methodology.
-func (t *Timer) SetOnModeSelected(callback func(domain.Methodology)) {
+// The callback returns the configured Mode for the selection (nil falls back
+// to the built-in defaults).
+func (t *Timer) SetOnModeSelected(callback func(domain.Methodology) methodology.Mode) {
 	t.onModeSelected = callback
 }
 

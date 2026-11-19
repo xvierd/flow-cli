@@ -37,8 +37,8 @@ func viewIdlePomodoro(state *domain.CurrentState) string {
 }
 
 func viewIdleMakeTime(state *domain.CurrentState) string {
-	if state.ActiveTask != nil && state.ActiveTask.IsTodayHighlight() {
-		return "  ★ " + i18n.T("Highlight: \"%s\"", state.ActiveTask.Title)
+	if state.TodayHighlight != nil {
+		return "  ★ " + i18n.T("Highlight: \"%s\"", state.TodayHighlight.Title)
 	}
 	return "  " + i18n.T("No Highlight set for today")
 }

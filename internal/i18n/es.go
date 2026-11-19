@@ -53,6 +53,7 @@ var esCatalog = map[string]string{
 	"MCP server error":                              "error del servidor MCP",
 	"Warning: failed to fetch state: %v":            "Aviso: no se pudo obtener el estado: %v",
 	"Warning: notification failed: %v":              "Aviso: falló la notificación: %v",
+	"Warning: using default settings, config file could not be read: %v": "Aviso: se usa la configuración por defecto, no se pudo leer el archivo de configuración: %v",
 
 	// -- Task commands --------------------------------------------------------
 	"Task added: %s (ID: %s)":         "Tarea agregada: %s (ID: %s)",

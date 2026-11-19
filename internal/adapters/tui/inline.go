@@ -30,7 +30,7 @@ type InlineModel struct {
 	// Mode picker
 	modeCursor     int
 	modeLocked     bool
-	onModeSelected func(domain.Methodology)
+	onModeSelected func(domain.Methodology) methodology.Mode
 
 	// Setup: duration picker
 	presets      []config.SessionPreset

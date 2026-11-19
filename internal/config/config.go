@@ -2,16 +2,23 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"github.com/xvierd/flow-cli/internal/domain"
 )
+
+// ErrInvalidConfig is wrapped by Load when an existing config file cannot be
+// parsed or decoded, so callers can tell a broken file apart from other
+// failures (e.g. an unwritable home directory).
+var ErrInvalidConfig = errors.New("invalid config file")
 
 // Config holds all configuration for the Flow application.
 type Config struct {
@@ -282,7 +289,7 @@ func Load() (*Config, error) {
 
 	// Read config file
 	if err := viper.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("failed to read config: %w", err)
+		return nil, fmt.Errorf("failed to read config %s: %w: %w", configPath, ErrInvalidConfig, err)
 	}
 
 	var cfg Config
@@ -290,19 +297,34 @@ func Load() (*Config, error) {
 	// automatically — register the hook so string durations ("45m0s") written
 	// by Save() decode back into config.Duration.
 	if err := viper.Unmarshal(&cfg, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal config %s: %w: %w", configPath, ErrInvalidConfig, err)
 	}
 
 	// Expand ~ in data directory
-	if cfg.Storage.DataDir == "~/.flow" || cfg.Storage.DataDir == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get home directory: %w", err)
-		}
-		cfg.Storage.DataDir = filepath.Join(homeDir, ".flow")
+	if cfg.Storage.DataDir == "" {
+		cfg.Storage.DataDir = "~/.flow"
 	}
+	dataDir, err := ExpandHome(cfg.Storage.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Storage.DataDir = dataDir
 
 	return &cfg, nil
+}
+
+// ExpandHome expands a leading "~" (alone or followed by a path separator) to
+// the current user's home directory. Other paths, including "~user" forms,
+// are returned unchanged.
+func ExpandHome(path string) (string, error) {
+	if path != "~" && !strings.HasPrefix(path, "~/") && !strings.HasPrefix(path, "~"+string(filepath.Separator)) {
+		return path, nil
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(homeDir, path[1:]), nil
 }
 
 // Save saves the configuration to the config file.
@@ -335,7 +357,7 @@ func flattenConfig(v interface{}, prefix string) map[string]interface{} {
 	result := make(map[string]interface{})
 	rv := reflect.ValueOf(v)
 	rt := reflect.TypeOf(v)
-	if rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
 		rt = rt.Elem()
 	}
@@ -383,9 +405,15 @@ func GetConfigPath() (string, error) {
 	return filepath.Join(homeDir, ".flow", "config.toml"), nil
 }
 
-// GetDBPath returns the path to the database file.
+// GetDBPath returns the path to the database file. A leading "~" in the data
+// directory is expanded so an unexpanded config (e.g. DefaultConfig() used as
+// a fallback) never creates a literal "~" directory relative to the cwd.
 func GetDBPath(cfg *Config) string {
-	return filepath.Join(cfg.Storage.DataDir, "flow.db")
+	dataDir := cfg.Storage.DataDir
+	if expanded, err := ExpandHome(dataDir); err == nil {
+		dataDir = expanded
+	}
+	return filepath.Join(dataDir, "flow.db")
 }
 
 // setDefaults sets default values for viper.

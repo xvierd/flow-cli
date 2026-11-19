@@ -243,12 +243,18 @@ func (m InlineModel) updatePickMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m InlineModel) selectMode() (tea.Model, tea.Cmd) {
 	selected := modeOptions[m.modeCursor]
-	m.mode = methodology.ForMethodology(selected.methodology, nil)
-	m.presets = m.mode.Presets()
-
+	// Prefer the caller's configured Mode so the picker shows the same
+	// presets the session will actually start with; fall back to the
+	// built-in defaults only when no callback (or no Mode) is provided.
+	var mode methodology.Mode
 	if m.onModeSelected != nil {
-		m.onModeSelected(selected.methodology)
+		mode = m.onModeSelected(selected.methodology)
 	}
+	if mode == nil {
+		mode = methodology.ForMethodology(selected.methodology, nil)
+	}
+	m.mode = mode
+	m.presets = m.mode.Presets()
 
 	// Show onboarding overlay with mode description
 	if m.mode.Description() != "" {

@@ -64,5 +64,5 @@ var addCmd = &cobra.Command{
 }
 
 func init() {
-	addCmd.Flags().StringArrayVarP(&addTags, "tags", "t", []string{}, "Tags for the task")
+	addCmd.Flags().StringSliceVarP(&addTags, "tags", "t", []string{}, "Tags for the task (repeatable or comma-separated)")
 }

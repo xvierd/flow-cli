@@ -117,8 +117,7 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		methodologies := []domain.Methodology{domain.MethodologyPomodoro, domain.MethodologyDeepWork, domain.MethodologyMakeTime}
-		app.methodology = methodologies[modeResult.Index]
-		app.mode = methodology.ForMethodology(app.methodology, app.config)
+		setMethodology(methodologies[modeResult.Index])
 		fmt.Println()
 	}
 
@@ -162,8 +161,7 @@ func runWizard(cmd *cobra.Command, args []string) error {
 					}
 					carryResult := tui.RunPicker(i18n.T("Carry forward yesterday's Highlight?"), carryItems, "", &app.config.Theme)
 					if !carryResult.Aborted && carryResult.Index == 0 {
-						yesterdayHighlight.SetAsHighlight()
-						_ = app.storage.Tasks().Update(ctx, yesterdayHighlight)
+						_, _ = app.tasks.SetHighlight(ctx, yesterdayHighlight.ID)
 					}
 					fmt.Println()
 				}
@@ -185,7 +183,7 @@ func runWizard(cmd *cobra.Command, args []string) error {
 		var footer string
 		if app.methodology == domain.MethodologyPomodoro {
 			footer = i18n.T("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
-				formatMinutes(shortBreak), formatMinutes(longBreak), app.config.Pomodoro.SessionsBeforeLong)
+				formatMinutes(shortBreak), formatMinutes(longBreak), effectiveSessionsBeforeLong(app.config, app.methodology))
 		} else {
 			footer = i18n.T("Break: %s · \"flow config\" to customize", formatMinutes(shortBreak))
 		}
@@ -291,8 +289,7 @@ func runWizard(cmd *cobra.Command, args []string) error {
 
 				// Make Time: set as today's highlight
 				if mode.HasHighlight() {
-					task.SetAsHighlight()
-					if err := tx.Tasks().Update(ctx, task); err != nil {
+					if _, err := app.tasks.SetHighlightWith(ctx, tx, task.ID); err != nil {
 						return err
 					}
 				}
