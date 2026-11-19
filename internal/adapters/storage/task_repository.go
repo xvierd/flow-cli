@@ -29,22 +29,25 @@ func (r *taskRepository) Save(ctx context.Context, task *domain.Task) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.ExecContext(ctx, query,
-		task.ID,
-		task.Title,
-		task.Description,
-		string(task.Status),
-		task.CreatedAt,
-		task.UpdatedAt,
-		task.CompletedAt,
-		task.HighlightDate,
-	)
+	// The row and its tags commit together.
+	return atomically(ctx, r.db, func(ex executor) error {
+		_, err := ex.ExecContext(ctx, query,
+			task.ID,
+			task.Title,
+			task.Description,
+			string(task.Status),
+			task.CreatedAt,
+			task.UpdatedAt,
+			task.CompletedAt,
+			task.HighlightDate,
+		)
 
-	if err != nil {
-		return fmt.Errorf("failed to save task: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("failed to save task: %w", err)
+		}
 
-	return replaceTaskTags(ctx, r.db, task.ID, task.Tags)
+		return replaceTaskTags(ctx, ex, task.ID, task.Tags)
+	})
 }
 
 // FindByID retrieves a task by its unique identifier.
@@ -262,32 +265,36 @@ func (r *taskRepository) Update(ctx context.Context, task *domain.Task) error {
 
 	task.UpdatedAt = time.Now()
 
-	result, err := r.db.ExecContext(ctx, query,
-		task.Title,
-		task.Description,
-		string(task.Status),
-		task.UpdatedAt,
-		task.CompletedAt,
-		task.HighlightDate,
-		task.ID,
-	)
+	// The row and its tags commit together.
+	return atomically(ctx, r.db, func(ex executor) error {
+		result, err := ex.ExecContext(ctx, query,
+			task.Title,
+			task.Description,
+			string(task.Status),
+			task.UpdatedAt,
+			task.CompletedAt,
+			task.HighlightDate,
+			task.ID,
+		)
 
-	if err != nil {
-		return fmt.Errorf("failed to update task: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("failed to update task: %w", err)
+		}
 
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return domain.ErrTaskNotFound
-	}
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			return domain.ErrTaskNotFound
+		}
 
-	return replaceTaskTags(ctx, r.db, task.ID, task.Tags)
+		return replaceTaskTags(ctx, ex, task.ID, task.Tags)
+	})
 }
 
 // CountCompleted returns how many tasks were completed on the given date.
 func (r *taskRepository) CountCompleted(ctx context.Context, date time.Time) (int, error) {
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
-	endOfDay := startOfDay.Add(24 * time.Hour)
+	// Calendar day, not 24h: DST days are 23 or 25 hours long.
+	endOfDay := startOfDay.AddDate(0, 0, 1)
 
 	var count int
 	err := r.db.QueryRowContext(ctx, `
@@ -376,7 +383,8 @@ func (r *taskRepository) FindRecentTasks(ctx context.Context, limit int) ([]*dom
 // FindTodayHighlight returns the task marked as today's highlight, if any.
 func (r *taskRepository) FindTodayHighlight(ctx context.Context, date time.Time) (*domain.Task, error) {
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
-	endOfDay := startOfDay.Add(24 * time.Hour)
+	// Calendar day, not 24h: DST days are 23 or 25 hours long.
+	endOfDay := startOfDay.AddDate(0, 0, 1)
 
 	query := `
 		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
@@ -429,8 +437,9 @@ func (r *taskRepository) FindTodayHighlight(ctx context.Context, date time.Time)
 
 // FindYesterdayHighlight returns yesterday's highlight task if it wasn't completed.
 func (r *taskRepository) FindYesterdayHighlight(ctx context.Context, today time.Time) (*domain.Task, error) {
-	yesterday := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location()).Add(-24 * time.Hour)
-	endOfYesterday := yesterday.Add(24 * time.Hour)
+	// Calendar days, not 24h: DST days are 23 or 25 hours long.
+	endOfYesterday := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	yesterday := endOfYesterday.AddDate(0, 0, -1)
 
 	query := `
 		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date

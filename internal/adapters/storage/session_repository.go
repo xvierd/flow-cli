@@ -47,34 +47,37 @@ func (r *sessionRepository) Save(ctx context.Context, session *domain.PomodoroSe
 		shutdownRitualJSON, _ = json.Marshal(session.ShutdownRitual)
 	}
 
-	_, err := r.db.ExecContext(ctx, query,
-		session.ID,
-		session.TaskID,
-		string(session.Type),
-		string(session.Status),
-		session.Duration.Milliseconds(),
-		session.StartedAt,
-		session.PausedAt,
-		session.CompletedAt,
-		session.GitBranch,
-		session.GitCommit,
-		modified,
-		session.Notes,
-		methodology,
-		session.FocusScore,
-		string(distractionsJSON),
-		session.Accomplishment,
-		session.IntendedOutcome,
-		session.EnergizeActivity,
-		nullableString(shutdownRitualJSON),
-		session.OutcomeAchieved,
-	)
+	// The row and its tags commit together.
+	return atomically(ctx, r.db, func(ex executor) error {
+		_, err := ex.ExecContext(ctx, query,
+			session.ID,
+			session.TaskID,
+			string(session.Type),
+			string(session.Status),
+			session.Duration.Milliseconds(),
+			session.StartedAt,
+			session.PausedAt,
+			session.CompletedAt,
+			session.GitBranch,
+			session.GitCommit,
+			modified,
+			session.Notes,
+			methodology,
+			session.FocusScore,
+			string(distractionsJSON),
+			session.Accomplishment,
+			session.IntendedOutcome,
+			session.EnergizeActivity,
+			nullableString(shutdownRitualJSON),
+			session.OutcomeAchieved,
+		)
 
-	if err != nil {
-		return fmt.Errorf("failed to save session: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("failed to save session: %w", err)
+		}
 
-	return replaceSessionTags(ctx, r.db, session.ID, session.Tags)
+		return replaceSessionTags(ctx, ex, session.ID, session.Tags)
+	})
 }
 
 // nullableString returns a *string from bytes, or nil if empty.
@@ -220,46 +223,50 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 		shutdownRitualJSON, _ = json.Marshal(session.ShutdownRitual)
 	}
 
-	result, err := r.db.ExecContext(ctx, query,
-		session.TaskID,
-		session.Type,
-		session.Status,
-		session.Duration.Milliseconds(),
-		session.StartedAt,
-		session.PausedAt,
-		session.CompletedAt,
-		session.GitBranch,
-		session.GitCommit,
-		modified,
-		session.Notes,
-		methodology,
-		session.FocusScore,
-		string(distractionsJSON),
-		session.Accomplishment,
-		session.IntendedOutcome,
-		session.EnergizeActivity,
-		nullableString(shutdownRitualJSON),
-		session.OutcomeAchieved,
-		session.ID,
-	)
+	// The row and its tags commit together.
+	return atomically(ctx, r.db, func(ex executor) error {
+		result, err := ex.ExecContext(ctx, query,
+			session.TaskID,
+			session.Type,
+			session.Status,
+			session.Duration.Milliseconds(),
+			session.StartedAt,
+			session.PausedAt,
+			session.CompletedAt,
+			session.GitBranch,
+			session.GitCommit,
+			modified,
+			session.Notes,
+			methodology,
+			session.FocusScore,
+			string(distractionsJSON),
+			session.Accomplishment,
+			session.IntendedOutcome,
+			session.EnergizeActivity,
+			nullableString(shutdownRitualJSON),
+			session.OutcomeAchieved,
+			session.ID,
+		)
 
-	if err != nil {
-		return fmt.Errorf("failed to update session: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("failed to update session: %w", err)
+		}
 
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return fmt.Errorf("session not found: %s: %w", session.ID, domain.ErrSessionNotFound)
-	}
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			return fmt.Errorf("session not found: %s: %w", session.ID, domain.ErrSessionNotFound)
+		}
 
-	return replaceSessionTags(ctx, r.db, session.ID, session.Tags)
+		return replaceSessionTags(ctx, ex, session.ID, session.Tags)
+	})
 }
 
 // GetDailyStats returns aggregated session statistics for a specific date.
 // Session data only: TasksCompleted is populated by the service layer.
 func (r *sessionRepository) GetDailyStats(ctx context.Context, date time.Time) (*domain.DailyStats, error) {
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
-	endOfDay := startOfDay.Add(24 * time.Hour)
+	// Calendar day, not 24h: DST days are 23 or 25 hours long.
+	endOfDay := startOfDay.AddDate(0, 0, 1)
 
 	query := `
 		SELECT 
@@ -353,12 +360,19 @@ func (r *sessionRepository) GetPeriodStats(ctx context.Context, start, end time.
 	stats.FocusScoreCount = scoreCount
 
 	// Count distractions (Deep Work sessions).
-	// Distractions are stored as JSON arrays (new format) or newline-separated strings (legacy).
+	// Distractions are stored as JSON arrays (new format), JSON 'null' (no
+	// distractions) or newline-separated strings (legacy, which may start
+	// with '[' without being JSON). The nested CASE keeps json_type and
+	// json_array_length away from invalid JSON, which would raise an error.
 	distractQuery := `
 		SELECT COALESCE(SUM(
 			CASE
-				WHEN distractions IS NULL OR distractions = '' THEN 0
-				WHEN distractions LIKE '[%' THEN json_array_length(distractions)
+				WHEN distractions IS NULL OR distractions = '' OR distractions = 'null' THEN 0
+				WHEN json_valid(distractions) THEN
+					CASE json_type(distractions)
+						WHEN 'array' THEN json_array_length(distractions)
+						ELSE LENGTH(distractions) - LENGTH(REPLACE(distractions, CHAR(10), '')) + 1
+					END
 				ELSE LENGTH(distractions) - LENGTH(REPLACE(distractions, CHAR(10), '')) + 1
 			END
 		), 0)

@@ -7,7 +7,8 @@ import (
 )
 
 // newPreV2DB builds a database in the pre-v2 state: base schema, legacy CSV
-// tag columns, and user_version already at 1.
+// tag columns, and user_version already at 1. Since v3 the one-active index
+// is no longer part of baseSchema, so the fixture has no such index.
 func newPreV2DB(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -72,7 +73,7 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-func TestMigrate_FreshDBGetsVersion2(t *testing.T) {
+func TestMigrate_FreshDBGetsLatestVersion(t *testing.T) {
 	storage, err := NewMemory()
 	if err != nil {
 		t.Fatalf("NewMemory() error = %v", err)
@@ -84,8 +85,8 @@ func TestMigrate_FreshDBGetsVersion2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("userVersion() error = %v", err)
 	}
-	if version != schemaVersionTags {
-		t.Errorf("user_version = %d, want %d", version, schemaVersionTags)
+	if version != schemaVersionLatest {
+		t.Errorf("user_version = %d, want %d", version, schemaVersionLatest)
 	}
 
 	// Tag tables exist and are writable.
@@ -130,8 +131,8 @@ func TestMigrate_PreV2Backfill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("userVersion() error = %v", err)
 	}
-	if version != schemaVersionTags {
-		t.Errorf("user_version = %d, want %d", version, schemaVersionTags)
+	if version != schemaVersionLatest {
+		t.Errorf("user_version = %d, want %d", version, schemaVersionLatest)
 	}
 
 	// Re-running Migrate is a no-op and does not duplicate rows.
@@ -161,8 +162,8 @@ func TestMigrate_PreV1Backfill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("userVersion() error = %v", err)
 	}
-	if version != schemaVersionTags {
-		t.Errorf("user_version = %d, want %d", version, schemaVersionTags)
+	if version != schemaVersionLatest {
+		t.Errorf("user_version = %d, want %d", version, schemaVersionLatest)
 	}
 
 	var oneActive int

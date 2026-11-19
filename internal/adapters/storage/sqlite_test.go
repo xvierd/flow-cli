@@ -295,6 +295,11 @@ func TestSessionRepository_FindActive(t *testing.T) {
 	})
 
 	t.Run("find paused session", func(t *testing.T) {
+		// Only one session may be active (running or paused) at a time.
+		storage, _ := NewMemory()
+		defer func() { _ = storage.Close() }()
+		repo := storage.Sessions()
+
 		session := domain.NewPomodoroSession(config, nil)
 		session.Pause()
 		if err := repo.Save(ctx, session); err != nil {

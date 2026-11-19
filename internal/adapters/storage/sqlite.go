@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/xvierd/flow-cli/internal/ports"
@@ -41,7 +43,7 @@ var _ ports.Storage = (*sqliteStorage)(nil)
 
 // New creates a new SQLite storage instance.
 func New(dbPath string) (ports.Storage, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", dsn(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -51,12 +53,10 @@ func New(dbPath string) (ports.Storage, error) {
 	// pinning one connection must see the same data as plain queries.
 	db.SetMaxOpenConns(1)
 
-	// Enable foreign keys and WAL mode for better performance
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
-		return nil, fmt.Errorf("failed to set WAL mode: %w", err)
+	// Open the first connection now so DSN/pragma errors surface here.
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	storage := &sqliteStorage{
@@ -66,10 +66,36 @@ func New(dbPath string) (ports.Storage, error) {
 	}
 
 	if err := storage.Migrate(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
 	return storage, nil
+}
+
+// dsnParams are applied by the driver to every new connection, so they
+// survive database/sql replacing a pooled connection. busy_timeout makes a
+// second flow process wait for the write lock instead of failing at once;
+// _txlock=immediate takes that lock at BEGIN, so a read-then-write
+// transaction cannot fail with SQLITE_BUSY_SNAPSHOT.
+const dsnParams = "_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_txlock=immediate"
+
+// dsn builds the driver DSN for dbPath. The driver cuts a plain path at its
+// first '?', so a path containing '?' (or already in URI form) is passed as
+// a percent-encoded "file:" URI instead.
+func dsn(dbPath string) string {
+	if strings.HasPrefix(dbPath, "file:") {
+		sep := "?"
+		if strings.Contains(dbPath, "?") {
+			sep = "&"
+		}
+		return dbPath + sep + dsnParams
+	}
+	if strings.Contains(dbPath, "?") {
+		u := url.URL{Path: filepath.ToSlash(dbPath)}
+		return "file:" + u.EscapedPath() + "?" + dsnParams
+	}
+	return dbPath + "?" + dsnParams
 }
 
 // NewMemory creates a new in-memory SQLite storage instance for testing.
@@ -142,12 +168,20 @@ const (
 	schemaVersionBase = 1
 	// schemaVersionTags adds the task_tags/session_tags tables and backfill.
 	schemaVersionTags = 2
+	// schemaVersionOneActive replaces the per-status "one active session"
+	// index with one on a constant, and re-splits comma-joined tags.
+	schemaVersionOneActive = 3
+	// schemaVersionLatest is the newest schema this binary understands.
+	schemaVersionLatest = schemaVersionOneActive
 )
 
-// baseSchema is the version-1 schema. The partial unique index on active
-// sessions stays here so fresh databases get it; unlike the legacy ALTERs,
-// a failure creating it is a hard error (an existing database that already
-// violates the invariant must be fixed manually).
+// errSchemaTooNew is returned by Migrate when the database was migrated by a
+// newer flow binary.
+var errSchemaTooNew = errors.New("database schema is newer than this flow binary; upgrade flow")
+
+// baseSchema is the version-1 schema. The "one active session" index is not
+// part of it: version 3 creates it after demoting surplus active sessions,
+// so a pre-index database that already holds two of them still migrates.
 const baseSchema = `
 	CREATE TABLE IF NOT EXISTS tasks (
 		id TEXT PRIMARY KEY,
@@ -182,11 +216,6 @@ const baseSchema = `
 	CREATE INDEX IF NOT EXISTS idx_sessions_task ON sessions(task_id);
 	CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
 	CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-
-	-- At most one session may be active at a time. Breaks share this table,
-	-- so the partial index also prevents a break from overlapping a work
-	-- session.
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_one_active ON sessions(status) WHERE status IN ('running','paused');
 	`
 
 // baseAlters are the unversioned legacy migrations. They are idempotent by
@@ -235,6 +264,9 @@ func (s *sqliteStorage) Migrate() error {
 	if err != nil {
 		return err
 	}
+	if version > schemaVersionLatest {
+		return fmt.Errorf("%w (database v%d, supported up to v%d)", errSchemaTooNew, version, schemaVersionLatest)
+	}
 
 	if version < schemaVersionBase {
 		if err := s.migrateBase(); err != nil {
@@ -243,6 +275,11 @@ func (s *sqliteStorage) Migrate() error {
 	}
 	if version < schemaVersionTags {
 		if err := s.migrateTags(); err != nil {
+			return err
+		}
+	}
+	if version < schemaVersionOneActive {
+		if err := s.migrateOneActive(); err != nil {
 			return err
 		}
 	}
@@ -316,6 +353,102 @@ func (s *sqliteStorage) migrateTags() error {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit tag migration: %w", err)
+	}
+	return nil
+}
+
+// oneActiveSchema is the version-3 schema step. Surplus active sessions are
+// demoted to cancelled first, keeping the newest (what FindActive returns),
+// so the index can always be created. The index is on a constant, so all
+// active rows share one key: at most one session may be running or paused.
+// Breaks share this table, so it also prevents a break from overlapping a
+// work session.
+const oneActiveSchema = `
+	UPDATE sessions SET status = 'cancelled'
+	WHERE status IN ('running','paused')
+	  AND id != (SELECT id FROM sessions WHERE status IN ('running','paused')
+	             ORDER BY started_at DESC, id DESC LIMIT 1);
+
+	DROP INDEX IF EXISTS idx_sessions_one_active;
+	CREATE UNIQUE INDEX idx_sessions_one_active ON sessions((1)) WHERE status IN ('running','paused');
+	`
+
+// migrateOneActive runs the version-3 schema step and re-splits tags that
+// were stored with commas, in one transaction. Both are safe to re-run.
+func (s *sqliteStorage) migrateOneActive() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin one-active migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
+
+	if _, err := tx.Exec(oneActiveSchema); err != nil {
+		return fmt.Errorf("failed to recreate one-active index: %w", err)
+	}
+
+	if err := resplitTags(tx,
+		"SELECT task_id, tag FROM task_tags WHERE instr(tag, ',') > 0",
+		"DELETE FROM task_tags WHERE task_id = ? AND tag = ?",
+		"INSERT OR IGNORE INTO task_tags (task_id, tag) VALUES (?, ?)"); err != nil {
+		return err
+	}
+	if err := resplitTags(tx,
+		"SELECT session_id, tag FROM session_tags WHERE instr(tag, ',') > 0",
+		"DELETE FROM session_tags WHERE session_id = ? AND tag = ?",
+		"INSERT OR IGNORE INTO session_tags (session_id, tag) VALUES (?, ?)"); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersionOneActive)); err != nil {
+		return fmt.Errorf("failed to set schema version: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit one-active migration: %w", err)
+	}
+	return nil
+}
+
+// resplitTags replaces each tag row containing a comma with its normalized
+// parts, matching how normalizeTags now treats commas.
+func resplitTags(tx *sql.Tx, selectQuery, deleteQuery, insertQuery string) error {
+	rows, err := tx.Query(selectQuery)
+	if err != nil {
+		return fmt.Errorf("failed to read comma tags: %w", err)
+	}
+
+	// Collect first: the single transaction connection cannot run the
+	// writes below while this cursor is still open.
+	type row struct {
+		id  string
+		tag string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.tag); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("failed to scan comma tags: %w", err)
+		}
+		pending = append(pending, r)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("failed to iterate comma tags: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("failed to close rows for comma tags: %w", err)
+	}
+
+	for _, r := range pending {
+		if _, err := tx.Exec(deleteQuery, r.id, r.tag); err != nil {
+			return fmt.Errorf("failed to remove comma tag: %w", err)
+		}
+		for _, tag := range normalizeTags([]string{r.tag}) {
+			if _, err := tx.Exec(insertQuery, r.id, tag); err != nil {
+				return fmt.Errorf("failed to insert split tag: %w", err)
+			}
+		}
 	}
 	return nil
 }
