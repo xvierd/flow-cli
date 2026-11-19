@@ -1,7 +1,7 @@
-# Binary
-flow
-flow-cli
-flow-test
+# Binary (anchored to the repo root so cmd/flow/ sources are not ignored)
+/flow
+/flow-cli
+/flow-test
 
 # IDE
 .idea/
@@ -18,8 +18,8 @@ Thumbs.db
 *.out
 coverage.txt
 
-# Local data
-~/.flow/
+# Local data (a literal "~" dir created when a "~/..." path was not expanded)
+/~/
 *.db
 *.db-shm
 *.db-wal
