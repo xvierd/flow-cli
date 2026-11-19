@@ -5,6 +5,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/ports"
@@ -102,4 +103,62 @@ func (s *TaskService) StartTask(ctx context.Context, id string) error {
 
 	task.Start()
 	return s.storage.Tasks().Update(ctx, task)
+}
+
+// SetHighlight makes the task today's single highlight: any other task
+// highlighted for today is cleared first. Clearing and setting run in one
+// transaction.
+func (s *TaskService) SetHighlight(ctx context.Context, taskID string) (*domain.Task, error) {
+	var task *domain.Task
+	err := s.storage.WithTx(ctx, func(tx ports.Storage) error {
+		var err error
+		task, err = setHighlight(ctx, tx, taskID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return task, nil
+}
+
+// SetHighlightWith is SetHighlight without its own transaction: it runs
+// against the given storage, which may be transaction-scoped, so callers can
+// compose it into a larger WithTx transaction.
+func (s *TaskService) SetHighlightWith(ctx context.Context, storage ports.Storage, taskID string) (*domain.Task, error) {
+	return setHighlight(ctx, storage, taskID)
+}
+
+// setHighlight clears every highlight for today (the target included) and
+// then marks the target task as today's highlight, against the given storage.
+func setHighlight(ctx context.Context, storage ports.Storage, taskID string) (*domain.Task, error) {
+	task, err := storage.Tasks().FindByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	cleared := make(map[string]bool)
+	for {
+		prev, err := storage.Tasks().FindTodayHighlight(ctx, now)
+		if err != nil {
+			return nil, err
+		}
+		if prev == nil {
+			break
+		}
+		if cleared[prev.ID] {
+			return nil, fmt.Errorf("failed to clear highlight of task %s", prev.ID)
+		}
+		cleared[prev.ID] = true
+		prev.HighlightDate = nil
+		if err := storage.Tasks().Update(ctx, prev); err != nil {
+			return nil, err
+		}
+	}
+
+	task.SetAsHighlight()
+	if err := storage.Tasks().Update(ctx, task); err != nil {
+		return nil, err
+	}
+	return task, nil
 }

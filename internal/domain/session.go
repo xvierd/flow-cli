@@ -99,12 +99,15 @@ func NewPomodoroSession(config PomodoroConfig, taskID *string) *PomodoroSession 
 	}
 }
 
-// NewBreakSession creates a new break session.
+// NewBreakSession creates a new break session. sessionCount is the number of
+// completed work sessions so far; a long break is due only after a positive
+// multiple of SessionsBeforeLong (never before any work, and never when
+// SessionsBeforeLong is not positive).
 func NewBreakSession(config PomodoroConfig, sessionCount int) *PomodoroSession {
 	duration := config.ShortBreakDuration
 	sessionType := SessionTypeShortBreak
 
-	if sessionCount%config.SessionsBeforeLong == 0 {
+	if config.SessionsBeforeLong > 0 && sessionCount > 0 && sessionCount%config.SessionsBeforeLong == 0 {
 		duration = config.LongBreakDuration
 		sessionType = SessionTypeLongBreak
 	}
@@ -140,10 +143,12 @@ func (s *PomodoroSession) Resume() {
 	s.Status = SessionStatusRunning
 }
 
-// Complete marks the session as finished.
+// Complete marks the session as finished. A completed session is no longer
+// paused, so PausedAt is cleared.
 func (s *PomodoroSession) Complete() {
 	now := time.Now()
 	s.CompletedAt = &now
+	s.PausedAt = nil
 	s.Status = SessionStatusCompleted
 }
 

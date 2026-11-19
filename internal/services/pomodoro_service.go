@@ -27,9 +27,32 @@ func NewPomodoroService(storage ports.Storage, gitDetector ports.GitDetector) *P
 	}
 }
 
-// SetConfig updates the pomodoro configuration.
+// SetConfig updates the pomodoro configuration. A non-positive
+// SessionsBeforeLong is replaced by the default cadence.
 func (s *PomodoroService) SetConfig(config domain.PomodoroConfig) {
+	if config.SessionsBeforeLong < 1 {
+		config.SessionsBeforeLong = domain.DefaultPomodoroConfig().SessionsBeforeLong
+	}
 	s.config = config
+}
+
+// findActiveSession returns the active (running or paused) session from the
+// given storage, which may be transaction-scoped. A running session whose
+// timer has already expired is completed and persisted first, and nil is
+// returned for it: an expired session must not block starting new work.
+func findActiveSession(ctx context.Context, storage ports.Storage) (*domain.PomodoroSession, error) {
+	session, err := storage.Sessions().FindActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if session != nil && session.Status == domain.SessionStatusRunning && session.RemainingTime() == 0 {
+		session.Complete()
+		if err := storage.Sessions().Update(ctx, session); err != nil {
+			return nil, fmt.Errorf("failed to complete expired session: %w", err)
+		}
+		return nil, nil
+	}
+	return session, nil
 }
 
 // SetStrictMode toggles focus strict mode. When enabled, active work sessions
@@ -84,7 +107,7 @@ func (s *PomodoroService) StartPomodoroWith(ctx context.Context, storage ports.S
 // startPomodoro implements StartPomodoro against the given storage.
 func (s *PomodoroService) startPomodoro(ctx context.Context, storage ports.Storage, req StartPomodoroRequest) (*domain.PomodoroSession, error) {
 	// Check if there's already an active session
-	active, err := storage.Sessions().FindActive(ctx)
+	active, err := findActiveSession(ctx, storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check active sessions: %w", err)
 	}
@@ -148,7 +171,7 @@ func isUniqueConstraintError(err error) bool {
 // StartBreak begins a new break session.
 func (s *PomodoroService) StartBreak(ctx context.Context, workingDir string) (*domain.PomodoroSession, error) {
 	// Check if there's already an active session
-	active, err := s.storage.Sessions().FindActive(ctx)
+	active, err := findActiveSession(ctx, s.storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check active sessions: %w", err)
 	}
@@ -165,6 +188,10 @@ func (s *PomodoroService) StartBreak(ctx context.Context, workingDir string) (*d
 	session := domain.NewBreakSession(s.config, stats.WorkSessions)
 
 	if err := s.storage.Sessions().Save(ctx, session); err != nil {
+		// Another process started a session between the check and the insert.
+		if isUniqueConstraintError(err) {
+			return nil, domain.ErrSessionAlreadyActive
+		}
 		return nil, fmt.Errorf("failed to save break session: %w", err)
 	}
 
@@ -173,7 +200,7 @@ func (s *PomodoroService) StartBreak(ctx context.Context, workingDir string) (*d
 
 // PauseSession pauses the active session.
 func (s *PomodoroService) PauseSession(ctx context.Context) (*domain.PomodoroSession, error) {
-	session, err := s.storage.Sessions().FindActive(ctx)
+	session, err := findActiveSession(ctx, s.storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find active session: %w", err)
 	}
@@ -229,9 +256,14 @@ func (s *PomodoroService) StopSession(ctx context.Context) (*domain.PomodoroSess
 		return nil, err
 	}
 
-	// Record actual elapsed time if session was stopped early (minimum 1s to filter test/immediate stops)
-	elapsed := time.Since(session.StartedAt)
-	if elapsed >= time.Second && elapsed < session.Duration {
+	// Record the actual worked time if the session was stopped early. The
+	// elapsed time is pause-aware: wall time spent paused is not work. It is
+	// read before Complete(), which clears PausedAt.
+	elapsed := session.ElapsedTime()
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	if elapsed < session.Duration {
 		session.Duration = elapsed
 	}
 	session.Complete()

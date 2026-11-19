@@ -130,10 +130,14 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 	}
 
 	highlightDays := 0
+	highlightHits := 0 // highlight days that also have completed work
 	for d := start; d.Before(end); d = d.AddDate(0, 0, 1) {
 		hl, err := s.storage.Tasks().FindTodayHighlight(ctx, d)
 		if err == nil && hl != nil {
 			highlightDays++
+			if workDays[d.Format("2006-01-02")] {
+				highlightHits++
+			}
 			for i := range report.Daily {
 				if report.Daily[i].Date == d.Format("2006-01-02") {
 					report.Daily[i].HasHighlight = true
@@ -144,7 +148,7 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 	}
 	report.Summary.HighlightDays = highlightDays
 	if len(workDays) > 0 {
-		report.Summary.HighlightHitRate = float64(highlightDays) / float64(len(workDays))
+		report.Summary.HighlightHitRate = float64(highlightHits) / float64(len(workDays))
 	}
 
 	report.Streaks = computeStreaks(streakDays, ref)

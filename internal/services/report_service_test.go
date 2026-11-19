@@ -482,3 +482,51 @@ func TestReportService_HighlightHitRate(t *testing.T) {
 		t.Errorf("HighlightHitRate = %f, want 1.0", report.Summary.HighlightHitRate)
 	}
 }
+
+func TestReportService_HighlightHitRate_OnlyDaysWithWork(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	start := time.Date(2026, time.November, 9, 0, 0, 0, 0, time.Local) // Monday
+	end := start.AddDate(0, 0, 7)
+	day := func(i int) time.Time { return start.AddDate(0, 0, i) }
+
+	// Highlights on Mon, Tue, Wed; completed work only on Wed and Fri.
+	for i := 0; i < 3; i++ {
+		task, _ := domain.NewTask(fmt.Sprintf("highlight %d", i))
+		hd := day(i)
+		task.HighlightDate = &hd
+		if err := store.Tasks().Save(ctx, task); err != nil {
+			t.Fatalf("Save() task error = %v", err)
+		}
+	}
+	for _, i := range []int{2, 4} {
+		started := day(i).Add(10 * time.Hour)
+		completed := started.Add(25 * time.Minute)
+		s := &domain.PomodoroSession{
+			ID:          fmt.Sprintf("w%d", i),
+			Type:        domain.SessionTypeWork,
+			Status:      domain.SessionStatusCompleted,
+			Duration:    25 * time.Minute,
+			StartedAt:   started,
+			CompletedAt: &completed,
+			Methodology: domain.MethodologyMakeTime,
+		}
+		if err := store.Sessions().Save(ctx, s); err != nil {
+			t.Fatalf("Save() session error = %v", err)
+		}
+	}
+
+	report, err := NewReportService(store).GetReportForRange(ctx, ReportPeriodWeek, start, end, end)
+	if err != nil {
+		t.Fatalf("GetReportForRange() error = %v", err)
+	}
+	if report.Summary.HighlightDays != 3 {
+		t.Errorf("HighlightDays = %d, want 3", report.Summary.HighlightDays)
+	}
+	// One of the two work days (Wed) had a highlight.
+	if report.Summary.HighlightHitRate != 0.5 {
+		t.Errorf("HighlightHitRate = %f, want 0.5", report.Summary.HighlightHitRate)
+	}
+}

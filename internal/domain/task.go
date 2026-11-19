@@ -92,9 +92,11 @@ func validateTaskTitle(title string) error {
 	return nil
 }
 
-// Start marks the task as in progress.
+// Start marks the task as in progress. Reopening a completed task clears its
+// completion timestamp.
 func (t *Task) Start() {
 	t.Status = StatusInProgress
+	t.CompletedAt = nil
 	t.UpdatedAt = time.Now()
 }
 

@@ -10,7 +10,10 @@ import (
 type CurrentState struct {
 	ActiveTask    *Task
 	ActiveSession *PomodoroSession
-	TodayStats    DailyStats
+	// TodayHighlight is today's Make Time highlight, independent of whether
+	// a session is running. Nil when none is set.
+	TodayHighlight *Task
+	TodayStats     DailyStats
 }
 
 // DailyStats aggregates pomodoro statistics for a day.

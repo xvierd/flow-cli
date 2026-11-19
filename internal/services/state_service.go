@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -26,15 +28,24 @@ func NewStateService(storage ports.Storage, taskService *TaskService, pomodoroSv
 }
 
 // GetCurrentState implements ports.MCPStateProvider.
+// An expired running session is auto-completed and not reported as active.
+// ActiveTask is the active session's task; it is nil when there is no active
+// session or the session has no (longer an existing) task.
 func (s *StateService) GetCurrentState(ctx context.Context) (*domain.CurrentState, error) {
-	activeTask, _ := s.storage.Tasks().FindActive(ctx)
-	activeSession, _ := s.storage.Sessions().FindActive(ctx)
+	activeSession, err := findActiveSession(ctx, s.storage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find active session: %w", err)
+	}
 
-	// Auto-complete expired sessions that are still marked as running
-	if activeSession != nil && activeSession.Status == domain.SessionStatusRunning && activeSession.RemainingTime() == 0 {
-		activeSession.Complete()
-		_ = s.storage.Sessions().Update(ctx, activeSession)
-		activeSession = nil
+	var activeTask *domain.Task
+	if activeSession != nil && activeSession.TaskID != nil {
+		activeTask, err = s.storage.Tasks().FindByID(ctx, *activeSession.TaskID)
+		if err != nil {
+			if !errors.Is(err, domain.ErrTaskNotFound) {
+				return nil, fmt.Errorf("failed to find active task: %w", err)
+			}
+			activeTask = nil
+		}
 	}
 
 	todayStats, err := s.dailyStats(ctx, time.Now())
@@ -42,10 +53,17 @@ func (s *StateService) GetCurrentState(ctx context.Context) (*domain.CurrentStat
 		todayStats = &domain.DailyStats{}
 	}
 
+	// Best effort: a failed highlight lookup must not hide the session state.
+	todayHighlight, err := s.storage.Tasks().FindTodayHighlight(ctx, time.Now())
+	if err != nil {
+		todayHighlight = nil
+	}
+
 	return &domain.CurrentState{
-		ActiveTask:    activeTask,
-		ActiveSession: activeSession,
-		TodayStats:    *todayStats,
+		ActiveTask:     activeTask,
+		ActiveSession:  activeSession,
+		TodayHighlight: todayHighlight,
+		TodayStats:     *todayStats,
 	}, nil
 }
 
@@ -103,6 +121,11 @@ func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionR
 			matches, err := tx.Tasks().FindByTitle(ctx, strings.TrimSpace(req.TaskTitle))
 			if err == nil {
 				for _, m := range matches {
+					// Finished tasks are never reopened by title: new work
+					// with the same title gets a new task.
+					if m.Status == domain.StatusCompleted || m.Status == domain.StatusCancelled {
+						continue
+					}
 					if strings.EqualFold(m.Title, strings.TrimSpace(req.TaskTitle)) {
 						id := m.ID
 						req.TaskID = &id
@@ -306,13 +329,15 @@ func (s *StateService) GetTodayHighlight(ctx context.Context) (*domain.Task, err
 }
 
 // SetHighlight implements ports.MCPStateProvider.
+// It makes the task today's only highlight (see TaskService.SetHighlight).
 func (s *StateService) SetHighlight(ctx context.Context, taskID string) (*domain.Task, error) {
-	task, err := s.storage.Tasks().FindByID(ctx, taskID)
+	var task *domain.Task
+	err := s.storage.WithTx(ctx, func(tx ports.Storage) error {
+		var err error
+		task, err = setHighlight(ctx, tx, taskID)
+		return err
+	})
 	if err != nil {
-		return nil, err
-	}
-	task.SetAsHighlight()
-	if err := s.storage.Tasks().Update(ctx, task); err != nil {
 		return nil, err
 	}
 	return task, nil

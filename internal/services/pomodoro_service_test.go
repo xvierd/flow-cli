@@ -563,7 +563,7 @@ func TestPomodoroService_StopSession_ClipsDuration(t *testing.T) {
 	service := NewPomodoroService(store, nil)
 	ctx := context.Background()
 
-	t.Run("immediate stop keeps configured duration", func(t *testing.T) {
+	t.Run("immediate stop records elapsed time, not the configured duration", func(t *testing.T) {
 		clearSessions(t, store, ctx)
 		session, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: time.Hour})
 		if err != nil {
@@ -577,8 +577,8 @@ func TestPomodoroService_StopSession_ClipsDuration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("StopSession() error = %v", err)
 		}
-		if stopped.Duration != time.Hour {
-			t.Errorf("StopSession() duration = %v, want unchanged 1h", stopped.Duration)
+		if stopped.Duration >= time.Second {
+			t.Errorf("StopSession() duration = %v, want the sub-second elapsed time", stopped.Duration)
 		}
 	})
 
@@ -688,4 +688,199 @@ func TestPomodoroService_AddSessionNotes(t *testing.T) {
 	if found.Notes != "take nothing for granted" {
 		t.Errorf("notes = %q, want 'take nothing for granted'", found.Notes)
 	}
+}
+
+func TestPomodoroService_StopSession_WhilePaused(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: 25 * time.Minute})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+	// Worked 2 minutes, then paused 40 minutes ago.
+	session.StartedAt = time.Now().Add(-42 * time.Minute)
+	pausedAt := session.StartedAt.Add(2 * time.Minute)
+	session.PausedAt = &pausedAt
+	session.Status = domain.SessionStatusPaused
+	if err := store.Sessions().Update(ctx, session); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	stopped, err := service.StopSession(ctx)
+	if err != nil {
+		t.Fatalf("StopSession() error = %v", err)
+	}
+	if stopped.Duration != 2*time.Minute {
+		t.Errorf("StopSession() duration = %v, want 2m (paused time is not work)", stopped.Duration)
+	}
+
+	saved, err := store.Sessions().FindByID(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("FindByID() error = %v", err)
+	}
+	if saved.Status != domain.SessionStatusCompleted {
+		t.Errorf("saved status = %v, want completed", saved.Status)
+	}
+	if saved.Duration != 2*time.Minute {
+		t.Errorf("saved duration = %v, want 2m", saved.Duration)
+	}
+	if saved.PausedAt != nil {
+		t.Errorf("saved PausedAt = %v, want nil on a completed session", saved.PausedAt)
+	}
+}
+
+func TestPomodoroService_StrictMode_PausedUsesWorkedTime(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: 25 * time.Minute})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+	// Wall time since start exceeds the duration, but only 2m were worked.
+	session.StartedAt = time.Now().Add(-42 * time.Minute)
+	pausedAt := session.StartedAt.Add(2 * time.Minute)
+	session.PausedAt = &pausedAt
+	session.Status = domain.SessionStatusPaused
+	if err := store.Sessions().Update(ctx, session); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	service.SetStrictMode(true)
+	if _, err := service.StopSession(ctx); err != domain.ErrStrictFocusBlocked {
+		t.Errorf("StopSession() error = %v, want ErrStrictFocusBlocked (23m of work remain)", err)
+	}
+}
+
+func TestPomodoroService_StartBreak_NoWorkYetIsShort(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	session, err := service.StartBreak(ctx, "")
+	if err != nil {
+		t.Fatalf("StartBreak() error = %v", err)
+	}
+	if session.Type != domain.SessionTypeShortBreak {
+		t.Errorf("StartBreak() type = %v, want short_break with 0 completed sessions", session.Type)
+	}
+}
+
+func TestPomodoroService_SetConfig_ClampsSessionsBeforeLong(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	cfg := domain.DefaultPomodoroConfig()
+	cfg.SessionsBeforeLong = 0
+	service.SetConfig(cfg)
+	if got := service.config.SessionsBeforeLong; got != 4 {
+		t.Errorf("SessionsBeforeLong = %d, want clamped to 4", got)
+	}
+
+	// Four completed work sessions today: the 4-session cadence gives a long break.
+	for i := 0; i < 4; i++ {
+		s := domain.NewPomodoroSession(cfg, nil)
+		s.Complete()
+		if err := store.Sessions().Save(ctx, s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+	session, err := service.StartBreak(ctx, "")
+	if err != nil {
+		t.Fatalf("StartBreak() error = %v", err)
+	}
+	if session.Type != domain.SessionTypeLongBreak {
+		t.Errorf("StartBreak() type = %v, want long_break after 4 sessions", session.Type)
+	}
+}
+
+// startExpiredSession starts a work session and backdates it so its timer
+// has fully elapsed while it is still marked as running.
+func startExpiredSession(t *testing.T, service *PomodoroService, store ports.Storage, ctx context.Context) *domain.PomodoroSession {
+	t.Helper()
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{Duration: 25 * time.Minute})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+	session.StartedAt = time.Now().Add(-3 * time.Hour)
+	if err := store.Sessions().Update(ctx, session); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	return session
+}
+
+func assertCompleted(t *testing.T, store ports.Storage, ctx context.Context, id string) {
+	t.Helper()
+	got, err := store.Sessions().FindByID(ctx, id)
+	if err != nil {
+		t.Fatalf("FindByID() error = %v", err)
+	}
+	if got.Status != domain.SessionStatusCompleted {
+		t.Errorf("expired session status = %v, want completed", got.Status)
+	}
+}
+
+func TestPomodoroService_ExpiredSessionDoesNotBlock(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("start pomodoro", func(t *testing.T) {
+		store, cleanup := setupTestStorage(t)
+		defer cleanup()
+		service := NewPomodoroService(store, nil)
+		expired := startExpiredSession(t, service, store, ctx)
+
+		if _, err := service.StartPomodoro(ctx, StartPomodoroRequest{}); err != nil {
+			t.Fatalf("StartPomodoro() error = %v, want nil after the previous timer expired", err)
+		}
+		assertCompleted(t, store, ctx, expired.ID)
+	})
+
+	t.Run("start break", func(t *testing.T) {
+		store, cleanup := setupTestStorage(t)
+		defer cleanup()
+		service := NewPomodoroService(store, nil)
+		expired := startExpiredSession(t, service, store, ctx)
+
+		if _, err := service.StartBreak(ctx, ""); err != nil {
+			t.Fatalf("StartBreak() error = %v, want nil after the previous timer expired", err)
+		}
+		assertCompleted(t, store, ctx, expired.ID)
+	})
+
+	t.Run("pause", func(t *testing.T) {
+		store, cleanup := setupTestStorage(t)
+		defer cleanup()
+		service := NewPomodoroService(store, nil)
+		expired := startExpiredSession(t, service, store, ctx)
+
+		if _, err := service.PauseSession(ctx); err != domain.ErrNoActiveSession {
+			t.Errorf("PauseSession() error = %v, want ErrNoActiveSession for an expired session", err)
+		}
+		assertCompleted(t, store, ctx, expired.ID)
+	})
+
+	t.Run("state start session", func(t *testing.T) {
+		store, cleanup := setupTestStorage(t)
+		defer cleanup()
+		service := NewPomodoroService(store, nil)
+		state := NewStateService(store, NewTaskService(store), service)
+		expired := startExpiredSession(t, service, store, ctx)
+
+		if _, err := state.StartSession(ctx, ports.StartSessionRequest{TaskTitle: "next"}); err != nil {
+			t.Fatalf("StartSession() error = %v, want nil after the previous timer expired", err)
+		}
+		assertCompleted(t, store, ctx, expired.ID)
+	})
 }

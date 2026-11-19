@@ -6,6 +6,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -466,6 +467,17 @@ func TestState_Highlight(t *testing.T) {
 		if got == nil || got.ID != task.ID {
 			t.Errorf("GetTodayHighlight() = %v, want task %s", got, task.ID)
 		}
+		// The idle state (no session) must still expose today's highlight.
+		state, err := svc.GetCurrentState(ctx)
+		if err != nil {
+			t.Fatalf("GetCurrentState() error = %v", err)
+		}
+		if state.ActiveTask != nil {
+			t.Errorf("ActiveTask = %v, want nil when idle", state.ActiveTask)
+		}
+		if state.TodayHighlight == nil || state.TodayHighlight.ID != task.ID {
+			t.Errorf("TodayHighlight = %v, want task %s", state.TodayHighlight, task.ID)
+		}
 	})
 }
 
@@ -577,4 +589,235 @@ func TestState_GetDailySummary_TasksCompleted(t *testing.T) {
 	if stats.TasksCompleted != 2 {
 		t.Errorf("TasksCompleted = %d, want 2", stats.TasksCompleted)
 	}
+}
+
+// failingSessions wraps a SessionRepository and injects errors.
+type failingSessions struct {
+	ports.SessionRepository
+	findActiveErr error
+	updateErr     error
+}
+
+func (f *failingSessions) FindActive(ctx context.Context) (*domain.PomodoroSession, error) {
+	if f.findActiveErr != nil {
+		return nil, f.findActiveErr
+	}
+	return f.SessionRepository.FindActive(ctx)
+}
+
+func (f *failingSessions) Update(ctx context.Context, s *domain.PomodoroSession) error {
+	if f.updateErr != nil {
+		return f.updateErr
+	}
+	return f.SessionRepository.Update(ctx, s)
+}
+
+// failingStorage wraps a Storage so its session repository can fail.
+type failingStorage struct {
+	ports.Storage
+	sessions *failingSessions
+}
+
+func (f *failingStorage) Sessions() ports.SessionRepository { return f.sessions }
+
+func TestStateService_GetCurrentState_PropagatesErrors(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("boom")
+
+	t.Run("active session lookup fails", func(t *testing.T) {
+		store, cleanup := setupTestStorage(t)
+		defer cleanup()
+		fs := &failingStorage{Storage: store, sessions: &failingSessions{SessionRepository: store.Sessions(), findActiveErr: boom}}
+		svc := NewStateService(fs, NewTaskService(fs), NewPomodoroService(fs, nil))
+
+		state, err := svc.GetCurrentState(ctx)
+		if !errors.Is(err, boom) {
+			t.Fatalf("GetCurrentState() error = %v, want wrapped boom", err)
+		}
+		if state != nil {
+			t.Errorf("GetCurrentState() state = %+v, want nil on error", state)
+		}
+	})
+
+	t.Run("auto-complete update fails", func(t *testing.T) {
+		store, cleanup := setupTestStorage(t)
+		defer cleanup()
+		pom := NewPomodoroService(store, nil)
+		startExpiredSession(t, pom, store, ctx)
+
+		fs := &failingStorage{Storage: store, sessions: &failingSessions{SessionRepository: store.Sessions(), updateErr: boom}}
+		svc := NewStateService(fs, NewTaskService(fs), NewPomodoroService(fs, nil))
+
+		if _, err := svc.GetCurrentState(ctx); !errors.Is(err, boom) {
+			t.Fatalf("GetCurrentState() error = %v, want wrapped boom", err)
+		}
+	})
+}
+
+func TestStateService_GetCurrentState_ActiveTaskFromSession(t *testing.T) {
+	svc, store, taskSvc, pomSvc := newStateWithServices(t)
+	ctx := context.Background()
+
+	taskA, _ := taskSvc.AddTask(ctx, AddTaskRequest{Title: "Task A"})
+	taskB, _ := taskSvc.AddTask(ctx, AddTaskRequest{Title: "Task B"})
+
+	// Work on A, then stop: A stays in_progress but no session is active.
+	if _, err := pomSvc.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &taskA.ID}); err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+	if _, err := pomSvc.StopSession(ctx); err != nil {
+		t.Fatalf("StopSession() error = %v", err)
+	}
+
+	t.Run("no session means no active task", func(t *testing.T) {
+		state, err := svc.GetCurrentState(ctx)
+		if err != nil {
+			t.Fatalf("GetCurrentState() error = %v", err)
+		}
+		if state.ActiveTask != nil {
+			t.Errorf("ActiveTask = %q, want nil without an active session", state.ActiveTask.Title)
+		}
+	})
+
+	t.Run("task-less session has no active task", func(t *testing.T) {
+		if _, err := pomSvc.StartPomodoro(ctx, StartPomodoroRequest{}); err != nil {
+			t.Fatalf("StartPomodoro() error = %v", err)
+		}
+		state, err := svc.GetCurrentState(ctx)
+		if err != nil {
+			t.Fatalf("GetCurrentState() error = %v", err)
+		}
+		if state.ActiveSession == nil {
+			t.Fatal("ActiveSession = nil, want the running session")
+		}
+		if state.ActiveTask != nil {
+			t.Errorf("ActiveTask = %q, want nil for a task-less session", state.ActiveTask.Title)
+		}
+		clearSessions(t, store, ctx)
+	})
+
+	t.Run("active task is the session's task", func(t *testing.T) {
+		if _, err := pomSvc.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &taskB.ID}); err != nil {
+			t.Fatalf("StartPomodoro() error = %v", err)
+		}
+		// Touch A afterwards so it is the most recently updated in_progress task.
+		if err := taskSvc.StartTask(ctx, taskA.ID); err != nil {
+			t.Fatalf("StartTask() error = %v", err)
+		}
+		state, err := svc.GetCurrentState(ctx)
+		if err != nil {
+			t.Fatalf("GetCurrentState() error = %v", err)
+		}
+		if state.ActiveTask == nil || state.ActiveTask.ID != taskB.ID {
+			t.Errorf("ActiveTask = %v, want Task B (the session's task)", state.ActiveTask)
+		}
+	})
+}
+
+func TestState_StartSession_DoesNotReopenFinishedTask(t *testing.T) {
+	ctx := context.Background()
+
+	for _, status := range []domain.TaskStatus{domain.StatusCompleted, domain.StatusCancelled} {
+		t.Run(string(status), func(t *testing.T) {
+			svc, store, taskSvc, _ := newStateWithServices(t)
+			old, _ := taskSvc.AddTask(ctx, AddTaskRequest{Title: "Write report"})
+			if status == domain.StatusCompleted {
+				old.Complete()
+			} else {
+				old.Cancel()
+			}
+			if err := store.Tasks().Update(ctx, old); err != nil {
+				t.Fatalf("Update() error = %v", err)
+			}
+
+			session, err := svc.StartSession(ctx, ports.StartSessionRequest{TaskTitle: "write report"})
+			if err != nil {
+				t.Fatalf("StartSession() error = %v", err)
+			}
+			if session.TaskID == nil || *session.TaskID == old.ID {
+				t.Fatalf("session TaskID = %v, want a new task, not %s", session.TaskID, old.ID)
+			}
+			got, _ := store.Tasks().FindByID(ctx, old.ID)
+			if got.Status != status {
+				t.Errorf("old task status = %v, want unchanged %v", got.Status, status)
+			}
+		})
+	}
+
+	t.Run("pending task is reused", func(t *testing.T) {
+		svc, _, taskSvc, _ := newStateWithServices(t)
+		task, _ := taskSvc.AddTask(ctx, AddTaskRequest{Title: "Write report"})
+		session, err := svc.StartSession(ctx, ports.StartSessionRequest{TaskTitle: "Write Report"})
+		if err != nil {
+			t.Fatalf("StartSession() error = %v", err)
+		}
+		if session.TaskID == nil || *session.TaskID != task.ID {
+			t.Errorf("session TaskID = %v, want reused %s", session.TaskID, task.ID)
+		}
+	})
+}
+
+func TestState_SetHighlight_Exclusive(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("new highlight clears the previous one", func(t *testing.T) {
+		svc, store, taskSvc, pomSvc := newStateWithServices(t)
+		a, _ := taskSvc.AddTask(ctx, AddTaskRequest{Title: "A"})
+		b, _ := taskSvc.AddTask(ctx, AddTaskRequest{Title: "B"})
+
+		if _, err := svc.SetHighlight(ctx, a.ID); err != nil {
+			t.Fatalf("SetHighlight(A) error = %v", err)
+		}
+		if _, err := svc.SetHighlight(ctx, b.ID); err != nil {
+			t.Fatalf("SetHighlight(B) error = %v", err)
+		}
+		// Touch A afterwards: it must not become the highlight again.
+		if _, err := pomSvc.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &a.ID}); err != nil {
+			t.Fatalf("StartPomodoro() error = %v", err)
+		}
+
+		hl, err := svc.GetTodayHighlight(ctx)
+		if err != nil {
+			t.Fatalf("GetTodayHighlight() error = %v", err)
+		}
+		if hl == nil || hl.ID != b.ID {
+			t.Errorf("GetTodayHighlight() = %v, want B", hl)
+		}
+		gotA, _ := store.Tasks().FindByID(ctx, a.ID)
+		if gotA.HighlightDate != nil {
+			t.Errorf("A.HighlightDate = %v, want nil", gotA.HighlightDate)
+		}
+	})
+
+	t.Run("re-highlighting the newest clears older ones", func(t *testing.T) {
+		svc, store, taskSvc, _ := newStateWithServices(t)
+		a, _ := taskSvc.AddTask(ctx, AddTaskRequest{Title: "A"})
+		b, _ := taskSvc.AddTask(ctx, AddTaskRequest{Title: "B"})
+		// Legacy state: both highlighted today, B updated last.
+		for _, task := range []*domain.Task{a, b} {
+			task.SetAsHighlight()
+			if err := store.Tasks().Update(ctx, task); err != nil {
+				t.Fatalf("Update() error = %v", err)
+			}
+		}
+
+		if _, err := svc.SetHighlight(ctx, b.ID); err != nil {
+			t.Fatalf("SetHighlight(B) error = %v", err)
+		}
+		gotA, _ := store.Tasks().FindByID(ctx, a.ID)
+		if gotA.HighlightDate != nil {
+			t.Errorf("A.HighlightDate = %v, want nil", gotA.HighlightDate)
+		}
+		gotB, _ := store.Tasks().FindByID(ctx, b.ID)
+		if !gotB.IsTodayHighlight() {
+			t.Error("B should be today's highlight")
+		}
+	})
+
+	t.Run("unknown task", func(t *testing.T) {
+		svc, _, _, _ := newStateWithServices(t)
+		if _, err := svc.SetHighlight(ctx, "missing"); !errors.Is(err, domain.ErrTaskNotFound) {
+			t.Errorf("SetHighlight() error = %v, want ErrTaskNotFound", err)
+		}
+	})
 }

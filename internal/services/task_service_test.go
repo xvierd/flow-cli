@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/xvierd/flow-cli/internal/adapters/storage"
 	"github.com/xvierd/flow-cli/internal/domain"
@@ -182,5 +183,41 @@ func TestTaskService_StartTask(t *testing.T) {
 	started, _ := service.GetTask(ctx, task.ID)
 	if started.Status != domain.StatusInProgress {
 		t.Errorf("StartTask() status = %v, want in_progress", started.Status)
+	}
+}
+
+func TestTaskService_SetHighlightWith_InTx(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewTaskService(store)
+	ctx := context.Background()
+
+	a, _ := service.AddTask(ctx, AddTaskRequest{Title: "A"})
+	if _, err := service.SetHighlight(ctx, a.ID); err != nil {
+		t.Fatalf("SetHighlight(A) error = %v", err)
+	}
+
+	var b *domain.Task
+	err := store.WithTx(ctx, func(tx ports.Storage) error {
+		var err error
+		b, err = service.AddTaskWith(ctx, tx, AddTaskRequest{Title: "B"})
+		if err != nil {
+			return err
+		}
+		_, err = service.SetHighlightWith(ctx, tx, b.ID)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("WithTx() error = %v", err)
+	}
+
+	hl, err := store.Tasks().FindTodayHighlight(ctx, time.Now())
+	if err != nil || hl == nil || hl.ID != b.ID {
+		t.Fatalf("FindTodayHighlight() = %v, %v; want B", hl, err)
+	}
+	gotA, _ := store.Tasks().FindByID(ctx, a.ID)
+	if gotA.HighlightDate != nil {
+		t.Errorf("A.HighlightDate = %v, want nil", gotA.HighlightDate)
 	}
 }

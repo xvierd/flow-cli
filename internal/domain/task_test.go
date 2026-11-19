@@ -90,6 +90,20 @@ func TestTask_Start(t *testing.T) {
 	}
 }
 
+func TestTask_StartClearsCompletedAt(t *testing.T) {
+	task, _ := NewTask("Reopened task")
+	task.Complete()
+
+	task.Start()
+
+	if task.Status != StatusInProgress {
+		t.Errorf("Start() status = %v, want %v", task.Status, StatusInProgress)
+	}
+	if task.CompletedAt != nil {
+		t.Errorf("Start() CompletedAt = %v, want nil", task.CompletedAt)
+	}
+}
+
 func TestTask_Complete(t *testing.T) {
 	task, _ := NewTask("Test task")
 

@@ -84,6 +84,47 @@ func TestNewBreakSession_LongBreak(t *testing.T) {
 	}
 }
 
+func TestNewBreakSession_ZeroSessionsIsShort(t *testing.T) {
+	config := DefaultPomodoroConfig()
+
+	session := NewBreakSession(config, 0)
+
+	if session.Type != SessionTypeShortBreak {
+		t.Errorf("Type = %v, want %v (no work done yet)", session.Type, SessionTypeShortBreak)
+	}
+	if session.Duration != config.ShortBreakDuration {
+		t.Errorf("Duration = %v, want %v", session.Duration, config.ShortBreakDuration)
+	}
+}
+
+func TestNewBreakSession_NonPositiveSessionsBeforeLong(t *testing.T) {
+	for _, n := range []int{0, -1} {
+		config := DefaultPomodoroConfig()
+		config.SessionsBeforeLong = n
+
+		for _, count := range []int{0, 1, 4} {
+			session := NewBreakSession(config, count) // must not panic
+			if session.Type != SessionTypeShortBreak {
+				t.Errorf("SessionsBeforeLong=%d count=%d: Type = %v, want %v", n, count, session.Type, SessionTypeShortBreak)
+			}
+		}
+	}
+}
+
+func TestPomodoroSession_CompleteClearsPausedAt(t *testing.T) {
+	session := NewPomodoroSession(DefaultPomodoroConfig(), nil)
+	session.Pause()
+
+	session.Complete()
+
+	if session.PausedAt != nil {
+		t.Errorf("PausedAt = %v, want nil after Complete()", session.PausedAt)
+	}
+	if session.Status != SessionStatusCompleted {
+		t.Errorf("Status = %v, want %v", session.Status, SessionStatusCompleted)
+	}
+}
+
 func TestPomodoroSession_Pause(t *testing.T) {
 	config := DefaultPomodoroConfig()
 	session := NewPomodoroSession(config, nil)
