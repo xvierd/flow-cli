@@ -121,7 +121,7 @@ func (s *Server) registerTools() {
 		),
 		mcp.WithNumber(
 			"duration_minutes",
-			mcp.Description("Optional custom duration in whole minutes, 1-1440 (default: the configured work duration)"),
+			mcp.Description("Optional custom duration in whole minutes, 1-1440 (default: the default duration of the configured methodology)"),
 		),
 	)
 	s.server.AddTool(startPomodoroTool, s.handleStartPomodoro)
@@ -268,7 +268,7 @@ func (s *Server) registerTools() {
 		mcp.WithDescription("Start a work session with optional methodology, task title, duration, tags, and intended outcome"),
 		mcp.WithString(
 			"methodology",
-			mcp.Description("Methodology for the session"),
+			mcp.Description("Methodology for the session (default: the configured methodology)"),
 			mcp.Enum("pomodoro", "deepwork", "maketime"),
 		),
 		mcp.WithString(
@@ -281,7 +281,7 @@ func (s *Server) registerTools() {
 		),
 		mcp.WithNumber(
 			"duration_minutes",
-			mcp.Description("Optional custom duration in whole minutes, 1-1440 (default: the configured work duration)"),
+			mcp.Description("Optional custom duration in whole minutes, 1-1440 (default: the default duration of the session's methodology)"),
 		),
 		mcp.WithArray(
 			"tags",

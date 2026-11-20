@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/xvierd/flow-cli/internal/config"
@@ -18,7 +19,10 @@ type Timer struct {
 	program                 *tea.Program
 	fetchState              func() *domain.CurrentState
 	commandCallback         func(ports.TimerCommand) error
-	onSessionComplete       func(domain.SessionType)
+	onSessionComplete       func(sessionType domain.SessionType, worked time.Duration)
+	fetchCompletionInfo     func(*domain.CurrentState) *domain.CompletionInfo
+	fetchBreakInfo          func() string
+	onStartSessionForTask   func(presetIndex int, taskID, taskName, intendedOutcome string) error
 	distractionCallback     func(string, string) error
 	accomplishmentCallback  func(sessionID string, text string) error
 	shutdownRitualCallback  func(sessionID string, ritual domain.ShutdownRitual) error
@@ -65,9 +69,21 @@ func NewInlineTimer(theme *config.ThemeConfig) *Timer {
 
 // TimerConfig holds all configuration for a Timer, replacing the individual Set* methods.
 type TimerConfig struct {
-	FetchState              func() *domain.CurrentState
-	CommandCallback         func(ports.TimerCommand) error
-	OnSessionComplete       func(domain.SessionType)
+	FetchState        func() *domain.CurrentState
+	CommandCallback   func(ports.TimerCommand) error
+	OnSessionComplete func(domain.SessionType)
+	// OnSessionCompleted, when set, replaces OnSessionComplete and also
+	// receives the actual (pause-aware) time worked in the ended session.
+	OnSessionCompleted func(sessionType domain.SessionType, worked time.Duration)
+	// FetchCompletionInfo recomputes the next-break / streak context when a
+	// session completes, from the freshly fetched state (whose stats already
+	// count the completed session). Falls back to the static CompletionInfo.
+	FetchCompletionInfo func(state *domain.CurrentState) *domain.CompletionInfo
+	// FetchBreakInfo recomputes the inline break-info line after a mode switch.
+	FetchBreakInfo func() string
+	// OnStartSessionForTask, when set, replaces OnStartSession and also receives
+	// the ID of an existing task picked in the inline setup ("" for a new task).
+	OnStartSessionForTask   func(presetIndex int, taskID, taskName, intendedOutcome string) error
 	DistractionCallback     func(string, string) error
 	AccomplishmentCallback  func(sessionID string, text string) error
 	ShutdownRitualCallback  func(sessionID string, ritual domain.ShutdownRitual) error
@@ -94,7 +110,13 @@ type TimerConfig struct {
 func (t *Timer) Configure(cfg TimerConfig) {
 	t.fetchState = cfg.FetchState
 	t.commandCallback = cfg.CommandCallback
-	t.onSessionComplete = cfg.OnSessionComplete
+	t.SetOnSessionComplete(cfg.OnSessionComplete)
+	if cfg.OnSessionCompleted != nil {
+		t.onSessionComplete = cfg.OnSessionCompleted
+	}
+	t.fetchCompletionInfo = cfg.FetchCompletionInfo
+	t.fetchBreakInfo = cfg.FetchBreakInfo
+	t.onStartSessionForTask = cfg.OnStartSessionForTask
 	t.distractionCallback = cfg.DistractionCallback
 	t.accomplishmentCallback = cfg.AccomplishmentCallback
 	t.shutdownRitualCallback = cfg.ShutdownRitualCallback
@@ -144,6 +166,7 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	model.fetchState = t.fetchState
 	model.commandCallback = t.commandCallback
 	model.onSessionComplete = t.onSessionComplete
+	model.fetchCompletionInfo = t.fetchCompletionInfo
 	model.distractionCallback = t.distractionCallback
 	model.accomplishmentCallback = t.accomplishmentCallback
 	model.shutdownRitualCallback = t.shutdownRitualCallback
@@ -187,6 +210,7 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.fetchState = t.fetchState
 	model.commandCallback = t.commandCallback
 	model.onSessionComplete = t.onSessionComplete
+	model.fetchCompletionInfo = t.fetchCompletionInfo
 	model.distractionCallback = t.distractionCallback
 	model.accomplishmentCallback = t.accomplishmentCallback
 	model.shutdownRitualCallback = t.shutdownRitualCallback
@@ -195,7 +219,9 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.outcomeAchievedCallback = t.outcomeAchievedCallback
 	model.presets = t.presets
 	model.breakInfo = t.breakInfo
+	model.fetchBreakInfo = t.fetchBreakInfo
 	model.onStartSession = t.onStartSession
+	model.onStartSessionForTask = t.onStartSessionForTask
 	model.mode = t.mode
 	model.modeLocked = t.modeLocked
 	model.onModeSelected = t.onModeSelected
@@ -265,7 +291,13 @@ func (t *Timer) SetCommandCallback(callback func(cmd ports.TimerCommand) error) 
 
 // SetOnSessionComplete sets a callback fired when a session naturally completes.
 func (t *Timer) SetOnSessionComplete(callback func(domain.SessionType)) {
-	t.onSessionComplete = callback
+	if callback == nil {
+		t.onSessionComplete = nil
+		return
+	}
+	t.onSessionComplete = func(sessionType domain.SessionType, _ time.Duration) {
+		callback(sessionType)
+	}
 }
 
 // SetDistractionCallback sets a callback for logging distractions (Deep Work mode).
@@ -356,8 +388,18 @@ func RunTimer(ctx context.Context, state *domain.CurrentState) error {
 
 // ShowStatus displays the current status without starting interactive mode.
 func ShowStatus(state *domain.CurrentState, theme *config.ThemeConfig) {
+	fmt.Println(renderStatus(state, theme, getTerminalWidth()))
+}
+
+// renderStatus renders the fullscreen view once at the given width. Without a
+// size the model only renders "Loading...". Height 0 keeps the output compact
+// (no vertical centering padding) for a one-shot print.
+func renderStatus(state *domain.CurrentState, theme *config.ThemeConfig, width int) string {
 	model := NewModel(state, nil, theme)
-	fmt.Println(model.View())
+	// A one-shot print is not interactive: leave out the key hints.
+	model.oneShot = true
+	sized, _ := model.Update(tea.WindowSizeMsg{Width: width, Height: 0})
+	return sized.View()
 }
 
 // ShowError displays an error message.

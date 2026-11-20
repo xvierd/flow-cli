@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/xvierd/flow-cli/internal/adapters/git"
 	"github.com/xvierd/flow-cli/internal/adapters/notification"
@@ -36,15 +38,32 @@ type appDeps struct {
 // Populated by initializeServices() and accessible to all commands.
 var app appDeps
 
+// configLoadFailed records that the config could not be loaded and app.config
+// holds defaults instead. Saving then would overwrite the user's (broken but
+// recoverable) config file with those defaults, so saveConfig refuses.
+var configLoadFailed bool
+
+// saveConfig persists cfg unless the config file failed to load at startup.
+// Every config write in cmd must go through here instead of config.Save.
+func saveConfig(cfg *config.Config) error {
+	if configLoadFailed {
+		return errors.New(i18n.T("the config file could not be read at startup; fix or remove it before changing settings"))
+	}
+	return config.Save(cfg)
+}
+
 // initializeServices sets up all the required services and adapters.
 func initializeServices() error {
 	// Load configuration
 	var err error
 	var loadErr error
 	app.config, loadErr = config.Load()
+	configLoadFailed = loadErr != nil
 	if loadErr != nil {
-		// If config loading fails, use defaults
+		// If config loading fails, use defaults. A config file exists, so this
+		// is not a first run: no welcome screen, and nothing to save.
 		app.config = config.DefaultConfig()
+		app.config.FirstRun = false
 	}
 
 	// Resolve display language: FLOW_LANG env > config file > "en".
@@ -110,12 +129,35 @@ func initializeServices() error {
 }
 
 // setMethodology switches the active methodology, rebuilds the configured
-// Mode, and re-applies the methodology-specific break config to the pomodoro
-// service. Every place that changes app.methodology must go through here.
+// Mode, and re-applies the methodology-specific break config and session
+// defaults to the pomodoro service. Every place that changes app.methodology
+// must go through here.
 func setMethodology(m domain.Methodology) {
 	app.methodology = m
 	app.mode = methodology.ForMethodology(m, app.config)
 	applyBreakConfig()
+	applySessionDefaults()
+}
+
+// applySessionDefaults gives the pomodoro service the current methodology
+// (recorded on breaks and on MCP sessions started without one) and each
+// methodology's default work duration: the configured work duration for
+// Pomodoro, the first preset for Deep Work and Make Time (what a bare start
+// in the TUI uses).
+func applySessionDefaults() {
+	if app.pomodoro == nil || app.config == nil {
+		return
+	}
+	workDur, _, _, _ := app.config.ToPomodoroDomainConfig()
+	durations := map[domain.Methodology]time.Duration{
+		domain.MethodologyPomodoro: workDur,
+	}
+	for _, m := range []domain.Methodology{domain.MethodologyDeepWork, domain.MethodologyMakeTime} {
+		if presets := methodology.ForMethodology(m, app.config).Presets(); len(presets) > 0 {
+			durations[m] = presets[0].Duration
+		}
+	}
+	app.pomodoro.SetMethodologyDefaults(app.methodology, durations)
 }
 
 // effectiveSessionsBeforeLong returns the number of work sessions before a
@@ -157,17 +199,35 @@ func cleanupServices() error {
 	return nil
 }
 
-// setupSignalHandler sets up a context that cancels on interrupt signals.
+// signalOnce guards the single process-wide signal registration shared by
+// every setupSignalHandler call; signalCtx is the context it cancels.
+var (
+	signalOnce sync.Once
+	signalCtx  context.Context
+)
+
+// setupSignalHandler returns a context that is cancelled on the first
+// SIGINT/SIGTERM. The handler is registered once per process: chained TUI
+// launches share it instead of stacking a signal.Notify and a goroutine per
+// launch. After the first signal the handler unregisters, so a second Ctrl+C
+// gets the default behavior and terminates the process.
 func setupSignalHandler() context.Context {
+	signalOnce.Do(func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		signalCtx = cancelOnSignal(sigChan, func() { signal.Stop(sigChan) })
+	})
+	return signalCtx
+}
+
+// cancelOnSignal returns a context cancelled when sigChan delivers a signal;
+// stop is called first to release the signal registration.
+func cancelOnSignal(sigChan <-chan os.Signal, stop func()) context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
 	go func() {
 		<-sigChan
+		stop()
 		cancel()
 	}()
-
 	return ctx
 }

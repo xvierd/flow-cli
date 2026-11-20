@@ -30,7 +30,7 @@ var stopCmd = &cobra.Command{
 
 		// Methodology-aware prompts (only in interactive mode)
 		if !jsonOutput {
-			switch session.Methodology {
+			switch stopPromptMethodology(session) {
 			case domain.MethodologyDeepWork:
 				scanner := bufio.NewScanner(os.Stdin)
 				fmt.Println()
@@ -180,4 +180,15 @@ func outputJSON(session *domain.PomodoroSession) error {
 	}
 	fmt.Println(string(jsonData))
 	return nil
+}
+
+// stopPromptMethodology returns the methodology whose stop prompts apply to
+// session. Breaks record their methodology too, but the shutdown ritual and
+// the Make Time reflection belong to work sessions: a break keeps the
+// Pomodoro notes prompt.
+func stopPromptMethodology(session *domain.PomodoroSession) domain.Methodology {
+	if !session.IsWorkSession() {
+		return domain.MethodologyPomodoro
+	}
+	return session.Methodology
 }

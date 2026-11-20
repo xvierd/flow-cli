@@ -87,7 +87,7 @@ func (m pickerModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("  "+i18n.T("↑/↓ navigate · enter select · esc back")) + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("↑/↓ navigate · enter select · esc cancel")) + "\n")
 
 	return b.String()
 }
@@ -168,7 +168,7 @@ func (m hPickerModel) View() string {
 		b.WriteString(dimStyle.Render("  "+m.footer) + "\n")
 	}
 
-	b.WriteString(dimStyle.Render("  "+i18n.T("←/→ navigate · enter select · esc back")) + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("←/→ navigate · enter select · esc cancel")) + "\n")
 
 	return b.String()
 }
@@ -266,7 +266,7 @@ func (m textPromptModel) View() string {
 	b.WriteString(titleStyle.Render("  "+m.title) + " ")
 	b.WriteString(m.input.View())
 	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("  "+i18n.T("enter confirm · esc back")) + "\n")
+	b.WriteString(dimStyle.Render("  "+i18n.T("enter confirm · esc cancel")) + "\n")
 
 	return b.String()
 }

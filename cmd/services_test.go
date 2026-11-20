@@ -12,6 +12,7 @@ import (
 	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/i18n"
+	"github.com/xvierd/flow-cli/internal/ports"
 )
 
 // isolateApp points HOME at a temp dir, resets the package-level flag
@@ -27,6 +28,7 @@ func isolateApp(t *testing.T) string {
 	t.Cleanup(func() {
 		_ = cleanupServices()
 		app = appDeps{}
+		configLoadFailed = false
 		dbPath, modeFlag, strictFlag = oldDB, oldMode, oldStrict
 		i18n.SetLanguage("en")
 	})
@@ -168,4 +170,43 @@ func captureStderr(t *testing.T, fn func()) string {
 	fn()
 	_ = w.Close()
 	return <-done
+}
+
+// TestInitializeServices_SessionDefaultsFollowMethodology guards that MCP
+// sessions started without a methodology or duration use the configured
+// methodology and its default duration, and that breaks record the current
+// methodology, including after a mode switch.
+func TestInitializeServices_SessionDefaultsFollowMethodology(t *testing.T) {
+	isolateApp(t)
+	dbPath = filepath.Join(t.TempDir(), "flow.db")
+	modeFlag = "deepwork"
+	if err := initializeServices(); err != nil {
+		t.Fatalf("initializeServices() error = %v", err)
+	}
+	ctx := context.Background()
+
+	session, err := app.state.StartSession(ctx, ports.StartSessionRequest{})
+	if err != nil {
+		t.Fatalf("StartSession() error = %v", err)
+	}
+	wantDur := app.mode.Presets()[0].Duration
+	if session.Methodology != domain.MethodologyDeepWork || session.Duration != wantDur {
+		t.Errorf("MCP session = %s/%v, want deepwork/%v", session.Methodology, session.Duration, wantDur)
+	}
+	if _, err := app.pomodoro.StopSession(ctx); err != nil {
+		t.Fatalf("StopSession() error = %v", err)
+	}
+
+	setMethodology(domain.MethodologyMakeTime)
+	brk, err := app.pomodoro.StartBreak(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("StartBreak() error = %v", err)
+	}
+	stored, err := app.storage.Sessions().FindByID(ctx, brk.ID)
+	if err != nil {
+		t.Fatalf("FindByID() error = %v", err)
+	}
+	if stored.Methodology != domain.MethodologyMakeTime {
+		t.Errorf("break methodology = %q, want maketime", stored.Methodology)
+	}
 }

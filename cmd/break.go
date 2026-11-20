@@ -35,7 +35,7 @@ var breakCmd = &cobra.Command{
 			return fmt.Errorf("%s: %w", i18n.T("failed to get current state"), err)
 		}
 
-		return launchTUI(ctx, state, workingDir)
+		return runSessions(state, workingDir)
 	},
 }
 

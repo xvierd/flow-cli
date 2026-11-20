@@ -20,9 +20,9 @@ type completionCallbacks struct {
 }
 
 // handleDistractionInput processes messages while in distraction logging mode.
-// doneCmd is returned when the user finishes or cancels input (nil for fullscreen,
-// tickCmd() for inline — which needs to keep the timer ticking).
-func handleDistractionInput(cs *completionState, cb *completionCallbacks, msg tea.Msg, doneCmd tea.Cmd) tea.Cmd {
+// Timer messages never reach it (the models route them first), so the tick
+// chain survives the overlay and nothing has to be re-armed when it closes.
+func handleDistractionInput(cs *completionState, cb *completionCallbacks, msg tea.Msg) tea.Cmd {
 	// Category picker sub-mode
 	if cs.distractionCategoryMode {
 		switch msg := msg.(type) {
@@ -35,7 +35,7 @@ func handleDistractionInput(cs *completionState, cb *completionCallbacks, msg te
 				}
 				cs.distractionCategoryMode = false
 				cs.distractionMode = false
-				return doneCmd
+				return nil
 			case "e":
 				cs.distractions = append(cs.distractions, cs.distractionPendingText)
 				if cb.distractionCallback != nil {
@@ -43,7 +43,7 @@ func handleDistractionInput(cs *completionState, cb *completionCallbacks, msg te
 				}
 				cs.distractionCategoryMode = false
 				cs.distractionMode = false
-				return doneCmd
+				return nil
 			case "enter":
 				cs.distractions = append(cs.distractions, cs.distractionPendingText)
 				if cb.distractionCallback != nil {
@@ -52,13 +52,13 @@ func handleDistractionInput(cs *completionState, cb *completionCallbacks, msg te
 				cs.distractionCategoryMode = false
 				cs.distractionPendingText = ""
 				cs.distractionMode = false
-				return doneCmd
+				return nil
 			case "esc":
 				// Cancel the distraction entirely — don't log it
 				cs.distractionPendingText = ""
 				cs.distractionCategoryMode = false
 				cs.distractionMode = false
-				return doneCmd
+				return nil
 			case "ctrl+c":
 				return tea.Quit
 			}
@@ -85,11 +85,11 @@ func handleDistractionInput(cs *completionState, cb *completionCallbacks, msg te
 			}
 			cs.distractionMode = false
 			cs.distractionInput.Blur()
-			return doneCmd
+			return nil
 		case "esc":
 			cs.distractionMode = false
 			cs.distractionInput.Blur()
-			return doneCmd
+			return nil
 		case "ctrl+c":
 			return tea.Quit
 		}
@@ -268,7 +268,7 @@ func handleOutcomeReview(cs *completionState, cb *completionCallbacks, msg tea.M
 				_ = cb.outcomeAchievedCallback(cs.completedSessionID, "n")
 			}
 			return nil
-		case "enter":
+		case "enter", "esc":
 			// Skip (no answer)
 			cs.outcomeReviewDone = true
 			cs.outcomeReviewMode = false

@@ -36,8 +36,11 @@ func resolveTheme(theme *config.ThemeConfig) config.ThemeConfig {
 	return resolved
 }
 
-// tickMsg is sent on every timer tick.
-type tickMsg time.Time
+// tickMsg is sent on every timer tick. gen identifies the tick chain that
+// produced it; only the model's current generation re-arms (see restartTick).
+type tickMsg struct {
+	gen int
+}
 
 // stateMsg wraps an updated state fetched asynchronously.
 type stateMsg struct {
@@ -46,7 +49,10 @@ type stateMsg struct {
 
 // Model represents the TUI state.
 type Model struct {
-	state                   *domain.CurrentState
+	state *domain.CurrentState
+	// oneShot marks a model rendered once by "flow status": the view is
+	// printed, not interactive, so key hints are left out.
+	oneShot                 bool
 	progress                progress.Model
 	width                   int
 	height                  int
@@ -55,7 +61,8 @@ type Model struct {
 	notified                bool
 	fetchState              func() *domain.CurrentState
 	commandCallback         func(ports.TimerCommand) error
-	onSessionComplete       func(domain.SessionType)
+	onSessionComplete       func(sessionType domain.SessionType, worked time.Duration)
+	fetchCompletionInfo     func(*domain.CurrentState) *domain.CompletionInfo
 	distractionCallback     func(string, string) error
 	accomplishmentCallback  func(sessionID string, text string) error
 	focusScoreCallback      func(sessionID string, score int) error
@@ -99,7 +106,7 @@ func NewModel(initialState *domain.CurrentState, info *domain.CompletionInfo, th
 
 // Init initializes the TUI.
 func (m Model) Init() tea.Cmd {
-	return tickCmd()
+	return tickCmd(m.tickGen)
 }
 
 // fetchStateCmd returns a tea.Cmd that fetches state asynchronously.
@@ -130,13 +137,41 @@ func (m Model) showDailySummaryOrQuit() (tea.Model, tea.Cmd) {
 	if m.state.TodayStats.WorkSessions > 0 {
 		m.showingSummary = true
 		m.summaryTicks = 3
-		return m, tickCmd()
+		cmd := m.restartTick()
+		return m, cmd
 	}
 	return m, tea.Quit
 }
 
+// isTimerMsg reports whether msg drives the timer itself (ticks and state
+// refreshes). These are processed even while an input overlay is open so the
+// countdown keeps running underneath it.
+func isTimerMsg(msg tea.Msg) bool {
+	switch msg.(type) {
+	case tickMsg, stateMsg, *domain.CurrentState:
+		return true
+	}
+	return false
+}
+
 // Update handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	if nm, ok := next.(Model); ok {
+		// Arm auto-break once the completion prompts are satisfied, whichever
+		// message (completion detection, a prompt key, an overlay) did it.
+		nm.armAutoBreakIfReady(nm.mode, nm.completedSessionType)
+		return nm, cmd
+	}
+	return next, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Stale tick from a retired chain: drop it without re-arming.
+	if t, ok := msg.(tickMsg); ok && t.gen != m.tickGen {
+		return m, nil
+	}
+
 	// Daily summary dismiss
 	if m.showingSummary {
 		switch msg := msg.(type) {
@@ -147,7 +182,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.summaryTicks <= 0 {
 				return m, tea.Quit
 			}
-			return m, tickCmd()
+			return m, tickCmd(m.tickGen)
 		case tea.WindowSizeMsg:
 			m.width = msg.Width
 			m.height = msg.Height
@@ -155,21 +190,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// If in text input mode, handle separately
-	if m.distractionMode {
-		return m.updateDistractionInput(msg)
-	}
-	if m.accomplishmentMode {
-		return m.updateAccomplishmentInput(msg)
-	}
-	if m.shutdownRitualMode {
-		return m.updateShutdownRitual(msg)
-	}
-	if m.distractionReviewMode {
-		return m.updateDistractionReview(msg)
-	}
-	if m.outcomeReviewMode {
-		return m.updateOutcomeReview(msg)
+	// Input overlays get everything except timer messages, which must keep
+	// the tick chain and state refresh alive underneath them.
+	if !isTimerMsg(msg) {
+		switch {
+		case m.distractionMode:
+			return m.updateDistractionInput(msg)
+		case m.accomplishmentMode:
+			return m.updateAccomplishmentInput(msg)
+		case m.shutdownRitualMode:
+			return m.updateShutdownRitual(msg)
+		case m.distractionReviewMode:
+			return m.updateDistractionReview(msg)
+		case m.outcomeReviewMode:
+			return m.updateOutcomeReview(msg)
+		}
 	}
 
 	switch msg := msg.(type) {
@@ -362,12 +397,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Void (interrupt) the current work session — not counted in stats
 			if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.Type == domain.SessionTypeWork && m.commandCallback != nil {
-				_ = m.commandCallback(ports.CmdVoid)
+				voidedID := m.state.ActiveSession.ID
+				err := m.commandCallback(ports.CmdVoid)
 				m.completed = false
 				m.notified = false
 				m.confirmBreak = false
 				m.confirmFinish = false
 				m.resetCompletionState()
+				// Its disappearance from the state is a return to idle, not a
+				// completion. A failed void leaves the session running normally.
+				if err == nil {
+					m.discardedSessionID = voidedID
+				}
 			}
 		default:
 			m.confirmBreak = false
@@ -404,7 +445,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		cmds := []tea.Cmd{tickCmd()}
+		cmds := []tea.Cmd{tickCmd(m.tickGen)}
 		if m.fetchState != nil {
 			cmds = append(cmds, fetchStateCmd(m.fetchState))
 		}
@@ -412,32 +453,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stateMsg:
 		if msg.state != nil {
-			// Detect session completion: had a session before, now it's gone
-			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
-				m.completedSessionID = m.state.ActiveSession.ID
-				m.completedSessionType = m.state.ActiveSession.Type
-				m.completedElapsed = m.state.ActiveSession.Duration
-				m.completedIntendedOutcome = m.state.ActiveSession.IntendedOutcome
-				m.completed = true
+			prev := m.state.ActiveSession
+			switch m.classifyTransition(prev, msg.state.ActiveSession) {
+			case transitionCompleted:
+				m.completedSessionType = prev.Type
+				m.completedElapsed = m.captureCompletion(prev)
+				if m.fetchCompletionInfo != nil {
+					if info := m.fetchCompletionInfo(msg.state); info != nil {
+						m.completionInfo = info
+					}
+				}
 
 				// Fire notification callback once
 				if !m.notified && m.onSessionComplete != nil {
-					m.onSessionComplete(m.completedSessionType)
+					m.onSessionComplete(m.completedSessionType, m.completedElapsed)
 					m.notified = true
 				}
-
-				// Start auto-break countdown for work sessions
-				if m.autoBreak && m.completedSessionType == domain.SessionTypeWork {
-					m.autoBreakTicks = 3
-				}
-			}
-
-			// Detect new session started → reset completed state
-			if m.completed && msg.state.ActiveSession != nil {
+			case transitionDiscarded:
+				// Voided: back to idle with no completion screen, prompts or break.
 				m.completed = false
 				m.notified = false
-				m.energizeShown = false
-				m.energizeTicks = 0
+				m.resetCompletionState()
+			case transitionNewSession:
+				// A new session or break started: the single reset point.
+				m.completed = false
+				m.notified = false
 				m.resetCompletionState()
 			}
 
@@ -473,7 +513,7 @@ func (m Model) updateDistractionInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 		distractionCallback: m.distractionCallback,
 		mode:                m.mode,
 	}
-	return m, handleDistractionInput(&m.completionState, cb, msg, nil)
+	return m, handleDistractionInput(&m.completionState, cb, msg)
 }
 
 // updateAccomplishmentInput handles input while in accomplishment mode.
@@ -567,8 +607,10 @@ func (m Model) View() string {
 			idleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorPaused))
 			sections = append(sections, idleStyle.Render(i18n.T("No active session")))
 		}
-		sections = append(sections, "")
-		sections = append(sections, helpStyle.Render(i18n.T("[s]tart  [c]lose")))
+		if !m.oneShot {
+			sections = append(sections, "")
+			sections = append(sections, helpStyle.Render(i18n.T("[s]tart  [c]lose")))
+		}
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
@@ -727,7 +769,9 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 	}
 
 	sections = append(sections, "")
-	if m.completionPromptsComplete() {
+	if m.autoBreakTicks > 0 {
+		sections = append(sections, statusStyle.Render(i18n.T("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+	} else if m.completionPromptsComplete() {
 		sections = append(sections, helpStyle.Render(i18n.T("[n]ew session  [b]reak  [q]uit")))
 	} else if !m.shutdownComplete && !m.accomplishmentSaved {
 		sections = append(sections, helpStyle.Render(i18n.T("→ [n]ew session locked: complete the shutdown ritual first")))
@@ -788,7 +832,9 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 	}
 
 	sections = append(sections, "")
-	if m.completionPromptsComplete() {
+	if m.autoBreakTicks > 0 {
+		sections = append(sections, statusStyle.Render(i18n.T("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+	} else if m.completionPromptsComplete() {
 		sections = append(sections, helpStyle.Render(i18n.T("[n]ew session  [b]reak  [q]uit")))
 	} else if !m.focusScoreSaved {
 		sections = append(sections, helpStyle.Render(i18n.T("→ [n]ew session locked: rate your focus first")))
@@ -870,7 +916,9 @@ func (m Model) viewActiveSession(sections []string) []string {
 		reminderStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTask))
 		sections = append(sections, "")
 		sections = append(sections, reminderStyle.Render(i18n.T("Quick stretch? Take a moment to energize.")))
-		sections = append(sections, helpStyle.Render(i18n.T("[b]reak")))
+		if m.energizeBreakHint(m.state) {
+			sections = append(sections, helpStyle.Render(i18n.T("[b]reak")))
+		}
 	}
 
 	// Distraction input overlay
@@ -909,7 +957,10 @@ func (m Model) viewActiveSession(sections []string) []string {
 		sections = append(sections, helpStyle.Render(gitInfo))
 	}
 
-	// Help
+	// Help (not shown in a one-shot status print)
+	if m.oneShot {
+		return sections
+	}
 	notifLabel := i18n.T("off")
 	if m.notificationsEnabled {
 		notifLabel = i18n.T("on")
@@ -942,10 +993,10 @@ func (m Model) viewActiveSession(sections []string) []string {
 	return sections
 }
 
-// tickCmd creates a command that sends a tick message.
-func tickCmd() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return tickMsg(t)
+// tickCmd creates a command that sends a tick message for chain generation gen.
+func tickCmd(gen int) tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return tickMsg{gen: gen}
 	})
 }
 

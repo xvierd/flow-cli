@@ -84,7 +84,9 @@ func buildCompletionViewData(
 		streak = completionInfo.DeepWorkStreak
 	}
 
-	hasHighlight := state.ActiveTask != nil && state.ActiveTask.HighlightDate != nil
+	// The session has ended, so ActiveTask is nil here: compare the completed
+	// session's task with today's Highlight instead.
+	hasHighlight := cs.completedTaskID != "" && state.TodayHighlight != nil && state.TodayHighlight.ID == cs.completedTaskID
 
 	return completionViewData{
 		elapsed:            completedElapsed,

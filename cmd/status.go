@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
@@ -78,7 +79,7 @@ func outputStatusJSON(state *domain.CurrentState) error {
 			"duration":       session.Duration.String(),
 			"remaining_time": session.RemainingTime().String(),
 			"progress":       session.Progress(),
-			"started_at":     session.StartedAt.Format("2006-01-02T15:04:05"),
+			"started_at":     session.StartedAt.Format(time.RFC3339),
 			"git_branch":     session.GitBranch,
 			"git_commit":     session.GitCommit,
 			"notes":          session.Notes,

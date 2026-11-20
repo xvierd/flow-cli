@@ -37,7 +37,18 @@ func (n *Notifier) Notify(title, message string) error {
 
 // NotifyPomodoroComplete displays a notification when a pomodoro session completes.
 func (n *Notifier) NotifyPomodoroComplete(duration string) error {
-	title := "🍅 Pomodoro Complete!"
+	return n.NotifyWorkComplete("Pomodoro", duration)
+}
+
+// NotifyWorkComplete displays a notification when a work session of the given
+// methodology (e.g. "Pomodoro", "Deep Work") completes; duration is the time
+// actually worked.
+func (n *Notifier) NotifyWorkComplete(methodology, duration string) error {
+	icon := "✅"
+	if methodology == "Pomodoro" {
+		icon = "🍅"
+	}
+	title := fmt.Sprintf("%s %s Complete!", icon, methodology)
 	message := fmt.Sprintf("Great job! You completed a %s work session.", duration)
 	return n.Notify(title, message)
 }

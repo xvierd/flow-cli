@@ -119,3 +119,26 @@ func TestStopCommand_PromptsByMethodology(t *testing.T) {
 		})
 	}
 }
+
+// TestStopPromptMethodology guards that stopping a Deep Work or Make Time
+// break (breaks now record their methodology) does not run the work-session
+// shutdown ritual or reflection.
+func TestStopPromptMethodology(t *testing.T) {
+	tests := []struct {
+		name    string
+		session *domain.PomodoroSession
+		want    domain.Methodology
+	}{
+		{"deep work session", &domain.PomodoroSession{Type: domain.SessionTypeWork, Methodology: domain.MethodologyDeepWork}, domain.MethodologyDeepWork},
+		{"make time session", &domain.PomodoroSession{Type: domain.SessionTypeWork, Methodology: domain.MethodologyMakeTime}, domain.MethodologyMakeTime},
+		{"deep work break", &domain.PomodoroSession{Type: domain.SessionTypeShortBreak, Methodology: domain.MethodologyDeepWork}, domain.MethodologyPomodoro},
+		{"make time long break", &domain.PomodoroSession{Type: domain.SessionTypeLongBreak, Methodology: domain.MethodologyMakeTime}, domain.MethodologyPomodoro},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stopPromptMethodology(tt.session); got != tt.want {
+				t.Errorf("stopPromptMethodology() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

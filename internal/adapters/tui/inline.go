@@ -33,9 +33,10 @@ type InlineModel struct {
 	onModeSelected func(domain.Methodology) methodology.Mode
 
 	// Setup: duration picker
-	presets      []config.SessionPreset
-	presetCursor int
-	breakInfo    string
+	presets        []config.SessionPreset
+	presetCursor   int
+	breakInfo      string
+	fetchBreakInfo func() string // recomputes breakInfo for the current mode
 
 	// Setup: task select (recent tasks)
 	recentTasks      []*domain.Task
@@ -48,6 +49,11 @@ type InlineModel struct {
 
 	// Setup: task name
 	taskInput textinput.Model
+	// selectedTaskID is the existing task picked from the task list (recent or
+	// carry-over), so the session reuses it instead of creating a duplicate.
+	// selectedTaskTitle guards against the user retitling it afterwards.
+	selectedTaskID    string
+	selectedTaskTitle string
 
 	// Setup: laser checklist (Make Time only)
 	laserChecklistCursor int
@@ -71,7 +77,8 @@ type InlineModel struct {
 	confirmMode             bool
 	fetchState              func() *domain.CurrentState
 	commandCallback         func(ports.TimerCommand) error
-	onSessionComplete       func(domain.SessionType)
+	onSessionComplete       func(sessionType domain.SessionType, worked time.Duration)
+	fetchCompletionInfo     func(*domain.CurrentState) *domain.CompletionInfo
 	distractionCallback     func(string, string) error
 	accomplishmentCallback  func(sessionID string, text string) error
 	focusScoreCallback      func(sessionID string, score int) error
@@ -82,6 +89,9 @@ type InlineModel struct {
 
 	// Callbacks for session creation (called during setup phase)
 	onStartSession func(presetIndex int, taskName string, intendedOutcome string) error
+	// onStartSessionForTask, when set, is preferred over onStartSession and
+	// also receives the ID of an existing task picked from the list ("" for a new one).
+	onStartSessionForTask func(presetIndex int, taskID, taskName, intendedOutcome string) error
 
 	// Methodology mode
 	mode           methodology.Mode
@@ -159,12 +169,27 @@ func NewInlineModel(state *domain.CurrentState, info *domain.CompletionInfo, the
 
 func (m InlineModel) Init() tea.Cmd {
 	if m.phase == phaseTimer {
-		return tickCmd()
+		return tickCmd(m.tickGen)
 	}
 	return nil
 }
 
 func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	if nm, ok := next.(InlineModel); ok {
+		// Arm auto-break once the completion prompts are satisfied, whichever
+		// message (completion detection, a prompt key, an overlay) did it.
+		nm.armAutoBreakIfReady(nm.mode, nm.completedType)
+		return nm, cmd
+	}
+	return next, cmd
+}
+
+func (m InlineModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Stale tick from a retired chain: drop it without re-arming.
+	if t, ok := msg.(tickMsg); ok && t.gen != m.tickGen {
+		return m, nil
+	}
 	switch m.phase {
 	case phaseWelcome:
 		return m.updateWelcome(msg)
@@ -183,20 +208,21 @@ func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case phaseOutcome:
 		return m.updatePickOutcome(msg)
 	case phaseTimer:
-		if m.distractionMode {
-			return m.updateDistractionInput(msg)
-		}
-		if m.accomplishmentMode {
-			return m.updateAccomplishmentInput(msg)
-		}
-		if m.shutdownRitualMode {
-			return m.updateShutdownRitual(msg)
-		}
-		if m.distractionReviewMode {
-			return m.updateDistractionReview(msg)
-		}
-		if m.outcomeReviewMode {
-			return m.updateOutcomeReview(msg)
+		// Input overlays get everything except timer messages, which must keep
+		// the tick chain and state refresh alive underneath them.
+		if !isTimerMsg(msg) {
+			switch {
+			case m.distractionMode:
+				return m.updateDistractionInput(msg)
+			case m.accomplishmentMode:
+				return m.updateAccomplishmentInput(msg)
+			case m.shutdownRitualMode:
+				return m.updateShutdownRitual(msg)
+			case m.distractionReviewMode:
+				return m.updateDistractionReview(msg)
+			case m.outcomeReviewMode:
+				return m.updateOutcomeReview(msg)
+			}
 		}
 		return m.updateTimer(msg)
 	}
@@ -208,7 +234,7 @@ func (m InlineModel) updateDistractionInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 		distractionCallback: m.distractionCallback,
 		mode:                m.mode,
 	}
-	return m, handleDistractionInput(&m.completionState, cb, msg, tickCmd())
+	return m, handleDistractionInput(&m.completionState, cb, msg)
 }
 
 func (m InlineModel) updateAccomplishmentInput(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -240,7 +266,8 @@ func (m InlineModel) showDailySummaryOrQuit() (tea.Model, tea.Cmd) {
 	if m.state.TodayStats.WorkSessions > 0 {
 		m.showingSummary = true
 		m.summaryTicks = 3
-		return m, tickCmd()
+		cmd := m.restartTick()
+		return m, cmd
 	}
 	return m, tea.Quit
 }
@@ -256,7 +283,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.summaryTicks <= 0 {
 				return m, tea.Quit
 			}
-			return m, tickCmd()
+			return m, tickCmd(m.tickGen)
 		}
 		return m, nil
 	}
@@ -450,12 +477,18 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Void (interrupt) the current session — not counted in stats
 			if !m.completed && m.state.ActiveSession != nil && m.state.ActiveSession.Type == domain.SessionTypeWork && m.commandCallback != nil {
-				_ = m.commandCallback(ports.CmdVoid)
+				voidedID := m.state.ActiveSession.ID
+				err := m.commandCallback(ports.CmdVoid)
 				m.completed = false
 				m.notified = false
 				m.confirmBreak = false
 				m.confirmFinish = false
 				m.resetCompletionState()
+				// Its disappearance from the state is a return to idle, not a
+				// completion. A failed void leaves the session running normally.
+				if err == nil {
+					m.discardedSessionID = voidedID
+				}
 			}
 		case "m":
 			// Strict focus: cancel via mode switch is locked during a work session.
@@ -469,8 +502,9 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.confirmMode = false
 					m.confirmFinish = false
 					m.confirmBreak = false
-					if m.commandCallback != nil {
-						_ = m.commandCallback(ports.CmdCancel)
+					cancelledID := m.state.ActiveSession.ID
+					if m.commandCallback != nil && m.commandCallback(ports.CmdCancel) == nil {
+						m.discardedSessionID = cancelledID
 					}
 					m.completed = false
 					m.notified = false
@@ -524,7 +558,7 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		cmds := []tea.Cmd{tickCmd()}
+		cmds := []tea.Cmd{tickCmd(m.tickGen)}
 		if m.fetchState != nil {
 			cmds = append(cmds, fetchStateCmd(m.fetchState))
 		}
@@ -532,30 +566,32 @@ func (m InlineModel) updateTimer(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stateMsg:
 		if msg.state != nil {
-			if m.state.ActiveSession != nil && msg.state.ActiveSession == nil {
-				m.completedSessionID = m.state.ActiveSession.ID
-				m.completedType = m.state.ActiveSession.Type
-				m.completedElapsed = m.state.ActiveSession.Duration
-				m.completedIntendedOutcome = m.state.ActiveSession.IntendedOutcome
+			prev := m.state.ActiveSession
+			switch m.classifyTransition(prev, msg.state.ActiveSession) {
+			case transitionCompleted:
+				m.completedType = prev.Type
+				m.completedElapsed = m.captureCompletion(prev)
 				if m.state.ActiveTask != nil {
 					m.lastTaskTitle = m.state.ActiveTask.Title
 				}
-				m.completed = true
+				if m.fetchCompletionInfo != nil {
+					if info := m.fetchCompletionInfo(msg.state); info != nil {
+						m.completionInfo = info
+					}
+				}
 				if !m.notified && m.onSessionComplete != nil {
-					m.onSessionComplete(m.completedType)
+					m.onSessionComplete(m.completedType, m.completedElapsed)
 					m.notified = true
 				}
-
-				// Start auto-break countdown for work sessions
-				if m.autoBreak && m.completedType == domain.SessionTypeWork {
-					m.autoBreakTicks = 3
-				}
-			}
-			if m.completed && msg.state.ActiveSession != nil {
+			case transitionDiscarded:
+				// Voided/cancelled: back to idle with no completion screen, prompts or break.
 				m.completed = false
 				m.notified = false
-				m.energizeShown = false
-				m.energizeTicks = 0
+				m.resetCompletionState()
+			case transitionNewSession:
+				// A new session or break started: the single reset point.
+				m.completed = false
+				m.notified = false
 				m.resetCompletionState()
 			}
 			m.state = msg.state
@@ -703,8 +739,10 @@ func (m InlineModel) viewInlineActive(accent, dim, pausedStyle lipgloss.Style) s
 	if m.energizeTicks > 0 {
 		reminderStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.theme.ColorTask))
 		b.WriteString(reminderStyle.Render("  " + i18n.T("Quick stretch? Take a moment to energize.")))
-		b.WriteString("  ")
-		b.WriteString(dim.Render(i18n.T("[b]reak")))
+		if m.energizeBreakHint(m.state) {
+			b.WriteString("  ")
+			b.WriteString(dim.Render(i18n.T("[b]reak")))
+		}
 		b.WriteString("\n")
 	}
 
@@ -905,7 +943,9 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 	b.WriteString("\n")
 
 	if !m.accomplishmentMode && !m.distractionReviewMode && !m.shutdownRitualMode && !m.outcomeReviewMode {
-		if m.completionPromptsComplete() {
+		if m.autoBreakTicks > 0 {
+			b.WriteString(accent.Render("  " + i18n.T("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+		} else if m.completionPromptsComplete() {
 			b.WriteString(dim.Render("  " + i18n.T("[n]ew session [b]reak [m]ode [q]uit")))
 		} else if !m.shutdownComplete && !m.accomplishmentSaved {
 			b.WriteString(dim.Render("  " + i18n.T("→ [n]ew session locked: complete the shutdown ritual first")))
@@ -964,7 +1004,9 @@ func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) stri
 		m.theme.IconStats, i18n.T("%d sessions, %s worked today", vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime)))))
 	b.WriteString("\n")
 
-	if m.completionPromptsComplete() {
+	if m.autoBreakTicks > 0 {
+		b.WriteString(accent.Render("  " + i18n.T("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))
+	} else if m.completionPromptsComplete() {
 		b.WriteString(dim.Render("  " + i18n.T("[n]ew session [b]reak [m]ode [q]uit")))
 	} else if !m.focusScoreSaved {
 		b.WriteString(dim.Render("  " + i18n.T("→ [n]ew session locked: rate your focus first")))

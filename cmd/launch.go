@@ -2,18 +2,104 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
-	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/methodology"
 	"github.com/xvierd/flow-cli/internal/ports"
 	"github.com/xvierd/flow-cli/internal/services"
 )
+
+// currentBreakInfo describes the break durations of the current methodology.
+// It is recomputed on demand so it follows an in-TUI mode switch.
+func currentBreakInfo() string {
+	shortBreakDur, longBreakDur := app.config.GetBreakDurations(app.methodology)
+	if app.methodology == domain.MethodologyPomodoro {
+		return i18n.T("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
+			formatMinutes(shortBreakDur), formatMinutes(longBreakDur), effectiveSessionsBeforeLong(app.config, app.methodology))
+	}
+	return i18n.T("Break: %s · \"flow config\" to customize", formatMinutes(shortBreakDur))
+}
+
+// completionInfoFor computes the next-break context for the current
+// methodology once workSessions work sessions are done today. It mirrors
+// domain.NewBreakSession's long-break rule, which StartBreak applies.
+func completionInfoFor(ctx context.Context, workSessions int) *domain.CompletionInfo {
+	shortBreakDur, longBreakDur := app.config.GetBreakDurations(app.methodology)
+	// Always > 0 (Pomodoro forces 4; a non-positive config falls back to 4),
+	// so the modulo below is safe.
+	sessionsBeforeLong := effectiveSessionsBeforeLong(app.config, app.methodology)
+	info := &domain.CompletionInfo{
+		NextBreakType:      domain.SessionTypeShortBreak,
+		NextBreakDuration:  shortBreakDur,
+		SessionsUntilLong:  sessionsBeforeLong - workSessions%sessionsBeforeLong,
+		SessionsBeforeLong: sessionsBeforeLong,
+	}
+	if workSessions > 0 && workSessions%sessionsBeforeLong == 0 {
+		info.NextBreakType = domain.SessionTypeLongBreak
+		info.NextBreakDuration = longBreakDur
+		info.SessionsUntilLong = 0
+	}
+	if app.methodology == domain.MethodologyDeepWork {
+		info.DeepWorkStreak, _ = app.pomodoro.GetDeepWorkStreak(ctx, time.Duration(app.config.DeepWork.DeepWorkGoalHours*float64(time.Hour)))
+	}
+	return info
+}
+
+// lastWorkSession remembers the planned parameters of the most recent work
+// session so a bare "start" (the TUI's [s] key) repeats it instead of
+// starting a generic Pomodoro. It is written from FetchState (which runs off
+// the Bubbletea update loop) and read from CommandCallback, hence the mutex.
+type lastWorkSession struct {
+	mu          sync.Mutex
+	set         bool
+	duration    time.Duration
+	taskID      *string
+	methodology domain.Methodology
+	tags        []string
+}
+
+// observe records s if it is an active work session. Only active sessions are
+// used: StopSession and VoidSession shrink Duration on the ended session.
+func (l *lastWorkSession) observe(s *domain.PomodoroSession) {
+	if s == nil || !s.IsWorkSession() {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.set = true
+	l.duration = s.Duration
+	l.taskID = s.TaskID
+	l.methodology = s.Methodology
+	l.tags = s.Tags
+}
+
+// startRequest builds the request for a bare start in the current mode. The
+// last session's duration, task and tags are reused only when it belongs to
+// the current methodology; otherwise the mode's first preset is used.
+func (l *lastWorkSession) startRequest(workingDir string, current domain.Methodology, mode methodology.Mode) services.StartPomodoroRequest {
+	req := services.StartPomodoroRequest{WorkingDir: workingDir, Methodology: current}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.set && (l.methodology == "" || l.methodology == current) {
+		req.Duration = l.duration
+		req.TaskID = l.taskID
+		req.Tags = l.tags
+		return req
+	}
+	if mode != nil {
+		if presets := mode.Presets(); len(presets) > 0 {
+			req.Duration = presets[0].Duration
+		}
+	}
+	return req
+}
 
 // launchTUI starts the Bubbletea timer interface.
 func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string) error {
@@ -28,42 +114,20 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 		lastFullscreenTimer = timer
 	}
 
-	// Presets and break info (used by inline setup phase; harmless for fullscreen).
+	// Presets (used by inline setup phase; harmless for fullscreen).
 	presets := app.mode.Presets()
-	shortBreakDur, longBreakDur := app.config.GetBreakDurations(app.methodology)
-	var breakInfo string
-	if app.methodology == domain.MethodologyPomodoro {
-		breakInfo = i18n.T("Breaks: %s short / %s long (every %d) · \"flow config\" to customize",
-			formatMinutes(shortBreakDur), formatMinutes(longBreakDur), effectiveSessionsBeforeLong(app.config, app.methodology))
-	} else {
-		breakInfo = i18n.T("Break: %s · \"flow config\" to customize", formatMinutes(shortBreakDur))
-	}
 
-	// Completion info: next break type and duration.
-	// Always > 0 (Pomodoro forces 4; a non-positive config falls back to 4),
-	// so the modulo below is safe.
-	sessionsBeforeLong := effectiveSessionsBeforeLong(app.config, app.methodology)
-	workSessions := state.TodayStats.WorkSessions + 1
-	sessionsUntilLong := sessionsBeforeLong - (workSessions % sessionsBeforeLong)
-	if sessionsUntilLong == sessionsBeforeLong {
-		sessionsUntilLong = 0
-	}
-	nextBreakType := domain.SessionTypeShortBreak
-	nextBreakDuration := shortBreakDur
-	if sessionsUntilLong == 0 {
-		nextBreakType = domain.SessionTypeLongBreak
-		nextBreakDuration = longBreakDur
-	}
+	var lastWork lastWorkSession
+	lastWork.observe(state.ActiveSession)
 
-	var deepWorkStreak int
-	if app.methodology == domain.MethodologyDeepWork {
-		deepWorkStreak, _ = app.pomodoro.GetDeepWorkStreak(ctx, time.Duration(app.config.DeepWork.DeepWorkGoalHours*float64(time.Hour)))
-	}
+	// FetchState runs every second; report a failure once instead of
+	// printing over the TUI on every tick.
+	var fetchWarnOnce sync.Once
 
 	firstRun := app.config.FirstRun
 	if firstRun {
 		app.config.FirstRun = false
-		_ = config.Save(app.config)
+		_ = saveConfig(app.config)
 	}
 
 	timer.Configure(tui.TimerConfig{
@@ -82,23 +146,30 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			if app.notifier != nil {
 				app.notifier.SetEnabled(enabled)
 			}
-			_ = config.Save(app.config)
+			_ = saveConfig(app.config)
 		},
 		Strict: app.config.Focus.Strict || strictFlag,
 		FetchState: func() *domain.CurrentState {
 			newState, err := app.state.GetCurrentState(ctx)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", i18n.T("Warning: failed to fetch state: %v", err))
+				fetchWarnOnce.Do(func() {
+					fmt.Fprintf(os.Stderr, "%s\n", i18n.T("Warning: failed to fetch state: %v", err))
+				})
 				return nil
 			}
+			lastWork.observe(newState.ActiveSession)
 			return newState
 		},
 		CommandCallback: func(cmd ports.TimerCommand) error {
 			switch cmd {
 			case ports.CmdStart:
-				_, err := app.pomodoro.StartPomodoro(ctx, services.StartPomodoroRequest{
-					WorkingDir: workingDir,
-				})
+				req := lastWork.startRequest(workingDir, app.methodology, app.mode)
+				_, err := app.pomodoro.StartPomodoro(ctx, req)
+				if err != nil && req.TaskID != nil && !errors.Is(err, domain.ErrSessionAlreadyActive) {
+					// The remembered task may have been deleted: start without it.
+					req.TaskID = nil
+					_, err = app.pomodoro.StartPomodoro(ctx, req)
+				}
 				return err
 			case ports.CmdPause:
 				_, err := app.pomodoro.PauseSession(ctx)
@@ -158,14 +229,14 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			}
 			return app.pomodoro.SetOutcomeAchieved(ctx, sessionID, achieved)
 		},
-		OnSessionComplete: func(sessionType domain.SessionType) {
+		OnSessionCompleted: func(sessionType domain.SessionType, worked time.Duration) {
 			if app.notifier == nil || !app.notifier.IsEnabled() {
 				return
 			}
 			var err error
 			switch sessionType {
 			case domain.SessionTypeWork:
-				err = app.notifier.NotifyPomodoroComplete(formatMinutes(shortBreakDur))
+				err = app.notifier.NotifyWorkComplete(app.methodology.Label(), formatMinutes(worked))
 			case domain.SessionTypeShortBreak:
 				err = app.notifier.NotifyBreakComplete("Short")
 			case domain.SessionTypeLongBreak:
@@ -175,16 +246,16 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 				fmt.Fprintf(os.Stderr, "%s\n", i18n.T("Warning: notification failed: %v", err))
 			}
 		},
-		CompletionInfo: &domain.CompletionInfo{
-			NextBreakType:      nextBreakType,
-			NextBreakDuration:  nextBreakDuration,
-			SessionsUntilLong:  sessionsUntilLong,
-			SessionsBeforeLong: sessionsBeforeLong,
-			DeepWorkStreak:     deepWorkStreak,
+		// Initial context for the upcoming completion (this session included);
+		// refreshed from the fresh state whenever a session completes.
+		CompletionInfo: completionInfoFor(ctx, state.TodayStats.WorkSessions+1),
+		FetchCompletionInfo: func(fresh *domain.CurrentState) *domain.CompletionInfo {
+			return completionInfoFor(ctx, fresh.TodayStats.WorkSessions)
 		},
 		// Inline-specific fields (zero/nil values are ignored by fullscreen mode).
-		Presets:   presets,
-		BreakInfo: breakInfo,
+		Presets:        presets,
+		BreakInfo:      currentBreakInfo(),
+		FetchBreakInfo: currentBreakInfo,
 		FetchRecentTasks: func(limit int) []*domain.Task {
 			tasks, err := app.storage.Tasks().FindRecentTasks(ctx, limit)
 			if err != nil {
@@ -196,20 +267,28 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			task, _ := app.storage.Tasks().FindYesterdayHighlight(ctx, time.Now())
 			return task
 		},
-		OnStartSession: func(presetIndex int, taskName string, intendedOutcome string) error {
+		OnStartSessionForTask: func(presetIndex int, existingTaskID, taskName, intendedOutcome string) error {
 			currentMode := app.mode
 			currentPresets := currentMode.Presets()
 
 			var sessionTags []string
-			if taskName != "" {
+			if taskName != "" && existingTaskID == "" {
 				taskName, sessionTags = domain.ParseTagsFromInput(taskName)
 			}
+
+			// Git runs before the transaction, which holds the write lock.
+			gitInfo := app.pomodoro.DetectGit(ctx, workingDir)
 
 			// Task creation, highlight update, and session start are one
 			// atomic unit.
 			return app.storage.WithTx(ctx, func(tx ports.Storage) error {
 				var taskID *string
-				if taskName != "" {
+				switch {
+				case existingTaskID != "":
+					// A recent task or the carried-over Highlight: reuse it.
+					id := existingTaskID
+					taskID = &id
+				case taskName != "":
 					task, err := app.tasks.AddTaskWith(ctx, tx, services.AddTaskRequest{
 						Title: taskName,
 					})
@@ -217,10 +296,10 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 						return err
 					}
 					taskID = &task.ID
-					if currentMode.HasHighlight() {
-						if _, err := app.tasks.SetHighlightWith(ctx, tx, task.ID); err != nil {
-							return err
-						}
+				}
+				if taskID != nil && currentMode.HasHighlight() {
+					if _, err := app.tasks.SetHighlightWith(ctx, tx, *taskID); err != nil {
+						return err
 					}
 				}
 
@@ -231,6 +310,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 					Methodology:     app.methodology,
 					Tags:            sessionTags,
 					IntendedOutcome: intendedOutcome,
+					Git:             gitInfo,
 				})
 				return err
 			})

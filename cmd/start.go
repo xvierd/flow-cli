@@ -14,15 +14,16 @@ import (
 )
 
 var startTaskID string
-var startTags string
+var startTags []string
 
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start [task-id]",
 	Short: "Start a pomodoro session",
 	Long: `Start a new pomodoro work session. Optionally specify a task ID
-to associate with the session. If no task ID is provided and there is
-an active task, that task will be used.`,
+to associate with the session (as an argument or with --task). The session
+uses the current methodology: the configured work duration in Pomodoro, or
+the first preset in Deep Work and Make Time.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
@@ -66,8 +67,7 @@ an active task, that task will be used.`,
 				return nil
 			}
 
-			_, err := app.pomodoro.StopSession(ctx)
-			if err != nil {
+			if _, err := app.pomodoro.StopSession(ctx); err != nil {
 				return fmt.Errorf("%s: %w", i18n.T("failed to stop current session"), err)
 			}
 			fmt.Println(i18n.T("⏹️  Previous session stopped."))
@@ -75,20 +75,22 @@ an active task, that task will be used.`,
 
 		// Parse tags
 		var tags []string
-		if startTags != "" {
-			for _, t := range strings.Split(startTags, ",") {
-				t = strings.TrimSpace(t)
-				if t != "" {
-					tags = append(tags, t)
-				}
+		for _, t := range startTags {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				tags = append(tags, t)
 			}
 		}
 
 		// Start the pomodoro session
+		// Record the methodology on the session: storage would otherwise
+		// default it to Pomodoro, and resuming adopts the session's one.
 		req := services.StartPomodoroRequest{
-			TaskID:     taskID,
-			WorkingDir: workingDir,
-			Tags:       tags,
+			TaskID:      taskID,
+			WorkingDir:  workingDir,
+			Tags:        tags,
+			Methodology: app.methodology,
+			Duration:    defaultSessionDuration(),
 		}
 
 		session, err := app.pomodoro.StartPomodoro(ctx, req)
@@ -107,17 +109,31 @@ an active task, that task will be used.`,
 			return fmt.Errorf("%s: %w", i18n.T("failed to get current state"), err)
 		}
 
-		return launchTUI(ctx, state, workingDir)
+		return runSessions(state, workingDir)
 	},
 }
 
 func init() {
 	startCmd.Flags().StringVarP(&startTaskID, "task", "t", "", "Task ID to associate with this session")
-	startCmd.Flags().StringVar(&startTags, "tags", "", "Comma-separated tags for this session (e.g. coding,backend)")
+	startCmd.Flags().StringSliceVar(&startTags, "tags", nil, "Tags for this session (repeatable or comma-separated, e.g. coding,backend)")
 }
 
 func formatCmdDuration(d time.Duration) string {
 	m := int(d.Minutes())
 	s := int(d.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", m, s)
+}
+
+// defaultSessionDuration returns the work duration "flow start" uses for the
+// current methodology: zero in Pomodoro (the service applies the configured
+// work duration) and the first preset in Deep Work and Make Time, matching
+// what the wizard preselects and what MCP sessions default to.
+func defaultSessionDuration() time.Duration {
+	if app.methodology == domain.MethodologyPomodoro || app.mode == nil {
+		return 0
+	}
+	if presets := app.mode.Presets(); len(presets) > 0 {
+		return presets[0].Duration
+	}
+	return 0
 }

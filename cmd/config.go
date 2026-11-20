@@ -190,7 +190,7 @@ func editPreset(reader *bufio.Reader, cfg *config.Config, num int) error {
 		}
 	}
 
-	if err := config.Save(cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
@@ -258,7 +258,7 @@ func editPomodoroBreaks(reader *bufio.Reader, cfg *config.Config) error {
 	cfg.Pomodoro.LongBreak = config.Duration(longBreak)
 	cfg.Pomodoro.SessionsBeforeLong = sessionsBeforeLong
 
-	if err := config.Save(cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
@@ -298,7 +298,7 @@ func editMethodologyBreak(reader *bufio.Reader, cfg *config.Config, meth domain.
 		cfg.MakeTime.BreakDuration = config.Duration(dur)
 	}
 
-	if err := config.Save(cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
@@ -335,7 +335,7 @@ func editMethodology(reader *bufio.Reader, cfg *config.Config) error {
 	}
 
 	cfg.Methodology = m
-	if err := config.Save(cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
@@ -376,7 +376,7 @@ func editNotifications(reader *bufio.Reader, cfg *config.Config) error {
 		return nil
 	}
 
-	if err := config.Save(cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
@@ -423,7 +423,7 @@ func editDeepWorkPhilosophy(reader *bufio.Reader, cfg *config.Config) error {
 	}
 
 	cfg.DeepWork.Philosophy = p
-	if err := config.Save(cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 
@@ -451,7 +451,7 @@ func editLanguage(reader *bufio.Reader, cfg *config.Config) error {
 		return nil
 	}
 
-	if err := config.Save(cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to save config"), err)
 	}
 

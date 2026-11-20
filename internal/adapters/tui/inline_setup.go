@@ -255,6 +255,17 @@ func (m InlineModel) selectMode() (tea.Model, tea.Cmd) {
 	}
 	m.mode = mode
 	m.presets = m.mode.Presets()
+	// Break durations and cadence depend on the methodology just selected.
+	if m.fetchBreakInfo != nil {
+		m.breakInfo = m.fetchBreakInfo()
+	}
+	// Refresh the idle context (e.g. Deep Work streak) for the new mode; the
+	// next-break fields are recomputed again when the session completes.
+	if m.fetchCompletionInfo != nil && m.state != nil {
+		if info := m.fetchCompletionInfo(m.state); info != nil {
+			m.completionInfo = info
+		}
+	}
 
 	// Show onboarding overlay with mode description
 	if m.mode.Description() != "" {
@@ -488,6 +499,7 @@ func (m InlineModel) updateTaskSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.selectRecentTask()
 			}
 			// "New task" selected
+			m.selectedTaskID, m.selectedTaskTitle = "", ""
 			m.phase = phaseTaskName
 			m.taskInput.Focus()
 			return m, m.taskInput.Cursor.BlinkCmd()
@@ -502,8 +514,10 @@ func (m InlineModel) updateTaskSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m InlineModel) selectCarryOverTask() (tea.Model, tea.Cmd) {
+	// Reuse the existing task; the start callback persists it as today's
+	// Highlight (Make Time), so nothing is mutated here.
 	task := m.yesterdayHighlight
-	task.SetAsHighlight() // updates to today
+	m.selectedTaskID, m.selectedTaskTitle = task.ID, task.Title
 	m.taskInput.SetValue(task.Title)
 	return m.advanceFromTask(task.Title)
 }
@@ -514,6 +528,7 @@ func (m InlineModel) selectRecentTask() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	task := m.recentTasks[recentIdx]
+	m.selectedTaskID, m.selectedTaskTitle = task.ID, task.Title
 	m.taskInput.SetValue(task.Title)
 	return m.advanceFromTask(task.Title)
 }
@@ -532,16 +547,25 @@ func (m InlineModel) advanceFromTask(taskName string) (tea.Model, tea.Cmd) {
 	return m.startSession(taskName, "")
 }
 
-// startSession calls onStartSession and transitions to the timer phase.
+// startSession calls the start callback and transitions to the timer phase.
+// A start error still lands on the timer phase, which then shows the idle view.
 func (m InlineModel) startSession(taskName, intendedOutcome string) (tea.Model, tea.Cmd) {
-	if m.onStartSession != nil {
-		if err := m.onStartSession(m.presetCursor, taskName, intendedOutcome); err != nil {
-			m.phase = phaseTimer
-			return m, tickCmd()
-		}
+	// Only reuse the picked task if the name was not changed afterwards.
+	taskID := ""
+	if m.selectedTaskID != "" && taskName == m.selectedTaskTitle {
+		taskID = m.selectedTaskID
+	}
+	m.selectedTaskID, m.selectedTaskTitle = "", ""
+	switch {
+	case m.onStartSessionForTask != nil:
+		_ = m.onStartSessionForTask(m.presetCursor, taskID, taskName, intendedOutcome)
+	case m.onStartSession != nil:
+		_ = m.onStartSession(m.presetCursor, taskName, intendedOutcome)
 	}
 	m.phase = phaseTimer
-	return m, tickCmd()
+	// Exactly one live tick chain: retire any chain still in flight.
+	cmd := m.restartTick()
+	return m, cmd
 }
 
 func (m InlineModel) viewTaskSelect() string {

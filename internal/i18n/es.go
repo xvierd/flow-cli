@@ -501,4 +501,12 @@ var esCatalog = map[string]string{
 	// -- TUI: timer adapter errors ---------------------------------------------------------
 	"failed to run TUI":        "no se pudo ejecutar la TUI",
 	"failed to run inline TUI": "no se pudo ejecutar la TUI inline",
+
+	// -- cmd: config save guard ------------------------------------------------------------
+	"the config file could not be read at startup; fix or remove it before changing settings": "no se pudo leer el archivo de configuración al iniciar; corrígelo o elimínalo antes de cambiar ajustes",
+
+	// -- TUI: picker footers (esc aborts the picker) ----------------------------------------
+	"↑/↓ navigate · enter select · esc cancel": "↑/↓ navegar · enter elegir · esc cancelar",
+	"←/→ navigate · enter select · esc cancel": "←/→ navegar · enter elegir · esc cancelar",
+	"enter confirm · esc cancel":               "enter confirmar · esc cancelar",
 }
