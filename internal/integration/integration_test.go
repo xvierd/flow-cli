@@ -372,6 +372,10 @@ func TestDailyStats(t *testing.T) {
 				t.Fatalf("failed to start session %d: %v", i+1, err)
 			}
 
+			// Stopping records the time actually worked (millisecond
+			// resolution), so let a few milliseconds pass.
+			time.Sleep(5 * time.Millisecond)
+
 			_, err = pomodoroSvc.StopSession(ctx)
 			if err != nil {
 				t.Fatalf("failed to stop session %d: %v", i+1, err)

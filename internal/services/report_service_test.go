@@ -456,7 +456,7 @@ func TestReportService_HighlightHitRate(t *testing.T) {
 		Type:        domain.SessionTypeWork,
 		Status:      domain.SessionStatusCompleted,
 		Duration:    25 * time.Minute,
-		StartedAt:   now.Add(-2 * time.Hour),
+		StartedAt:   earlierToday(now),
 		Methodology: domain.MethodologyPomodoro,
 	}
 	c := s.StartedAt
@@ -529,4 +529,16 @@ func TestReportService_HighlightHitRate_OnlyDaysWithWork(t *testing.T) {
 	if report.Summary.HighlightHitRate != 0.5 {
 		t.Errorf("HighlightHitRate = %f, want 0.5", report.Summary.HighlightHitRate)
 	}
+}
+
+// earlierToday returns a moment up to two hours before now that is still on
+// today's calendar day, so tests seeding "a session earlier today" do not
+// land on yesterday when the suite runs just after midnight.
+func earlierToday(now time.Time) time.Time {
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	t := now.Add(-2 * time.Hour)
+	if t.Before(startOfDay) {
+		return startOfDay
+	}
+	return t
 }

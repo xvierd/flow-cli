@@ -102,7 +102,9 @@ func (s *StateService) StartPomodoro(ctx context.Context, taskID *string, durati
 
 // StartSession implements ports.MCPStateProvider.
 // Task resolution (fuzzy match or creation) and session start run in a
-// single transaction.
+// single transaction; the git context is gathered before it. A request
+// without a methodology uses the configured one, and one without a duration
+// uses the default duration of the session's methodology.
 func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionRequest) (*domain.PomodoroSession, error) {
 	if s.pomodoroSvc == nil {
 		return nil, domain.ErrServiceNotConfigured
@@ -112,7 +114,11 @@ func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionR
 		if _, err := domain.ValidateMethodology(string(req.Methodology)); err != nil {
 			return nil, err
 		}
+	} else {
+		req.Methodology = s.pomodoroSvc.methodology
 	}
+
+	gitInfo := s.pomodoroSvc.DetectGit(ctx, "")
 
 	var session *domain.PomodoroSession
 	err := s.storage.WithTx(ctx, func(tx ports.Storage) error {
@@ -153,9 +159,12 @@ func (s *StateService) StartSession(ctx context.Context, req ports.StartSessionR
 			Methodology:     req.Methodology,
 			IntendedOutcome: req.IntendedOutcome,
 			Tags:            req.Tags,
+			Git:             gitInfo,
 		}
 		if req.DurationMinutes != nil && *req.DurationMinutes > 0 {
 			svcReq.Duration = time.Duration(*req.DurationMinutes) * time.Minute
+		} else {
+			svcReq.Duration = s.pomodoroSvc.defaultDuration(req.Methodology)
 		}
 
 		var err error

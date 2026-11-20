@@ -530,7 +530,7 @@ func TestState_GetFocusReport(t *testing.T) {
 		Type:        domain.SessionTypeWork,
 		Status:      domain.SessionStatusCompleted,
 		Duration:    25 * time.Minute,
-		StartedAt:   time.Now().Add(-2 * time.Hour),
+		StartedAt:   earlierToday(time.Now()),
 		Methodology: domain.MethodologyDeepWork,
 	}
 	now := time.Now()
@@ -619,6 +619,15 @@ type failingStorage struct {
 }
 
 func (f *failingStorage) Sessions() ports.SessionRepository { return f.sessions }
+
+// WithTx keeps the injected errors inside transactions.
+func (f *failingStorage) WithTx(ctx context.Context, fn func(tx ports.Storage) error) error {
+	return f.Storage.WithTx(ctx, func(tx ports.Storage) error {
+		sessions := *f.sessions
+		sessions.SessionRepository = tx.Sessions()
+		return fn(&failingStorage{Storage: tx, sessions: &sessions})
+	})
+}
 
 func TestStateService_GetCurrentState_PropagatesErrors(t *testing.T) {
 	ctx := context.Background()
