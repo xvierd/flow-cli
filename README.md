@@ -25,9 +25,12 @@ $ flow
     Deep Work   Longer sessions, distraction tracking
     Make Time   Daily Highlight, focus scoring
 
-  What are you working on? (Enter to skip): Write API docs #coding
+  Duration:
+  > Focus       25m
+    Short       15m
+    Deep        50m
 
-  Starting 25m session...
+  What are you working on? (Enter to skip): Write API docs #coding
 ```
 
 ```
@@ -41,7 +44,7 @@ $ flow
 
        📊 Today: 3 work sessions, 1 break, 1h15m worked
 
-       [s]tart [p]ause [x] stop [c]ancel [b]reak [q]uit
+       [p]ause  [f]inish  [v]oid  [b]reak  [c]lose  tab:notify on
 ```
 
 ## Why Flow
@@ -73,8 +76,8 @@ Uninstall with `curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main
 ```bash
 flow                        # interactive wizard (main menu, task, session)
 flow add "Fix auth bug"     # create a task
-flow start                 # start a session for the active task
-flow status                 # current session + today's stats
+flow start                  # start a work session (optionally: flow start <task-id>)
+flow status                 # one-shot view of the current session + today's stats
 flow stats                  # productivity dashboard
 flow reflect                # weekly reflection
 flow report --week          # aggregated weekly report (terminal / md / csv / json)
@@ -104,19 +107,21 @@ Flow ships three rigorously separated methodologies. Pick one from the main menu
 methodology = "deepwork"   # pomodoro, deepwork, or maketime
 ```
 
+Breaks follow the active mode (`methodology` in config, or `--mode`). In Pomodoro a break taken after every 4th work session of the day is long, and any other break (including one taken before any work that day) is short; Deep Work and Make Time use their own `break_duration`.
+
 ## Commands
 
 | Command | What it does |
 |---------|-------------|
-| `flow` | Interactive wizard: main menu, mode picker, task, duration, start |
-| `flow add "title" [-t tag1,tag2]` | Create a new task |
+| `flow` | Interactive wizard: main menu, mode picker, duration, task, start (offers Resume / Stop if a session is active) |
+| `flow add "title" [-t tag1,tag2]` | Create a new task (`-t` is repeatable or comma-separated: `-t a,b -t c`) |
 | `flow list [--all] [--status pending]` | List tasks |
-| `flow start [task-id]` | Start a session (`--task`, `--tags` flags also work) |
-| `flow stop` | Complete the active session (Deep Work shutdown ritual) |
+| `flow start [task-id]` | Start a work session and open the timer (`--task <id>`, `--tags a,b` also work). Length: `work_duration` in Pomodoro, the first preset in Deep Work / Make Time |
+| `flow stop` | Complete the active session, recording the time actually worked; then runs the mode's prompts (notes / shutdown ritual / focus score) |
 | `flow pause` / `flow resume` | Pause / resume the active session |
-| `flow break` | Start a short or long break |
-| `flow void` | Void a session due to interruption |
-| `flow status [--json]` | Current session + today's stats |
+| `flow break` | Start a short or long break and open the timer |
+| `flow void` | Void a session due to interruption (not counted in stats) |
+| `flow status [--json]` | One-shot view of the current session + today's stats (`active_task` is `null` when no session is active) |
 | `flow stats [--period week|month]` | Productivity dashboard: sessions by mode, focus scores, heatmap |
 | `flow reflect [--today]` | Weekly reflection: day-by-day breakdown, highlights, focus |
 | `flow report [--week\|--month] [--format terminal\|md\|csv] [--out file] [--json]` | Aggregated report: daily breakdown, 24h heatmap, top tags, methodology focus |
@@ -126,6 +131,8 @@ methodology = "deepwork"   # pomodoro, deepwork, or maketime
 | `flow config` | Configure presets, breaks, methodology, notifications |
 | `flow reset [--force]` | Wipe the database |
 | `flow mcp` | Start the MCP server |
+
+Only one session (running or paused) can be active at a time; `flow start` offers to stop the current one first. A running session whose timer has already run out is completed automatically and never blocks a new start. Stopping records the time actually worked (paused time is not counted), and when a session ends (stopped, voided, cancelled or run out, from the CLI, TUI or MCP) its in-progress task returns to pending.
 
 ### Global Flags
 
@@ -148,11 +155,16 @@ When a session completes, Flow shows a "What next?" menu instead of exiting. Cha
   [n]ew session  [b]reak  [q]uit
 ```
 
-- **`n`** — start a new session (last methodology is pre-selected; your last task is the first option)
+- **`n`** — set up a new session in the same methodology (duration, then task; recent tasks are offered first). Works whether the timer was opened by `flow`, `flow start`, `flow break` or Resume
+- **`s`** — start right away, repeating the last session (same duration, task and tags) when it belongs to the current methodology; otherwise the mode's first preset
 - **`b`** — start a break (only after work sessions)
 - **`q`** — quit the timer
 
-`[n]` is unlocked only after the mode's ceremony is done: immediately in Pomodoro, after the 4-step shutdown ritual + distraction/outcome review in Deep Work, and after the focus score + energize log in Make Time.
+`[n]` and `[s]` are unlocked only after the mode's ceremony is done: immediately in Pomodoro, after the 4-step shutdown ritual (or accomplishment) + outcome/distraction review in Deep Work, and after the focus score + energize log in Make Time. With `auto_break = true`, the automatic break (a 3-second countdown, cancelled by any key) also waits for those prompts.
+
+Resuming an active session adopts that session's methodology, whatever the configured default. Voiding (`v`) returns the timer to idle: the session is not counted and no completion notification is sent.
+
+In Make Time, quitting the fullscreen timer started from `flow` asks for your **Highlight for tomorrow**, which is saved as the next day's Highlight. If yesterday's Highlight is still open, the fullscreen wizard offers to carry it forward once per run (inline mode lists it as a "Carry forward" option).
 
 ## Deep Work Shutdown Ritual
 
@@ -178,9 +190,9 @@ Or enable it per command with the global `--strict` flag, e.g. `flow --strict st
 
 In strict mode, while a work session is active:
 
-- **Pausing, finishing (stopping), voiding, and cancelling are locked** — the session must run to completion. CLI commands (`flow stop`, `flow pause`, `flow void`) and MCP tools (`stop_pomodoro`, `pause_pomodoro`, `void_session`, `cancel_session`) fail with a descriptive "strict focus mode" error.
+- **Pausing, finishing (stopping), voiding, and cancelling are locked** until the timer reaches zero — the session must run to completion. CLI commands (`flow stop`, `flow pause`, `flow void`) and MCP tools (`stop_pomodoro`, `pause_pomodoro`, `void_session`, `cancel_session`) fail with a descriptive "strict focus mode" error. A session that is already paused can still be resumed.
 - **Break sessions are unaffected** — you can still pause, finish, or skip a break.
-- The TUI shows a `🔒 STRICT` badge and locked keys (`p`/`f`/`v`/`b`, plus `m` inline) explain themselves instead of acting.
+- The TUI shows a `🔒 STRICT` badge and locked keys (`p`/`f`/`v`/`b`, plus `m` inline) explain themselves instead of acting. `c` (close the view) is never locked; the session keeps running.
 
 To leave strict mode, set `[focus] strict = false` in the config (or drop the `--strict` flag).
 
@@ -188,23 +200,23 @@ To leave strict mode, set `[focus] strict = false` in the config (or drop the `-
 
 | Key | Action | Context |
 |-----|--------|---------|
-| `s` | Start session / skip break | Idle / break |
+| `s` | Start session (repeats the last one) / skip break and start working | Idle, completion / break |
 | `p` | Pause / resume | Work or break |
-| `f` | Finish (stop) session | Work / break |
-| `x` | Finish session | Work (alias) |
-| `v` | Void session | Work |
-| `c` | Cancel / close session | Work / break |
-| `b`, `m` | Take a break | Work / inline |
-| `q` | Quit | Idle / completion |
-| `d` | Log a distraction (`,n` next) | Deep Work |
+| `f` | Finish (stop) session — press twice to confirm | Work / break |
+| `v` | Void session and return to idle (not counted, no notification) | Work |
+| `c` | Close the timer view (the session keeps running) | Idle / work / break |
+| `b` | Take a break (mid-session: press twice; stops the work session first) | Work / completion |
+| `m` | Switch mode (cancels an active session after a second `m`) | Inline only |
+| `q` | Quit | Completion screen |
+| `d` | Log a distraction: type it, `enter`, then `i` internal / `e` external (`enter` skips) | Deep Work |
 | `r` | Review distractions | Deep Work completion |
 | `a` | Shutdown ritual | Deep Work completion |
 | `o` | Outcome review | Deep Work completion |
-| `1`–`5` | Rate focus score | Make Time |
-| `w`/`t`/`e`/`n` | Energize: walk / stretch / exercise / none | Make Time |
+| `1`–`5` | Rate focus score | Make Time completion |
+| `w`/`t`/`e`/`n` | Energize: walk / stretch / exercise / none | Make Time completion |
 | `tab` | Toggle notifications on/off | Any session |
 | `n` | New session | Completion screen |
-| `esc` | Back / cancel prompt | Any menu |
+| `esc` | Back / cancel prompt or confirmation | Any menu |
 | `ctrl+c` | Quit | Any |
 
 ## Claude Code Integration
@@ -249,7 +261,12 @@ Let AI assistants read and act on your focus state. Add to your editor's MCP con
 
 Works with Claude Code, Cursor, and any MCP-compatible client.
 
-**Sessions** — `start_session` (methodology, task, duration, tags, intended outcome), `start_break`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `cancel_session`, `void_session`.
+- The server speaks JSON-RPC over stdio: stdout carries only protocol messages, and the startup banner and diagnostics go to stderr.
+- `duration_minutes` must be a whole number from 1 to 1440. Omit it for the methodology's default: `work_duration` in Pomodoro, the first preset in Deep Work / Make Time. `start_session` without `methodology` uses the configured one.
+- Invalid arguments and storage failures come back as tool errors (`isError: true`); a panic inside a tool is reported the same way instead of killing the server.
+- Tool calls are serialized, and the CLI, TUI and MCP server can all use the same database at once.
+
+**Sessions** — `start_session` (methodology, task, duration, tags, intended outcome), `start_break`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `cancel_session`, `void_session`, and `start_pomodoro` (deprecated alias of `start_session`).
 
 **Reviews & insights** — `get_current_state`, `get_recent_sessions`, `get_daily_summary`, `get_period_stats`, `get_focus_report`, `get_today_highlight`.
 
@@ -262,12 +279,16 @@ Example: an agent asks you to log a distraction:
 ```
 > tell the agent to log a distraction
 log_distraction(session_id="8f2a…", text="Phone rings", category="external")
-→ {"session_id": "8f2a…", "logged": true}
+→ {"session_id": "8f2a…", "logged": "Phone rings", "category": "external"}
 ```
 
 ## Configuration
 
-Flow stores config at `~/.flow/config.toml` and data at `~/.flow/flow.db`.
+Flow stores config at `~/.flow/config.toml` (created with defaults on first run) and data at `<storage.data_dir>/flow.db` (`~/.flow/flow.db` by default; `--db` overrides it).
+
+If the config file cannot be parsed, Flow prints a warning on stderr and runs with the defaults without touching the file. Until you fix or remove it, `flow config` refuses to save, and settings changed elsewhere (such as the TUI notification toggle) are not persisted.
+
+The database schema migrates automatically on startup (current version: 3). A database written by a newer flow is rejected with a message asking you to upgrade. The database uses WAL and a busy timeout, so the TUI, the MCP server and CLI commands can share it at the same time.
 
 ```toml
 methodology = "pomodoro"  # default mode: pomodoro, deepwork, maketime
@@ -278,11 +299,11 @@ first_run = true
 strict = false           # strict focus mode (see above)
 
 [pomodoro]
-work_duration = "25m"
-short_break = "5m"
-long_break = "15m"
-sessions_before_long = 4
-auto_break = false
+work_duration = "25m0s"   # default length of Pomodoro sessions (`flow start`, MCP)
+short_break = "5m0s"
+long_break = "15m0s"
+sessions_before_long = 4  # Pomodoro mode always uses 4
+auto_break = false        # start the break automatically after a work session
 preset1_name = "Focus"
 preset1_duration = "25m0s"
 preset2_name = "Short"
@@ -293,7 +314,7 @@ preset3_duration = "50m0s"
 [deepwork]
 deep_work_goal_hours = 4.0
 break_duration = "20m0s"
-philosophy = "journalistic"           # journalistic, bimodal, monastic
+philosophy = "journalistic"           # rhythmic, bimodal, journalistic, monastic (empty: asked on first Deep Work run)
 preset1_name = "Deep"
 preset1_duration = "1h30m0s"
 preset2_name = "Focus"
@@ -314,6 +335,9 @@ preset3_duration = "15m0s"
 [notifications]
 enabled = true
 sound = true
+
+[storage]
+data_dir = "~/.flow"     # "~" is expanded to your home directory
 
 [theme]
 color_work = "#7C6FE0"
@@ -341,6 +365,8 @@ internal/
 ├── domain/       # Entities: Task, Session, State, Report
 ├── ports/        # Interfaces: Storage, Timer, GitDetector, MCP
 ├── services/     # Use cases: TaskService, PomodoroService, StateService, ReportService
+├── methodology/  # Pomodoro / Deep Work / Make Time mode rules and presets
+├── config/       # ~/.flow/config.toml loading and saving
 ├── i18n/         # en/es message catalogs
 └── adapters/     # Implementations
     ├── storage/  # SQLite (versioned migrations, transactions, normalized tags)
