@@ -580,7 +580,7 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 	var pausedAt sql.NullTime
 	var completedAt sql.NullTime
 	var durationMs int64
-	var modifiedStr string
+	var gitBranch, gitCommit, modifiedStr sql.NullString
 	var notes sql.NullString
 	var methodology sql.NullString
 	var focusScore sql.NullInt64
@@ -601,8 +601,8 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 		&session.StartedAt,
 		&pausedAt,
 		&completedAt,
-		&session.GitBranch,
-		&session.GitCommit,
+		&gitBranch,
+		&gitCommit,
 		&modifiedStr,
 		&notes,
 		&methodology,
@@ -634,8 +634,11 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 	if completedAt.Valid {
 		session.CompletedAt = &completedAt.Time
 	}
-	if modifiedStr != "" {
-		session.GitModified = strings.Split(modifiedStr, ",")
+	// The git columns are NULL on rows written by very old versions.
+	session.GitBranch = gitBranch.String
+	session.GitCommit = gitCommit.String
+	if modifiedStr.String != "" {
+		session.GitModified = strings.Split(modifiedStr.String, ",")
 	}
 	if notes.Valid {
 		session.Notes = notes.String
@@ -687,7 +690,7 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 		var pausedAt sql.NullTime
 		var completedAt sql.NullTime
 		var durationMs int64
-		var modifiedStr string
+		var gitBranch, gitCommit, modifiedStr sql.NullString
 		var notes sql.NullString
 		var methodology sql.NullString
 		var focusScore sql.NullInt64
@@ -708,8 +711,8 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 			&session.StartedAt,
 			&pausedAt,
 			&completedAt,
-			&session.GitBranch,
-			&session.GitCommit,
+			&gitBranch,
+			&gitCommit,
 			&modifiedStr,
 			&notes,
 			&methodology,
@@ -737,8 +740,11 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 		if completedAt.Valid {
 			session.CompletedAt = &completedAt.Time
 		}
-		if modifiedStr != "" {
-			session.GitModified = strings.Split(modifiedStr, ",")
+		// The git columns are NULL on rows written by very old versions.
+		session.GitBranch = gitBranch.String
+		session.GitCommit = gitCommit.String
+		if modifiedStr.String != "" {
+			session.GitModified = strings.Split(modifiedStr.String, ",")
 		}
 		if notes.Valid {
 			session.Notes = notes.String

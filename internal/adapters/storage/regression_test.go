@@ -658,3 +658,40 @@ func TestMigrate_V3ResplitsCommaTags(t *testing.T) {
 		t.Errorf("session_tags after v3 = %v, want [x y]", got)
 	}
 }
+
+// TestSessionRepository_ScanNullGitColumns guards that rows written by very
+// old versions, whose git_branch, git_commit and git_modified are NULL, are
+// read back by both the single-row and the multi-row scan.
+func TestSessionRepository_ScanNullGitColumns(t *testing.T) {
+	store, err := New(filepath.Join(t.TempDir(), "flow.db"))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	ctx := context.Background()
+
+	started := time.Now().Add(-time.Hour)
+	if _, err := store.(*sqliteStorage).db.ExecContext(ctx, `
+		INSERT INTO sessions (id, task_id, type, status, duration_ms, started_at,
+			completed_at, git_branch, git_commit, git_modified, notes)
+		VALUES ('old', NULL, 'work', 'completed', 1500000, ?, ?, NULL, NULL, NULL, NULL)`,
+		started, started.Add(25*time.Minute)); err != nil {
+		t.Fatalf("insert legacy row error = %v", err)
+	}
+
+	got, err := store.Sessions().FindByID(ctx, "old")
+	if err != nil {
+		t.Fatalf("FindByID() error = %v", err)
+	}
+	if got == nil || got.GitBranch != "" || got.GitCommit != "" || got.GitModified != nil {
+		t.Fatalf("FindByID() = %+v, want the row with empty git context", got)
+	}
+
+	recent, err := store.Sessions().FindRecent(ctx, started.Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("FindRecent() error = %v", err)
+	}
+	if len(recent) != 1 || recent[0].ID != "old" || recent[0].GitBranch != "" {
+		t.Fatalf("FindRecent() = %+v, want the legacy row", recent)
+	}
+}
