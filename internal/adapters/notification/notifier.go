@@ -24,7 +24,7 @@ func (n *Notifier) Notify(title, message string) error {
 		return nil
 	}
 
-	if err := beeep.Notify(title, message, ""); err != nil {
+	if err := send(title, message); err != nil {
 		return err
 	}
 

@@ -12,3 +12,10 @@ fi
 
 rm "$BINARY_PATH"
 echo "${BINARY} has been removed from ${BINARY_PATH}"
+
+# macOS: the helper app flow builds to show its icon on notifications.
+NOTIFIER_APP="$HOME/Library/Application Support/flow/Flow.app"
+if [ -d "$NOTIFIER_APP" ]; then
+  rm -rf "$NOTIFIER_APP"
+  echo "Removed ${NOTIFIER_APP}"
+fi

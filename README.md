@@ -215,6 +215,8 @@ You get a desktop notification when a session ends, whether or not the timer is 
 
 Turn notifications off with `[notifications] enabled = false` (or `tab` in the timer). Set `FLOW_NO_WATCHER=1` to never start the background process.
 
+Notifications carry the Flow icon. On macOS, apps post notifications under their own icon, so the first notification builds a tiny helper app, `~/Library/Application Support/flow/Flow.app`, and macOS asks whether "Flow" may send notifications. That first time Flow also sends a plain notification, since macOS drops the one that triggered the prompt. Allow it, and choose **Banners** or **Alerts** for Flow in System Settings → Notifications if they only land in Notification Center. If the helper can't be built or launched, Flow falls back to a plain notification without the icon; if you deny the permission, notifications from Flow stay off until you allow them there.
+
 ## Hooks
 
 Run your own commands when sessions start and end — pause music, set Slack to "focusing", log to a time tracker:
