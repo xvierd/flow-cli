@@ -23,7 +23,7 @@ func TestBadgeGolden(t *testing.T) {
 			got := Badge(c.label, c.value, c.color)
 			path := filepath.Join("testdata", c.name+".svg")
 			if *update {
-				if err := os.WriteFile(path, got, 0o644); err != nil {
+				if err := os.WriteFile(path, got, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}

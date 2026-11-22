@@ -46,7 +46,7 @@ func TestRenderPNG(t *testing.T) {
 			t.Errorf("%s: tile = %v, want panel %v", name, got, th.Panel)
 		}
 		if out := os.Getenv("FLOW_CARD_PREVIEW_DIR"); out != "" {
-			_ = os.WriteFile(out+"/card-"+name+".png", raw, 0o644)
+			_ = os.WriteFile(out+"/card-"+name+".png", raw, 0o600)
 		}
 	}
 	if _, err := ThemeByName("neon"); err == nil {

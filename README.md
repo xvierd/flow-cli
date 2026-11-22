@@ -60,7 +60,8 @@ Most productivity timers are either too heavy (Electron apps with accounts, clou
 ## Install
 
 ```bash
-# Homebrew (macOS / Linux)
+# Homebrew (macOS / Linux). Use the tap-qualified name: homebrew-core's
+# "flow" is a different tool (Facebook's type checker) with the same binary name.
 brew install xvierd/tap/flow
 
 # Go
@@ -184,7 +185,7 @@ flow badge --month --label "deep work" -o docs/focus.svg
 ![focus this week](docs/focus.svg)
 ```
 
-All three read only completed work sessions, like `flow report`, and support `--json`.
+All three count only completed work sessions, like `flow report`. `flow wrapped` and `flow stats --year` support `--json`.
 
 ## Notifications & Background Timer
 

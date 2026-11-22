@@ -44,7 +44,7 @@ func run(dbPath string, days int, seed int64) error {
 	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
-	rng := rand.New(rand.NewSource(seed))
+	rng := rand.New(rand.NewSource(seed)) // #nosec G404 -- deterministic fake demo data, not security sensitive
 
 	specs := []struct {
 		title string

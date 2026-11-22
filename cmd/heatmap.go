@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
@@ -66,14 +66,16 @@ func runYearHeatmap(ctx context.Context, now time.Time) error {
 			"days":          days,
 		})
 	}
+	var buf bytes.Buffer
+	renderYearHeatmap(&buf, hm)
 	fmt.Println()
-	renderYearHeatmap(os.Stdout, hm)
-	return nil
+	_, err = os.Stdout.Write(buf.Bytes())
+	return err
 }
 
 // renderYearHeatmap draws the 53x7 grid with month labels on top, weekday
 // labels on the left and a Less→More legend.
-func renderYearHeatmap(w io.Writer, hm *domain.YearHeatmap) {
+func renderYearHeatmap(w *bytes.Buffer, hm *domain.YearHeatmap) {
 	title := lipgloss.NewStyle().Bold(true).Foreground(wrapAccent)
 	dim := lipgloss.NewStyle().Foreground(wrapMuted)
 	value := lipgloss.NewStyle().Bold(true).Foreground(wrapAccent)

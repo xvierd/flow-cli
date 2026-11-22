@@ -238,11 +238,15 @@ func fit(f font.Face, s string, maxW int) string {
 	return ""
 }
 
-// wrap splits s into lines no wider than maxW pixels.
+// wrap splits s into lines no wider than maxW pixels. It breaks only at
+// regular spaces, so non-breaking spaces (U+00A0) keep words together.
 func wrap(f font.Face, s string, maxW int) []string {
 	var lines []string
 	cur := ""
-	for _, word := range strings.Fields(s) {
+	for _, word := range strings.Split(s, " ") {
+		if word == "" {
+			continue
+		}
 		cand := word
 		if cur != "" {
 			cand = cur + " " + word

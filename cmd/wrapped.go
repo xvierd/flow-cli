@@ -132,7 +132,7 @@ func wrappedJSON(w *domain.Wrapped) map[string]interface{} {
 }
 
 func writeCardPNG(path string, card share.Card, theme share.Theme) error {
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- user-specified output path
 	if err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to create output file"), err)
 	}
@@ -202,7 +202,8 @@ func funFactText(w *domain.Wrapped) string {
 	case domain.FunFactWeekend:
 		return i18n.T("Weekend warrior: %d%% of your focus happened on weekends.", v)
 	case domain.FunFactMarathon:
-		return i18n.T("Marathon mode: your longest session lasted %s.", formatHours(float64(v)/60))
+		// Non-breaking space keeps "1h 30m" together when the line wraps.
+		return i18n.T("Marathon mode: your longest session lasted %s.", strings.ReplaceAll(formatHours(float64(v)/60), " ", "\u00a0"))
 	case domain.FunFactMovies:
 		return i18n.T("That's %d back-to-back movies worth of focus.", v)
 	case domain.FunFactFirstSteps:

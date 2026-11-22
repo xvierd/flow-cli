@@ -58,7 +58,7 @@ func runBadge(cmd *cobra.Command, args []string) error {
 		_, err := os.Stdout.Write(svg)
 		return err
 	}
-	if err := os.WriteFile(badgeOut, svg, 0o644); err != nil {
+	if err := os.WriteFile(badgeOut, svg, 0o644); err != nil { // #nosec G306 -- the badge is meant to be committed and world-readable
 		return fmt.Errorf("%s: %w", i18n.T("failed to create output file"), err)
 	}
 	if jsonOutput {
