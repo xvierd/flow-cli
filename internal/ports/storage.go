@@ -98,6 +98,11 @@ type SessionRepository interface {
 
 	// GetTagStats returns aggregated tag statistics for work sessions in a time range.
 	GetTagStats(ctx context.Context, start, end time.Time) ([]domain.TagStat, error)
+
+	// GetInsightSessions returns the finished (completed, voided or cancelled)
+	// work sessions started in [start, end), oldest first, with StartedAt in
+	// local time and tags merged from the session and its task.
+	GetInsightSessions(ctx context.Context, start, end time.Time) ([]domain.InsightSession, error)
 }
 
 // Storage is the combined repository interface.

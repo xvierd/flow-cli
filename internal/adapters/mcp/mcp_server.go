@@ -75,6 +75,9 @@ func NewServer(stateProvider ports.MCPStateProvider, version string) *Server {
 	// Register tools
 	s.registerTools()
 
+	// Insights tool and prompts (insights.go)
+	s.registerInsights()
+
 	return s
 }
 
