@@ -439,8 +439,8 @@ func TestReportService_ExcludesNonCompletedSessions(t *testing.T) {
 }
 
 func TestPeriodRange_InvalidPeriod(t *testing.T) {
-	if _, _, err := PeriodRange(ReportPeriod("year"), time.Now()); err == nil {
-		t.Error("expected error for unsupported period 'year'")
+	if _, _, err := PeriodRange(ReportPeriod("decade"), time.Now()); err == nil {
+		t.Error("expected error for unsupported period 'decade'")
 	}
 }
 
