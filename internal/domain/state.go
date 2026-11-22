@@ -33,6 +33,9 @@ type CompletionInfo struct {
 	SessionsUntilLong  int
 	SessionsBeforeLong int
 	DeepWorkStreak     int
+	// TopInsight is the most relevant history insight, shown as one subtle
+	// line on the completion screen ("" hides it).
+	TopInsight string
 }
 
 // MethodologyBreakdown holds session counts and total time per methodology.

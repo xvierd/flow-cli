@@ -81,3 +81,14 @@ func MonthName(m time.Month) string {
 func FullMonthName(m time.Month) string {
 	return fullMonthNames[Language()][(int(m)-1)%12]
 }
+
+// Full day names indexed by time.Weekday (0 = Sunday).
+var fullDayNames = map[string][7]string{
+	"en": {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
+	"es": {"domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"},
+}
+
+// FullDayName returns the localized full name for a weekday (e.g. "Monday" / "lunes").
+func FullDayName(d time.Weekday) string {
+	return fullDayNames[Language()][int(d)%7]
+}

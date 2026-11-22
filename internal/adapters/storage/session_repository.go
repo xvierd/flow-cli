@@ -794,3 +794,74 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 
 	return sessions, rows.Err()
 }
+
+// GetInsightSessions returns the finished work sessions started in
+// [start, end) for the insight detectors, oldest first. StartedAt is
+// converted to local time so hour-of-day and weekday buckets match the
+// user's clock, not UTC. Tags are the union of session and task tags.
+func (r *sessionRepository) GetInsightSessions(ctx context.Context, start, end time.Time) ([]domain.InsightSession, error) {
+	query := `
+		SELECT
+			s.id, COALESCE(s.task_id, ''), COALESCE(t.status, ''), s.status,
+			COALESCE(s.methodology, ''), s.started_at, s.duration_ms,
+			s.focus_score, COALESCE(s.distractions, ''),
+			COALESCE((SELECT GROUP_CONCAT(tag) FROM session_tags WHERE session_id = s.id), ''),
+			COALESCE((SELECT GROUP_CONCAT(tag) FROM task_tags WHERE task_id = s.task_id), '')
+		FROM sessions s
+		LEFT JOIN tasks t ON t.id = s.task_id
+		WHERE s.type = 'work'
+		  AND s.status IN ('completed', 'interrupted', 'cancelled')
+		  AND s.started_at >= ? AND s.started_at < ?
+		ORDER BY s.started_at ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query insight sessions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make([]domain.InsightSession, 0)
+	for rows.Next() {
+		var is domain.InsightSession
+		var taskStatus, status, methodology, distractions, sessionTags, taskTags string
+		var durationMs int64
+		var focus sql.NullInt64
+		if err := rows.Scan(&is.ID, &is.TaskID, &taskStatus, &status, &methodology,
+			&is.StartedAt, &durationMs, &focus, &distractions, &sessionTags, &taskTags); err != nil {
+			return nil, fmt.Errorf("failed to scan insight session: %w", err)
+		}
+		is.TaskDone = taskStatus == string(domain.StatusCompleted)
+		is.Status = domain.SessionStatus(status)
+		is.Methodology = domain.Methodology(methodology)
+		if is.Methodology == "" {
+			is.Methodology = domain.MethodologyPomodoro
+		}
+		is.StartedAt = is.StartedAt.Local()
+		is.Duration = time.Duration(durationMs) * time.Millisecond
+		if focus.Valid && focus.Int64 > 0 {
+			v := int(focus.Int64)
+			is.FocusScore = &v
+		}
+		is.Distractions = unmarshalDistractions(distractions)
+		is.Tags = mergeTagLists(sessionTags, taskTags)
+		result = append(result, is)
+	}
+	return result, rows.Err()
+}
+
+// mergeTagLists unions comma-joined tag lists, keeping first-seen order.
+func mergeTagLists(lists ...string) []string {
+	var tags []string
+	seen := map[string]bool{}
+	for _, list := range lists {
+		for _, tag := range strings.Split(list, ",") {
+			if tag == "" || seen[tag] {
+				continue
+			}
+			seen[tag] = true
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}

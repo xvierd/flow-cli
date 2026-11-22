@@ -862,6 +862,10 @@ func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) strin
 	b.WriteString(dim.Render(fmt.Sprintf("  %s %s",
 		m.theme.IconStats, i18n.T("%d sessions, %s today", vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime)))))
 	b.WriteString("\n")
+	if vd.topInsight != "" {
+		b.WriteString(dim.Render("  💡 " + vd.topInsight))
+		b.WriteString("\n")
+	}
 
 	if m.mode != nil && m.mode.Name() == domain.MethodologyPomodoro {
 		b.WriteString(dim.Render(fmt.Sprintf("  \U0001F345 %s", i18n.T("%d sessions today", vd.statsWorkSessions))))
@@ -898,6 +902,10 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 	b.WriteString(dim.Render("  " + i18n.T("Deep Work: %s today (%.0f%% of %.0fh)",
 		formatMinutesCompact(vd.statsTotalWorkTime), vd.deepWorkPct, vd.deepWorkGoalHours)))
 	b.WriteString("\n")
+	if vd.topInsight != "" {
+		b.WriteString(dim.Render("  💡 " + vd.topInsight))
+		b.WriteString("\n")
+	}
 
 	if m.shutdownRitualMode {
 		b.WriteString(accent.Render("  " + i18n.T("Shutdown Ritual (step %d/4):", m.shutdownStep+1)))
@@ -1003,6 +1011,10 @@ func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) stri
 	b.WriteString(dim.Render(fmt.Sprintf("  %s %s",
 		m.theme.IconStats, i18n.T("%d sessions, %s worked today", vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime)))))
 	b.WriteString("\n")
+	if vd.topInsight != "" {
+		b.WriteString(dim.Render("  💡 " + vd.topInsight))
+		b.WriteString("\n")
+	}
 
 	if m.autoBreakTicks > 0 {
 		b.WriteString(accent.Render("  " + i18n.T("Break starting in %ds... press any key to cancel", m.autoBreakTicks)))

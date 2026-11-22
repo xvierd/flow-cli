@@ -49,6 +49,8 @@ func completionInfoFor(ctx context.Context, workSessions int) *domain.Completion
 	if app.methodology == domain.MethodologyDeepWork {
 		info.DeepWorkStreak, _ = app.pomodoro.GetDeepWorkStreak(ctx, time.Duration(app.config.DeepWork.DeepWorkGoalHours*float64(time.Hour)))
 	}
+	// The 30-day window gives the completion line enough data to speak.
+	info.TopInsight = services.NewInsightsService(app.storage).TopInsight(ctx, services.ReportPeriodMonth)
 	return info
 }
 

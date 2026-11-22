@@ -86,6 +86,7 @@ flow stats                  # productivity dashboard
 flow reflect                # weekly reflection
 flow report --week          # aggregated weekly report (terminal / md / csv / json)
 flow report --week -fmd -o report.md
+flow insights --month       # 3-5 actionable findings from your history, with evidence
 flow break                   # take a break
 flow complete 4f894d3e       # mark a task done
 flow edit 4f894d3e --tags docs,backend
@@ -132,6 +133,7 @@ Breaks follow the active mode (`methodology` in config, or `--mode`). In Pomodor
 | `flow stats [--period week|month]` | Productivity dashboard: sessions by mode, focus scores, heatmap |
 | `flow reflect [--today]` | Weekly reflection: day-by-day breakdown, highlights, focus |
 | `flow report [--week\|--month] [--format terminal\|md\|csv] [--out file] [--json]` | Aggregated report: daily breakdown, 24h heatmap, top tags, methodology focus. In `--json`, each duration comes as a Go duration string (`"total_work_time": "1h15m0s"`) plus a number of minutes (`"total_work_minutes": 75`); heatmap `minutes` is a number |
+| `flow insights [--week\|--month] [--json]` | Actionable findings from the last 7 (default) or 30 days, ranked by relevance, each with its evidence. See [Insights](#insights) |
 | `flow export [--format md|csv] [--period week|month|all]` | Raw session history dump |
 | `flow complete <id>` | Mark a task as completed |
 | `flow edit <id> [--title t] [--description d] [--tags a,b] [--reopen]` | Edit a task; `--tags` replaces all tags (`--tags ""` clears them), `--reopen` moves a completed task back to pending |
@@ -250,6 +252,41 @@ To leave strict mode, set `[focus] strict = false` in the config (or drop the `-
 | `esc` | Back / cancel prompt or confirmation | Any menu |
 | `ctrl+c` | Quit | Any |
 
+## Insights
+
+`flow insights` reads your history and answers "what should I change?" with sentences, not totals:
+
+```
+  Insights · last 30 days
+  2026-10-24 → 2026-11-22 · 64 sessions analyzed
+  ────────────────────────────────────────
+
+  1. After 16:00 you void 3.1x more sessions: save that time for lighter work.
+     7 of 15 voided or cancelled after 16:00 (47%) vs 7 of 49 before (14%)
+
+  2. Protect 09–12h for your hardest work: it's your strongest focus slot.
+     52% of your focus minutes (1100 of 2115) happen there · avg focus 4.3 vs 3.6 overall
+
+  3. #backend tasks take 2.5x the sessions of #docs: split them smaller or budget more blocks.
+     #backend: 5.0 sessions per finished task (4 tasks) · #docs: 2.0 (3 tasks)
+```
+
+Detectors, each with a minimum amount of data before it speaks:
+
+| Finding | Needs |
+|---|---|
+| Best time slot (3-hour slots, by focus minutes and focus score) and best weekday | 8 completed sessions, in at least 2 slots / 3 weekdays |
+| When you void or cancel sessions, by hour of day and by weekday | 10 finished sessions (completed, voided or cancelled) |
+| Tags that take more sessions per finished task | 2 tags with 2 finished tasks each |
+| Optimal session length (the length you finish most often) | 10 finished sessions across 2 length bands |
+| Trend of focus time vs the previous 7 / 30 days | 3 completed sessions in each period |
+| Streak (consecutive days with completed work) | a 3-day streak |
+| Dominant Deep Work distractions (internal vs external) | 5 categorized distractions |
+
+When a detector lacks data, the output says how many sessions it still needs instead of guessing. The window is rolling (today included), so a Monday is compared with the previous 7 days, not an empty week; hours and weekdays are in local time. Voided sessions only keep the time they lasted, so for the length detector they count against the length you most often finish beyond that point.
+
+The main insight also shows as one dim line at the end of `flow report` and on the end-of-session screen (from the last 30 days).
+
 ## Claude Code Integration
 
 ### Status Line
@@ -301,7 +338,9 @@ Works with Claude Code, Cursor, and any MCP-compatible client.
 
 **Sessions** — `start_session` (`methodology`, `task_id` or `task_title`, `duration_minutes`, `tags`, `intended_outcome`), `start_break`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `cancel_session`, `void_session`, and `start_pomodoro` (deprecated alias of `start_session`).
 
-**Reviews & insights** — `get_current_state`, `get_recent_sessions`, `get_daily_summary`, `get_period_stats`, `get_focus_report`, `get_today_highlight`.
+**Reviews & insights** — `get_current_state`, `get_recent_sessions`, `get_daily_summary`, `get_period_stats`, `get_focus_report`, `get_today_highlight`, `get_insights` (`period`: `week` or `month`; same findings and gaps as `flow insights --json`).
+
+**Prompts** — `plan_my_day` (optional `available_hours`) hands the assistant your insights, pending tasks and today's highlight and asks for a schedule of focus blocks; `weekly_review` walks you through a reflection grounded in the last 7 days of data.
 
 **Tasks** — `get_task`, `list_tasks`, `get_task_history`, `create_task`, `complete_task`, `delete_task`, `start_task`.
 

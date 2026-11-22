@@ -48,6 +48,9 @@ type completionViewData struct {
 
 	// Make Time
 	hasHighlightTask bool
+
+	// topInsight is the main history insight ("" when there is none).
+	topInsight string
 }
 
 // buildCompletionViewData derives all values needed for completion screens from
@@ -80,8 +83,10 @@ func buildCompletionViewData(
 	}
 
 	streak := 0
+	topInsight := ""
 	if completionInfo != nil {
 		streak = completionInfo.DeepWorkStreak
+		topInsight = completionInfo.TopInsight
 	}
 
 	// The session has ended, so ActiveTask is nil here: compare the completed
@@ -106,5 +111,6 @@ func buildCompletionViewData(
 		statsBreaksTaken:   stats.BreaksTaken,
 		statsTotalWorkTime: stats.TotalWorkTime,
 		hasHighlightTask:   hasHighlight,
+		topInsight:         topInsight,
 	}
 }

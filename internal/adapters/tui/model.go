@@ -685,6 +685,9 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 		i18n.T("Today: %d work sessions, %d breaks, %s worked", vd.statsWorkSessions, vd.statsBreaksTaken, formatDuration(vd.statsTotalWorkTime)))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
+	if vd.topInsight != "" {
+		sections = append(sections, helpStyle.Render("💡 "+vd.topInsight))
+	}
 
 	if m.mode != nil && m.mode.Name() == domain.MethodologyPomodoro {
 		sections = append(sections, helpStyle.Render(fmt.Sprintf("\U0001F345 %s", i18n.T("%d sessions today", vd.statsWorkSessions))))
@@ -725,6 +728,9 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 	if vd.deepWorkStreak > 0 {
 		sections = append(sections, "")
 		sections = append(sections, statusStyle.Render(i18n.T("Deep Work streak: %d days", vd.deepWorkStreak)))
+	}
+	if vd.topInsight != "" {
+		sections = append(sections, helpStyle.Render("💡 "+vd.topInsight))
 	}
 
 	sections = append(sections, "")
@@ -825,6 +831,9 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 		i18n.T("Today: %d sessions, %s worked", vd.statsWorkSessions, formatDuration(vd.statsTotalWorkTime)))
 	sections = append(sections, "")
 	sections = append(sections, helpStyle.Render(statsText))
+	if vd.topInsight != "" {
+		sections = append(sections, helpStyle.Render("💡 "+vd.topInsight))
+	}
 
 	if vd.hasBreakInfo {
 		sections = append(sections, "")

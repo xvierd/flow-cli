@@ -66,8 +66,14 @@ func runReport(cmd *cobra.Command, args []string) error {
 		}
 	case reportFormat == "terminal":
 		renderTerminalReport(&buf, report)
+		if line := topInsightLine(services.NewInsightsService(app.storage).TopInsight(ctx, period)); line != "" {
+			fmt.Fprintf(&buf, "  %s\n\n", line)
+		}
 	case reportFormat == "md":
 		renderMarkdownReport(&buf, report)
+		if top := services.NewInsightsService(app.storage).TopInsight(ctx, period); top != "" {
+			fmt.Fprintf(&buf, "> 💡 %s\n", top)
+		}
 	case reportFormat == "csv":
 		if err := renderCSVReport(&buf, report); err != nil {
 			return err
