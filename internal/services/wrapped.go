@@ -35,8 +35,8 @@ func (s *WrappedService) GetWrapped(ctx context.Context, period ReportPeriod, re
 	// Load a year of history before the window too, so the current streak is
 	// not capped at the period start.
 	since := start
-	if s := ref.AddDate(-1, 0, -1); s.Before(since) {
-		since = s
+	if yearAgo := ref.AddDate(-1, 0, -1); yearAgo.Before(since) {
+		since = yearAgo
 	}
 	sessions, err := s.storage.Sessions().FindRecent(ctx, since)
 	if err != nil {
@@ -54,7 +54,7 @@ func (s *WrappedService) GetWrapped(ctx context.Context, period ReportPeriod, re
 // GetYearHeatmap loads the last 53 weeks of history and builds the heatmap.
 func (s *WrappedService) GetYearHeatmap(ctx context.Context, ref time.Time) (*domain.YearHeatmap, error) {
 	first := heatmapStart(ref)
-	sessions, err := s.storage.Sessions().FindRecent(ctx, first.AddDate(0, 0, -1))
+	sessions, err := s.storage.Sessions().FindRecent(ctx, first.Noon(ref.Location()).AddDate(0, 0, -2))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sessions: %w", err)
 	}
@@ -90,10 +90,51 @@ func inRange(t, start, end time.Time) bool {
 	return !t.Before(start) && t.Before(end)
 }
 
-// dayOf returns local midnight of t in loc.
-func dayOf(t time.Time, loc *time.Location) time.Time {
+// civilDate is a local calendar day. Day arithmetic goes through civil
+// dates (anchored at noon) rather than chained AddDate on midnights, because
+// in zones where DST starts at 00:00 (e.g. America/Santiago) local midnight
+// does not exist and time.Date(y, m, d, 0, ...) lands on the previous day.
+type civilDate struct {
+	Y int
+	M time.Month
+	D int
+}
+
+func civilOf(t time.Time, loc *time.Location) civilDate {
 	y, m, d := t.In(loc).Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, loc)
+	return civilDate{y, m, d}
+}
+
+// AddDays returns the civil date n days later (n may be negative).
+func (c civilDate) AddDays(n int) civilDate {
+	return civilOf(time.Date(c.Y, c.M, c.D+n, 12, 0, 0, 0, time.UTC), time.UTC)
+}
+
+// Noon is 12:00 local on c, an instant that exists in every zone.
+func (c civilDate) Noon(loc *time.Location) time.Time {
+	return time.Date(c.Y, c.M, c.D, 12, 0, 0, 0, loc)
+}
+
+// Start is the first instant of c in loc: local midnight, or the end of the
+// DST gap when midnight is skipped.
+func (c civilDate) Start(loc *time.Location) time.Time {
+	t := time.Date(c.Y, c.M, c.D, 0, 0, 0, 0, loc)
+	for civilOf(t, loc) != c {
+		t = t.Add(15 * time.Minute)
+	}
+	return t
+}
+
+func (c civilDate) Weekday() time.Weekday { return c.Noon(time.UTC).Weekday() }
+
+func (c civilDate) Before(o civilDate) bool {
+	if c.Y != o.Y {
+		return c.Y < o.Y
+	}
+	if c.M != o.M {
+		return c.M < o.M
+	}
+	return c.D < o.D
 }
 
 // BuildWrapped aggregates sessions into a Wrapped summary over [start, end).
@@ -109,8 +150,8 @@ func BuildWrapped(sessions []*domain.PomodoroSession, titles map[string]string, 
 		BestHour: -1,
 	}
 
-	perDay := map[time.Time]time.Duration{}
-	historyDays := map[time.Time]bool{}
+	perDay := map[civilDate]time.Duration{}
+	historyDays := map[civilDate]bool{}
 	var perHour [24]time.Duration
 	perTag := map[string]time.Duration{}
 	perTask := map[string]time.Duration{}
@@ -120,7 +161,7 @@ func BuildWrapped(sessions []*domain.PomodoroSession, titles map[string]string, 
 		if !countsAsFocus(s) {
 			continue
 		}
-		day := dayOf(s.StartedAt, loc)
+		day := civilOf(s.StartedAt, loc)
 		historyDays[day] = true
 		if !inRange(s.StartedAt, start, end) {
 			continue
@@ -156,12 +197,13 @@ func BuildWrapped(sessions []*domain.PomodoroSession, titles map[string]string, 
 
 	// Period length in local calendar days, clamped to ref for the current
 	// period so "consistency" is measured against days that have happened.
-	lastDay := dayOf(end.Add(-time.Nanosecond), loc)
-	if refDay := dayOf(ref, loc); refDay.Before(lastDay) && !refDay.Before(dayOf(start, loc)) {
+	firstDay := civilOf(start, loc)
+	lastDay := civilOf(end.Add(-time.Nanosecond), loc)
+	if refDay := civilOf(ref, loc); refDay.Before(lastDay) && !refDay.Before(firstDay) {
 		lastDay = refDay
 	}
 	run := 0
-	for d := dayOf(start, loc); !d.After(lastDay); d = d.AddDate(0, 0, 1) {
+	for d := firstDay; !lastDay.Before(d); d = d.AddDays(1) {
 		w.PeriodDays++
 		focus, ok := perDay[d]
 		if ok {
@@ -171,7 +213,7 @@ func BuildWrapped(sessions []*domain.PomodoroSession, titles map[string]string, 
 				w.LongestStreak = run
 			}
 			if focus > w.BestDayFocus {
-				w.BestDay, w.BestDayFocus = d, focus
+				w.BestDay, w.BestDayFocus = d.Start(loc), focus
 			}
 		} else {
 			run = 0
@@ -185,7 +227,7 @@ func BuildWrapped(sessions []*domain.PomodoroSession, titles map[string]string, 
 	}
 	w.TopTag, w.TopTagFocus = topKey(perTag)
 	w.TopTask, w.TopTaskFocus = topKey(perTask)
-	w.CurrentStreak = currentStreak(historyDays, dayOf(ref, loc))
+	w.CurrentStreak = currentStreak(historyDays, civilOf(ref, loc))
 	w.FunFact = pickFunFact(w, night, early, weekend)
 	return w
 }
@@ -210,15 +252,15 @@ func topKey(m map[string]time.Duration) (string, time.Duration) {
 // currentStreak counts consecutive local days with focus ending at today.
 // A day without focus yet today does not break a streak that ran until
 // yesterday.
-func currentStreak(days map[time.Time]bool, today time.Time) int {
+func currentStreak(days map[civilDate]bool, today civilDate) int {
 	d := today
 	if !days[d] {
-		d = d.AddDate(0, 0, -1)
+		d = d.AddDays(-1)
 	}
 	n := 0
 	for days[d] {
 		n++
-		d = d.AddDate(0, 0, -1)
+		d = d.AddDays(-1)
 	}
 	return n
 }
@@ -253,11 +295,10 @@ func pickFunFact(w *domain.Wrapped, night, early, weekend time.Duration) domain.
 
 // heatmapStart returns the Monday that begins the first of the 53 columns
 // ending with the week that contains ref.
-func heatmapStart(ref time.Time) time.Time {
-	today := dayOf(ref, ref.Location())
+func heatmapStart(ref time.Time) civilDate {
+	today := civilOf(ref, ref.Location())
 	offset := (int(today.Weekday()) + 6) % 7 // Monday = 0
-	lastMonday := today.AddDate(0, 0, -offset)
-	return lastMonday.AddDate(0, 0, -7*(HeatmapWeeks-1))
+	return today.AddDays(-offset - 7*(HeatmapWeeks-1))
 }
 
 // HeatmapLevel maps a day's minutes to an intensity level 0..4 relative to the
@@ -277,22 +318,22 @@ func HeatmapLevel(minutes, maxMinutes int) int {
 func BuildYearHeatmap(sessions []*domain.PomodoroSession, ref time.Time) *domain.YearHeatmap {
 	loc := ref.Location()
 	first := heatmapStart(ref)
-	today := dayOf(ref, loc)
+	today := civilOf(ref, loc)
 
-	perDay := map[time.Time]time.Duration{}
+	perDay := map[civilDate]time.Duration{}
 	for _, s := range sessions {
 		if countsAsFocus(s) {
-			perDay[dayOf(s.StartedAt, loc)] += s.Duration
+			perDay[civilOf(s.StartedAt, loc)] += s.Duration
 		}
 	}
 
-	hm := &domain.YearHeatmap{Start: first, End: today, Weeks: make([][7]domain.HeatmapCell, HeatmapWeeks)}
+	hm := &domain.YearHeatmap{Start: first.Start(loc), End: today.Start(loc), Weeks: make([][7]domain.HeatmapCell, HeatmapWeeks)}
 	for w := 0; w < HeatmapWeeks; w++ {
 		for d := 0; d < 7; d++ {
-			date := first.AddDate(0, 0, w*7+d)
-			cell := domain.HeatmapCell{Date: date, Future: date.After(today)}
+			day := first.AddDays(w*7 + d)
+			cell := domain.HeatmapCell{Date: day.Start(loc), Future: today.Before(day)}
 			if !cell.Future {
-				cell.Minutes = int(perDay[date].Minutes())
+				cell.Minutes = int(perDay[day].Minutes())
 				hm.TotalMinutes += cell.Minutes
 				if cell.Minutes > 0 {
 					hm.ActiveDays++

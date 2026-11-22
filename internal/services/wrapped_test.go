@@ -177,27 +177,27 @@ func assertGridShape(t *testing.T, hm *domain.YearHeatmap, ref time.Time) {
 		t.Fatalf("weeks = %d, want %d", len(hm.Weeks), HeatmapWeeks)
 	}
 	loc := ref.Location()
-	prev := time.Time{}
+	refDay := civilOf(ref, loc)
+	var prev civilDate
 	foundRef := false
 	for w, week := range hm.Weeks {
 		if week[0].Date.Weekday() != time.Monday {
 			t.Fatalf("week %d starts on %v, want Monday", w, week[0].Date.Weekday())
 		}
 		for d, c := range week {
-			if h, m, s := c.Date.Clock(); h != 0 || m != 0 || s != 0 || c.Date.Location() != loc {
-				t.Fatalf("cell %d/%d = %v, want local midnight", w, d, c.Date)
+			day := civilOf(c.Date, loc)
+			// Each cell is the first instant of its local day: midnight, or the
+			// end of the DST gap where midnight is skipped.
+			if c.Date.Location() != loc || !c.Date.Equal(day.Start(loc)) || !civilOf(c.Date.Add(-time.Minute), loc).Before(day) {
+				t.Fatalf("cell %d/%d = %v, want start of local day", w, d, c.Date)
 			}
-			if !prev.IsZero() {
-				py, pm, pd := prev.AddDate(0, 0, 1).Date()
-				cy, cm, cd := c.Date.Date()
-				if py != cy || pm != cm || pd != cd {
-					t.Fatalf("cell %d/%d = %v does not follow %v", w, d, c.Date, prev)
-				}
+			if (w > 0 || d > 0) && prev.AddDays(1) != day {
+				t.Fatalf("cell %d/%d = %v does not follow %v", w, d, day, prev)
 			}
-			prev = c.Date
-			isRef := c.Date.Equal(dayOf(ref, loc))
+			prev = day
+			isRef := day == refDay
 			foundRef = foundRef || isRef
-			if c.Future != c.Date.After(dayOf(ref, loc)) {
+			if c.Future != refDay.Before(day) {
 				t.Fatalf("cell %v future = %v", c.Date, c.Future)
 			}
 			if isRef && w != HeatmapWeeks-1 {
@@ -207,6 +207,46 @@ func assertGridShape(t *testing.T, hm *domain.YearHeatmap, ref time.Time) {
 	}
 	if !foundRef {
 		t.Fatal("reference day not in grid")
+	}
+}
+
+// America/Santiago starts DST at 00:00 (2025-09-07 00:00 does not exist), so
+// naive midnight arithmetic slips to the previous day. Days must still be
+// distinct, consecutive and correctly attributed.
+func TestMidnightDSTGap(t *testing.T) {
+	loc := mustLoc(t, "America/Santiago")
+	if got := time.Date(2025, 9, 7, 0, 0, 0, 0, loc); got.Day() != 6 {
+		t.Skipf("tzdata has no midnight gap on 2025-09-07 (got %v)", got)
+	}
+	ref := time.Date(2025, 9, 20, 15, 0, 0, 0, loc)
+	var sessions []*domain.PomodoroSession
+	for d := 5; d <= 10; d++ {
+		sessions = append(sessions, work("s", time.Date(2025, 9, d, 10, 0, 0, 0, loc), time.Duration(d)*10*time.Minute))
+	}
+
+	start, end, _ := PeriodRange(ReportPeriodMonth, ref)
+	w := BuildWrapped(sessions, nil, ReportPeriodMonth, start, end, ref)
+	if w.ActiveDays != 6 || w.LongestStreak != 6 || w.PeriodDays != 20 {
+		t.Errorf("active=%d longest=%d periodDays=%d, want 6/6/20", w.ActiveDays, w.LongestStreak, w.PeriodDays)
+	}
+	if y, m, d := w.BestDay.Date(); y != 2025 || m != time.September || d != 10 {
+		t.Errorf("BestDay = %v, want Sep 10", w.BestDay)
+	}
+
+	ref = time.Date(2025, 9, 10, 18, 0, 0, 0, loc)
+	w = BuildWrapped(sessions, nil, ReportPeriodWeek, ref, ref.Add(time.Hour), ref)
+	if w.CurrentStreak != 6 {
+		t.Errorf("CurrentStreak across the gap = %d, want 6", w.CurrentStreak)
+	}
+
+	hm := BuildYearHeatmap(sessions, ref)
+	assertGridShape(t, hm, ref)
+	for _, week := range hm.Weeks {
+		for _, c := range week {
+			if c.Date.Month() == time.September && c.Date.Day() == 7 && c.Minutes != 70 {
+				t.Errorf("Sep 7 cell = %+v, want 70 minutes", c)
+			}
+		}
 	}
 }
 
@@ -279,7 +319,7 @@ func TestWrappedService_UsesStorage(t *testing.T) {
 	if err := store.Tasks().Save(ctx, task); err != nil {
 		t.Fatal(err)
 	}
-	s := work("w1", now.Add(-time.Minute), 45*time.Minute, "share")
+	s := work("w1", now, 45*time.Minute, "share")
 	s.TaskID = &task.ID
 	completed := now
 	s.CompletedAt = &completed
