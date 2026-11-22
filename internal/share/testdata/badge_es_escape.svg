@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="162" height="20" role="img" aria-label="foco este mes: 3h 5m &lt;&amp;&gt;">
+  <title>foco este mes: 3h 5m &lt;&amp;&gt;</title>
+  <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+  <clipPath id="r"><rect width="162" height="20" rx="3" fill="#fff"/></clipPath>
+  <g clip-path="url(#r)">
+    <rect width="89" height="20" fill="#555"/>
+    <rect x="89" width="73" height="20" fill="#9F9F9F"/>
+    <rect width="162" height="20" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="11">
+    <text aria-hidden="true" x="44.5" y="15" fill="#010101" fill-opacity=".3" textLength="77">foco este mes</text>
+    <text x="44.5" y="14" textLength="77">foco este mes</text>
+    <text aria-hidden="true" x="125.5" y="15" fill="#010101" fill-opacity=".3" textLength="61">3h 5m &lt;&amp;&gt;</text>
+    <text x="125.5" y="14" textLength="61">3h 5m &lt;&amp;&gt;</text>
+  </g>
+</svg>

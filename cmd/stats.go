@@ -15,7 +15,10 @@ import (
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
-var statsPeriod string
+var (
+	statsPeriod string
+	statsYear   bool
+)
 
 var statsCmd = &cobra.Command{
 	Use:   "stats",
@@ -24,6 +27,10 @@ var statsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		now := time.Now()
+
+		if statsYear {
+			return runYearHeatmap(ctx, now)
+		}
 
 		period := services.ReportPeriodWeek
 		if statsPeriod == "month" {
@@ -128,6 +135,7 @@ var statsCmd = &cobra.Command{
 
 func init() {
 	statsCmd.Flags().StringVarP(&statsPeriod, "period", "p", "week", "Time period: week or month")
+	statsCmd.Flags().BoolVar(&statsYear, "year", false, "Show a GitHub-style heatmap of daily focus over the last 12 months")
 }
 
 func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, energize []domain.EnergizeStat, philosophy string, streak int, prevWeekHours, monthHours time.Duration) {

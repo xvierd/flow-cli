@@ -1434,6 +1434,10 @@ func (s *Server) handleGetDailySummary(ctx context.Context, request mcp.CallTool
 // handleGetPeriodStats handles the get_period_stats tool.
 func (s *Server) handleGetPeriodStats(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	periodStr := request.GetString("period", "week")
+	// The tool advertises week|month only; PeriodRange also knows "year".
+	if periodStr != string(services.ReportPeriodWeek) && periodStr != string(services.ReportPeriodMonth) {
+		return mcp.NewToolResultError(fmt.Sprintf("unsupported period %q: use week or month", periodStr)), nil
+	}
 	start, end, err := services.PeriodRange(services.ReportPeriod(periodStr), time.Now())
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil

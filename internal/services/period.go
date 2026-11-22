@@ -13,10 +13,11 @@ type ReportPeriod string
 const (
 	ReportPeriodWeek  ReportPeriod = "week"
 	ReportPeriodMonth ReportPeriod = "month"
+	ReportPeriodYear  ReportPeriod = "year"
 )
 
 // PeriodRange returns the half-open [start, end) range for a report period
-// relative to the reference time. Weeks start on Monday; months on the 1st.
+// relative to the reference time. Weeks start on Monday; months on the 1st; years on January 1st.
 func PeriodRange(p ReportPeriod, ref time.Time) (time.Time, time.Time, error) {
 	switch p {
 	case ReportPeriodWeek:
@@ -29,6 +30,9 @@ func PeriodRange(p ReportPeriod, ref time.Time) (time.Time, time.Time, error) {
 	case ReportPeriodMonth:
 		start := time.Date(ref.Year(), ref.Month(), 1, 0, 0, 0, 0, ref.Location())
 		return start, start.AddDate(0, 1, 0), nil
+	case ReportPeriodYear:
+		start := time.Date(ref.Year(), time.January, 1, 0, 0, 0, 0, ref.Location())
+		return start, start.AddDate(1, 0, 0), nil
 	default:
 		return time.Time{}, time.Time{}, fmt.Errorf("unsupported period %q", p)
 	}

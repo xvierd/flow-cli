@@ -9,6 +9,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/xvierd/flow-cli)](https://goreportcard.com/report/github.com/xvierd/flow-cli)
 ![MCP Server](https://img.shields.io/badge/MCP%20Server-compatible-8A2BE2)
 
+![flow demo: wrapped card, yearly heatmap and badge](docs/demo.gif)
+
 Flow is a productivity CLI that gets out of your way. Built in Go with an interactive TUI, git awareness, and a full MCP server that lets Claude Code, Cursor, and other agents read and write your focus state. Supports three focus methodologies: **Pomodoro**, **Deep Work**, and **Make Time**.
 
 ```
@@ -58,6 +60,10 @@ Most productivity timers are either too heavy (Electron apps with accounts, clou
 ## Install
 
 ```bash
+# Homebrew (macOS / Linux). Use the tap-qualified name: homebrew-core's
+# "flow" is a different tool (Facebook's type checker) with the same binary name.
+brew install xvierd/tap/flow
+
 # Go
 go install github.com/xvierd/flow-cli/cmd/flow@latest
 
@@ -130,6 +136,9 @@ Breaks follow the active mode (`methodology` in config, or `--mode`). In Pomodor
 | `flow void` | Void a session due to interruption (not counted in stats) |
 | `flow status [--json]` | One-shot view of the current session + today's stats, and the git summary of the last session (`active_task` is `null` when no session is active) |
 | `flow stats [--period week|month]` | Productivity dashboard: sessions by mode, focus scores, heatmap |
+| `flow stats --year` | GitHub-style heatmap of daily focus minutes over the last 12 months (53 weeks × 7 days, 5 levels) |
+| `flow wrapped [--week\|--month\|--year] [--png file] [--theme dark\|light]` | Shareable summary card: focus hours, sessions, streak, best day and hour, top tag and task, a fun fact; `--png` also saves it as an image |
+| `flow badge [--week\|--month\|--year] [-o file] [--label text]` | Shields-style SVG badge such as "focus this week \| 12h" to commit to your README |
 | `flow reflect [--today]` | Weekly reflection: day-by-day breakdown, highlights, focus |
 | `flow report [--week\|--month] [--format terminal\|md\|csv] [--out file] [--json]` | Aggregated report: daily breakdown, 24h heatmap, top tags, focus by git branch, methodology focus. In `--json`, each duration comes as a Go duration string (`"total_work_time": "1h15m0s"`) plus a number of minutes (`"total_work_minutes": 75`); heatmap `minutes` is a number |
 | `flow export [--format md|csv] [--period week|month|all]` | Raw session history dump |
@@ -153,6 +162,30 @@ Only one session (running or paused) can be active at a time; `flow start` offer
 | `--inline`, `-i` | Compact inline timer (narrow terminals / non-TTY) |
 | `--json` | Machine-readable output |
 | `--db <path>` | Custom database path |
+
+## Share Your Focus
+
+`flow wrapped` turns the current week (default), month (`--month`) or year (`--year`) into a card you can screenshot, and `--png` renders the same card as a 1200×630 image, ready for social previews. The terminal card adapts to light and dark terminals; pick the image palette with `--theme dark|light`:
+
+```bash
+flow wrapped                       # this week, in the terminal
+flow wrapped --year --png year.png # this year, also saved as an image
+```
+
+`flow stats --year` draws a contribution-style heatmap: one column per week (Monday first), one cell per local calendar day, five intensity levels relative to your busiest day. When the output has no colors (piped, `NO_COLOR`) the levels are drawn as `· ░ ▒ ▓ █`.
+
+`flow badge` writes an SVG badge with your focus time. Regenerate it whenever you like and commit it:
+
+```bash
+flow badge -o docs/focus.svg                  # "focus this week | 12h"
+flow badge --month --label "deep work" -o docs/focus.svg
+```
+
+```markdown
+![focus this week](docs/focus.svg)
+```
+
+All three count only completed work sessions, like `flow report`. `flow wrapped` and `flow stats --year` support `--json`.
 
 ## Notifications & Background Timer
 
@@ -445,7 +478,17 @@ Install the pre-commit hook (runs `gofmt` + `go vet`):
 git config core.hooksPath .githooks
 ```
 
-The README demo is recorded with [vhs](https://github.com/charmbracelet/vhs) from [`docs/demo.tape`](docs/demo.tape) on a throwaway database: `go build -o flow ./cmd/flow && vhs docs/demo.tape`.
+The README demo is recorded with [vhs](https://github.com/charmbracelet/vhs) from [`docs/demo.tape`](docs/demo.tape) on a throwaway HOME and a fresh database seeded with a year of fake history by [`scripts/demoseed`](scripts/demoseed/main.go) (it refuses to overwrite an existing file): `go build -o flow ./cmd/flow && vhs docs/demo.tape`.
+
+### Releasing
+
+Pushing a `v*` tag runs [GoReleaser](https://goreleaser.com) ([`.goreleaser.yaml`](.goreleaser.yaml)): it builds the `flow-<os>-<arch>` archives that `install.sh` downloads, writes `checksums.txt` (sha256), creates the GitHub release and publishes the Homebrew formula. One-time setup for `brew install xvierd/tap/flow`:
+
+1. Create the public repository `xvierd/homebrew-tap` (an empty repo with a `main` branch is enough; GoReleaser writes `Formula/flow.rb`).
+2. Create a fine-grained personal access token with **Contents: Read and write** on `xvierd/homebrew-tap` only.
+3. Save it as the `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret of `xvierd/flow-cli`.
+
+Without the secret the release still publishes; only the formula upload is skipped. Check the config locally with `goreleaser check` or `goreleaser release --snapshot --clean`.
 
 ## License
 

@@ -100,6 +100,8 @@ func init() {
 	rootCmd.AddCommand(reportCmd)
 	rootCmd.AddCommand(reflectCmd)
 	rootCmd.AddCommand(statsCmd)
+	rootCmd.AddCommand(wrappedCmd)
+	rootCmd.AddCommand(badgeCmd)
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(configCmd)
