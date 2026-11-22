@@ -44,13 +44,24 @@ func (n *Notifier) NotifyPomodoroComplete(duration string) error {
 // methodology (e.g. "Pomodoro", "Deep Work") completes; duration is the time
 // actually worked.
 func (n *Notifier) NotifyWorkComplete(methodology, duration string) error {
-	icon := "✅"
-	if methodology == "Pomodoro" {
-		icon = "🍅"
-	}
-	title := fmt.Sprintf("%s %s Complete!", icon, methodology)
+	title := fmt.Sprintf("%s %s Complete!", methodologyEmoji(methodology), methodology)
 	message := fmt.Sprintf("Great job! You completed a %s work session.", duration)
 	return n.Notify(title, message)
+}
+
+// methodologyEmoji is the title emoji for a methodology label, as returned by
+// domain.Methodology.Label.
+func methodologyEmoji(methodology string) string {
+	switch methodology {
+	case "Pomodoro":
+		return "🍅"
+	case "Deep Work":
+		return "🧠"
+	case "Make Time":
+		return "🎯"
+	default:
+		return "✅"
+	}
 }
 
 // NotifyBreakComplete displays a notification when a break session completes.
