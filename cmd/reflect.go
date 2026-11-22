@@ -99,6 +99,11 @@ var reflectCmd = &cobra.Command{
 			valueStyle.Render(formatMinutes(totalWork)),
 		)
 
+		if totalSessions == 0 {
+			fmt.Printf("  %s\n\n", dimStyle.Render(emptyStateHint()))
+			return nil
+		}
+
 		// Period stats for focus score and distractions
 		periodStats, err := app.storage.Sessions().GetPeriodStats(ctx, weekStart, weekEnd)
 		if err == nil {
@@ -271,6 +276,11 @@ func runReflectToday(ctx context.Context, now time.Time) error {
 	fmt.Printf("  %s  %s\n", dimStyle.Render(i18n.T("Sessions:")), valueStyle.Render(fmt.Sprintf("%d", stats.WorkSessions)))
 	fmt.Printf("  %s  %s\n", dimStyle.Render(i18n.T("Work time:")), valueStyle.Render(formatMinutes(stats.TotalWorkTime)))
 	fmt.Println()
+
+	if stats.WorkSessions == 0 {
+		fmt.Printf("  %s\n\n", dimStyle.Render(emptyStateHint()))
+		return nil
+	}
 
 	// Fetch today's sessions for methodology-specific stats and persistence
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())

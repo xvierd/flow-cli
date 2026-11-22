@@ -28,14 +28,17 @@ var (
 // NOTE: cobra metadata (Use/Short/Long) and flag descriptions are registered
 // at init time, before the display language is resolved, so they stay English.
 var rootCmd = &cobra.Command{
-	Use:   "flow",
+	Use:   "flow [duration] [task]",
 	Short: "Flow - focus sessions (Pomodoro, Deep Work, Make Time) from your terminal",
 	Long: `Flow runs focus sessions from your terminal with three methodologies:
 Pomodoro, Deep Work and Make Time. It tracks tasks, knows your git branch,
 keeps everything in a local SQLite database, and exposes an MCP server so AI
 agents can read and drive your focus state.
 
-Run "flow" with no arguments to start a session interactively.
+Run "flow" with no arguments to start a session interactively, "flow go" to
+repeat your last session right away, or "flow 25 \"fix auth #backend\"" to
+start a 25-minute session on a task (a bare number is minutes; 90m and 1h
+work too; #words become tags).
 Task and session IDs can be shortened to the 8 characters "flow list" shows.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -45,7 +48,8 @@ Task and session IDs can be shortened to the 8 characters "flow list" shows.`,
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 		return cleanupServices()
 	},
-	RunE: runWizard,
+	Args: rootArgs,
+	RunE: runRoot,
 }
 
 // resolveVersion returns the version injected at build time or, for binaries
@@ -85,6 +89,9 @@ func init() {
 	rootCmd.SetVersionTemplate("Flow CLI\nVersion: {{.Version}}\n")
 
 	// Add subcommands
+	rootCmd.Flags().BoolVarP(&quickDetach, "detach", "d", false, "With a duration: start the session without opening the timer")
+
+	rootCmd.AddCommand(goCmd)
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(startCmd)

@@ -76,8 +76,20 @@ Uninstall with `curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main
 
 ## Quick Start
 
+Start focusing with one command; there's nothing to set up first:
+
 ```bash
-flow                        # interactive wizard (main menu, task, session)
+flow go                     # start now: repeats your last session, or a 25-minute Pomodoro
+flow 25 "fix auth #backend" # 25 minutes on a task, tagged #backend (a bare number is minutes)
+flow 90m "write the RFC"    # 90m, 1h, 1h30m work too (1 minute to 8 hours)
+flow                        # wizard: Enter on "Start now" repeats your last session
+```
+
+`flow go` reuses the last work session's methodology, duration, task and tags; a session you stopped early is repeated at its planned length, not the minutes you worked. `flow 25 "title"` reuses an open task with that title instead of creating a duplicate. Both open the timer, or with `--detach` / `-d` (or without a terminal) run in the background like `flow start`. On a fresh install `flow` opens a one-screen welcome that can start a 25-minute session straight away.
+
+More commands:
+
+```bash
 flow add "Fix auth bug"     # create a task (prints its short ID, e.g. 4f894d3e)
 flow start 4f894d3e         # start a work session on that task and open the timer
 flow start --detach         # start without the timer: runs in the background, notifies at the end
@@ -102,7 +114,7 @@ What are you working on? Fix login bug #backend #urgent
 
 ## Methodology Modes
 
-Flow ships three rigorously separated methodologies. Pick one from the main menu or set a default with `--mode` / `methodology` in config.
+Flow ships three rigorously separated methodologies. **Pomodoro is the default**; Deep Work and Make Time are advanced modes. The wizard goes straight to the duration picker in your configured mode, with the length you used last preselected; press `m` there to switch mode. Set the default with `--mode` / `methodology` in config.
 
 | Mode | Description | Session Presets |
 |------|-------------|-----------------|
@@ -120,7 +132,9 @@ Breaks follow the active mode (`methodology` in config, or `--mode`). In Pomodor
 
 | Command | What it does |
 |---------|-------------|
-| `flow` | Interactive wizard: main menu, mode picker, duration, task, start (offers Resume / Stop if a session is active) |
+| `flow` | Interactive wizard: main menu (**Start now** repeats your last session), then duration (last one preselected, `m` changes mode) and task (offers Resume / Stop if a session is active; a one-screen welcome on an empty database) |
+| `flow go [-d]` | Start now: repeat the last work session (methodology, duration, task, tags), or the default 25-minute Pomodoro |
+| `flow <duration> [task…] [-d]` | Start directly: `flow 25 "fix auth #backend"`, `flow 90m deep dive`. A bare number is minutes; `#words` become tags; an open task with the same title is reused |
 | `flow add "title" [-t tag1,tag2]` | Create a new task (`-t` is repeatable or comma-separated: `-t a,b -t c`) |
 | `flow list [--all] [--status pending]` | List tasks |
 | `flow start [task-id]` | Start a work session and open the timer (`--task <id>`, `--tags a,b` also work; `--detach` / `-d` skips the timer). Length: `work_duration` in Pomodoro, the first preset in Deep Work / Make Time |

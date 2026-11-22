@@ -78,3 +78,9 @@ func getDir(path string) string {
 	}
 	return path[:lastSep]
 }
+
+// emptyStateHint is what stats, report and reflect show when there is nothing
+// to summarize: the next step rather than a dead end.
+func emptyStateHint() string {
+	return i18n.T("No sessions here yet. Next step: run \"flow go\" to start one now.")
+}

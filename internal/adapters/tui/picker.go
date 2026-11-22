@@ -21,6 +21,23 @@ type PickerItem struct {
 type PickerResult struct {
 	Index   int
 	Aborted bool
+	// Hotkey is the PickerOptions hotkey that closed the picker, or "" when
+	// an item was chosen with Enter.
+	Hotkey string
+}
+
+// PickerHotkey is an extra key that closes the picker without choosing an
+// item (e.g. "m" to change mode from the duration picker).
+type PickerHotkey struct {
+	Key  string
+	Help string // shown in the key help line, e.g. "m change mode"
+}
+
+// PickerOptions configures RunPickerWith.
+type PickerOptions struct {
+	// Cursor is the initially highlighted item (out-of-range values select 0).
+	Cursor  int
+	Hotkeys []PickerHotkey
 }
 
 type pickerModel struct {
@@ -30,7 +47,18 @@ type pickerModel struct {
 	cursor  int
 	chosen  bool
 	aborted bool
+	hotkeys []PickerHotkey
+	hotkey  string
 	theme   config.ThemeConfig
+}
+
+// newPickerModel builds the vertical picker model for opts.
+func newPickerModel(title string, items []PickerItem, footer string, theme config.ThemeConfig, opts PickerOptions) pickerModel {
+	m := pickerModel{title: title, items: items, footer: footer, theme: theme, hotkeys: opts.Hotkeys}
+	if opts.Cursor > 0 && opts.Cursor < len(items) {
+		m.cursor = opts.Cursor
+	}
+	return m
 }
 
 func (m pickerModel) Init() tea.Cmd { return nil }
@@ -38,6 +66,12 @@ func (m pickerModel) Init() tea.Cmd { return nil }
 func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		for _, hk := range m.hotkeys {
+			if msg.String() == hk.Key {
+				m.hotkey = hk.Key
+				return m, tea.Quit
+			}
+		}
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
@@ -86,8 +120,14 @@ func (m pickerModel) View() string {
 		b.WriteString(footerStyle.Render("  "+m.footer) + "\n")
 	}
 
+	help := i18n.T("↑/↓ navigate · enter select · esc cancel")
+	for _, hk := range m.hotkeys {
+		if hk.Help != "" {
+			help += " · " + hk.Help
+		}
+	}
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("  "+i18n.T("↑/↓ navigate · enter select · esc cancel")) + "\n")
+	b.WriteString(dimStyle.Render("  "+help) + "\n")
 
 	return b.String()
 }
@@ -198,25 +238,27 @@ func RunHorizontalPicker(title string, items []PickerItem, footer string, theme 
 
 // RunPicker launches an interactive arrow-key picker and returns the selected index.
 func RunPicker(title string, items []PickerItem, footer string, theme *config.ThemeConfig) PickerResult {
-	resolved := resolveTheme(theme)
-	m := pickerModel{
-		title:  title,
-		items:  items,
-		footer: footer,
-		theme:  resolved,
-	}
+	return RunPickerWith(title, items, footer, theme, PickerOptions{})
+}
+
+// RunPickerWith is RunPicker with an initial cursor and extra hotkeys.
+func RunPickerWith(title string, items []PickerItem, footer string, theme *config.ThemeConfig, opts PickerOptions) PickerResult {
+	m := newPickerModel(title, items, footer, resolveTheme(theme), opts)
 
 	p := tea.NewProgram(m)
 	result, err := p.Run()
 	if err != nil {
 		return PickerResult{Aborted: true}
 	}
+	return result.(pickerModel).result()
+}
 
-	final := result.(pickerModel)
-	if final.aborted {
+// result converts the final model into a PickerResult.
+func (m pickerModel) result() PickerResult {
+	if m.aborted {
 		return PickerResult{Aborted: true}
 	}
-	return PickerResult{Index: final.cursor}
+	return PickerResult{Index: m.cursor, Hotkey: m.hotkey}
 }
 
 // --- Styled text prompt ---

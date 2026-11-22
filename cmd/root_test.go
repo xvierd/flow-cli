@@ -28,8 +28,8 @@ func TestRootCmd_BareExecution(t *testing.T) {
 		t.Fatal("rootCmd should not be nil")
 	}
 
-	if rootCmd.Use != "flow" {
-		t.Errorf("rootCmd.Use = %q, want %q", rootCmd.Use, "flow")
+	if rootCmd.Name() != "flow" {
+		t.Errorf("rootCmd.Name() = %q, want %q", rootCmd.Name(), "flow")
 	}
 }
 

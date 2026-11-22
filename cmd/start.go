@@ -53,32 +53,10 @@ ends.`,
 		}
 
 		if state.ActiveSession != nil {
-			active := state.ActiveSession
-			remaining := active.RemainingTime()
-			sessionType := domain.GetSessionTypeLabel(active.Type)
-			sessionInfo := i18n.T("%s session (%s remaining)", sessionType, formatCmdDuration(remaining))
-
-			if state.ActiveTask != nil {
-				sessionInfo = i18n.T("%s for task \"%s\" (%s remaining)", sessionType, state.ActiveTask.Title, formatCmdDuration(remaining))
+			proceed, err := confirmReplaceActive(ctx, state)
+			if err != nil || !proceed {
+				return err
 			}
-
-			fmt.Printf("%s\n", i18n.T("⚠️  A %s is already running: %s", strings.ToLower(sessionType), sessionInfo))
-			fmt.Printf("%s\n", i18n.T("   Session ID: %s", active.ID[:8]))
-			fmt.Print(i18n.T("Do you want to stop it and start a new one? [y/N] "))
-
-			var answer string
-			_, _ = fmt.Scanln(&answer)
-			answer = strings.TrimSpace(strings.ToLower(answer))
-
-			if answer != "y" && answer != "yes" {
-				fmt.Println(i18n.T("Keeping current session."))
-				return nil
-			}
-
-			if _, err := app.pomodoro.StopSession(ctx); err != nil {
-				return fmt.Errorf("%s: %w", i18n.T("failed to stop current session"), err)
-			}
-			fmt.Println(i18n.T("⏹️  Previous session stopped."))
 		}
 
 		// Parse tags
@@ -134,6 +112,39 @@ func init() {
 	startCmd.Flags().StringVarP(&startTaskID, "task", "t", "", "Task ID to associate with this session")
 	startCmd.Flags().BoolVarP(&startDetach, "detach", "d", false, "Start the session without opening the timer (it keeps running in the background)")
 	startCmd.Flags().StringSliceVar(&startTags, "tags", nil, "Tags for this session (repeatable or comma-separated, e.g. coding,backend)")
+}
+
+// confirmReplaceActive asks whether to stop the running session so a new one
+// can start, and stops it on yes. Without a terminal the answer reads as no
+// and the running session is kept.
+func confirmReplaceActive(ctx context.Context, state *domain.CurrentState) (bool, error) {
+	active := state.ActiveSession
+	remaining := active.RemainingTime()
+	sessionType := domain.GetSessionTypeLabel(active.Type)
+	sessionInfo := i18n.T("%s session (%s remaining)", sessionType, formatCmdDuration(remaining))
+
+	if state.ActiveTask != nil {
+		sessionInfo = i18n.T("%s for task \"%s\" (%s remaining)", sessionType, state.ActiveTask.Title, formatCmdDuration(remaining))
+	}
+
+	fmt.Printf("%s\n", i18n.T("⚠️  A %s is already running: %s", strings.ToLower(sessionType), sessionInfo))
+	fmt.Printf("%s\n", i18n.T("   Session ID: %s", active.ID[:8]))
+	fmt.Print(i18n.T("Do you want to stop it and start a new one? [y/N] "))
+
+	var answer string
+	_, _ = fmt.Scanln(&answer)
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	if answer != "y" && answer != "yes" {
+		fmt.Println(i18n.T("Keeping current session."))
+		return false, nil
+	}
+
+	if _, err := app.pomodoro.StopSession(ctx); err != nil {
+		return false, fmt.Errorf("%s: %w", i18n.T("failed to stop current session"), err)
+	}
+	fmt.Println(i18n.T("⏹️  Previous session stopped."))
+	return true, nil
 }
 
 func formatCmdDuration(d time.Duration) string {

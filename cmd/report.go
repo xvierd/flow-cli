@@ -203,7 +203,7 @@ func renderTerminalReport(w *bytes.Buffer, r *domain.Report) {
 		)
 	}
 	if r.Summary.TotalSessions == 0 {
-		fmt.Fprintf(w, "\n  %s\n", dimStyle.Render(i18n.T("No completed sessions in this period.")))
+		fmt.Fprintf(w, "\n  %s\n", dimStyle.Render(emptyStateHint()))
 		return
 	}
 	fmt.Fprintln(w)

@@ -148,7 +148,7 @@ func renderDashboard(stats *domain.PeriodStats, hourly map[int]time.Duration, en
 	))
 
 	if stats.TotalSessions == 0 {
-		fmt.Printf("  %s\n\n", dimStyle.Render(i18n.T("No completed sessions in this period.")))
+		fmt.Printf("  %s\n\n", dimStyle.Render(emptyStateHint()))
 		return
 	}
 

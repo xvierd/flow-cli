@@ -44,6 +44,8 @@ type Timer struct {
 	notificationsEnabled    bool
 	notificationToggle      func(bool)
 	firstRun                bool
+	skipModePicker          bool
+	lastDuration            func(domain.Methodology) time.Duration
 	strict                  bool
 	// PostAction holds the action selected from the main menu (stats/reflect).
 	PostAction MainMenuAction
@@ -104,6 +106,11 @@ type TimerConfig struct {
 	FetchYesterdayHighlight func() *domain.Task
 	FirstRun                bool
 	Strict                  bool
+	// SkipModePicker: "Start session" goes straight to the duration picker.
+	SkipModePicker bool
+	// LastDuration returns the last planned work duration in a methodology
+	// (0 if none); the duration picker preselects the matching preset.
+	LastDuration func(domain.Methodology) time.Duration
 }
 
 // Configure applies a TimerConfig to the timer, replacing individual Set* calls.
@@ -137,6 +144,8 @@ func (t *Timer) Configure(cfg TimerConfig) {
 	t.fetchYesterdayHighlight = cfg.FetchYesterdayHighlight
 	t.firstRun = cfg.FirstRun
 	t.strict = cfg.Strict
+	t.skipModePicker = cfg.SkipModePicker
+	t.lastDuration = cfg.LastDuration
 }
 
 // SetMode sets the methodology mode for mode-aware UI behavior.
@@ -231,6 +240,8 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.notificationsEnabled = t.notificationsEnabled
 	model.notificationToggle = t.notificationToggle
 	model.strict = t.strict
+	model.skipModePicker = t.skipModePicker
+	model.lastDuration = t.lastDuration
 
 	// If no active session, start at main menu or mode picker
 	if initialState.ActiveSession == nil {
@@ -245,7 +256,7 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 			}
 		} else {
 			// --mode was passed, skip main menu and mode picker
-			model.phase = phasePickDuration
+			model = model.enterPickDuration()
 		}
 	}
 
