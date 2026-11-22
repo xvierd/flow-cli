@@ -86,7 +86,11 @@ func (s *StateService) GetRecentSessions(ctx context.Context, limit int) ([]*dom
 	}
 
 	if len(sessions) > limit {
-		return sessions[:limit], nil
+		sessions = sessions[:limit]
+	}
+	// Sessions that ended unobserved get their git summary now.
+	if s.pomodoroSvc != nil {
+		s.pomodoroSvc.EnsureGitSummaries(ctx, sessions)
 	}
 	return sessions, nil
 }

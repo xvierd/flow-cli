@@ -54,8 +54,9 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 	daily := map[string]*domain.DayRow{}
 	heat := make(map[int]time.Duration)
 	methods := make(map[domain.Methodology]*domain.MethodologyStat)
-	workDays := make(map[string]bool)   // in-window days with completed work (highlight hit rate)
-	streakDays := make(map[string]bool) // full-history days with completed work
+	workDays := make(map[string]bool)      // in-window days with completed work (highlight hit rate)
+	streakDays := make(map[string]bool)    // full-history days with completed work
+	var inWindow []*domain.PomodoroSession // completed sessions in [start, end)
 
 	for _, s := range sessions {
 		isWork := s.IsWorkSession()
@@ -73,6 +74,7 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 		if !isCompleted {
 			continue
 		}
+		inWindow = append(inWindow, s)
 
 		if isWork {
 			workDays[dayKey] = true
@@ -125,6 +127,7 @@ func (s *ReportService) GetReportForRange(ctx context.Context, period ReportPeri
 	report.Daily = finalizeDays(daily)
 	report.Heatmap = finalizeHeatmap(heat)
 	report.Methodologies = finalizeMethodologies(methods)
+	report.Branches = domain.BranchStats(inWindow)
 	if report.Summary.FocusScoreCount > 0 {
 		report.Summary.AvgFocusScore /= float64(report.Summary.FocusScoreCount)
 	}

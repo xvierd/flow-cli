@@ -21,6 +21,7 @@ type completionViewData struct {
 	// Session
 	elapsed         time.Duration
 	intendedOutcome string
+	gitSummary      string // "3 commits · internal/auth/ (+120 −40)", or ""
 
 	// Distractions
 	distractionCount int
@@ -91,6 +92,7 @@ func buildCompletionViewData(
 	return completionViewData{
 		elapsed:            completedElapsed,
 		intendedOutcome:    cs.completedIntendedOutcome,
+		gitSummary:         cs.gitSummary,
 		distractionCount:   len(cs.distractions),
 		deepWorkHours:      deepWorkHours,
 		deepWorkGoalHours:  goalHours,

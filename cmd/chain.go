@@ -218,6 +218,12 @@ func (w *sessionWizard) startSession(ctx context.Context) (*domain.CurrentState,
 	var taskID *string
 
 	recentTasks, _ := app.storage.Tasks().FindRecentTasks(ctx, 3)
+	// The git branch suggests a new task's name, as an editable default.
+	suggested := suggestionUnlessRecent(branchTaskTitle(w.workingDir), recentTasks)
+	newTaskDesc := i18n.T("Type a name")
+	if suggested != "" {
+		newTaskDesc = i18n.T("Type a name (from branch: %s)", suggested)
+	}
 	switch {
 	case carried != nil:
 		taskName = carried.Title
@@ -232,7 +238,7 @@ func (w *sessionWizard) startSession(ctx context.Context) (*domain.CurrentState,
 		}
 		taskItems = append(taskItems, tui.PickerItem{
 			Label: i18n.T("New task..."),
-			Desc:  i18n.T("Type a name"),
+			Desc:  newTaskDesc,
 		})
 
 		taskResult := tui.RunPicker(i18n.T(mode.TaskPrompt()), taskItems, "", &app.config.Theme)
@@ -245,14 +251,14 @@ func (w *sessionWizard) startSession(ctx context.Context) (*domain.CurrentState,
 			taskID = &recentTasks[taskResult.Index].ID
 		} else {
 			// "New task" selected — prompt for name
-			textResult := tui.RunTextPrompt(i18n.T(mode.TaskPrompt()), i18n.T("Enter to skip"), &app.config.Theme)
+			textResult := tui.RunTextPromptWithValue(i18n.T(mode.TaskPrompt()), i18n.T("Enter to skip"), suggested, &app.config.Theme)
 			if textResult.Aborted {
 				return nil, nil
 			}
 			taskName = textResult.Value
 		}
 	default:
-		textResult := tui.RunTextPrompt(i18n.T(mode.TaskPrompt()), i18n.T("Enter to skip"), &app.config.Theme)
+		textResult := tui.RunTextPromptWithValue(i18n.T(mode.TaskPrompt()), i18n.T("Enter to skip"), suggested, &app.config.Theme)
 		if textResult.Aborted {
 			return nil, nil
 		}

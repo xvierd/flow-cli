@@ -66,6 +66,9 @@ type InlineModel struct {
 
 	// Chaining: remembers the previous session's task for a frictionless repeat
 	lastTaskTitle string
+	// suggestedTaskTitle is derived from the git branch ("" for none) and
+	// pre-fills a new task's name.
+	suggestedTaskTitle string
 
 	// Timer state
 	state                   *domain.CurrentState
@@ -175,11 +178,19 @@ func (m InlineModel) Init() tea.Cmd {
 }
 
 func (m InlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if gm, ok := msg.(gitSummaryMsg); ok {
+		m.applyGitSummary(gm)
+		return m, nil
+	}
 	next, cmd := m.update(msg)
 	if nm, ok := next.(InlineModel); ok {
 		// Arm auto-break once the completion prompts are satisfied, whichever
 		// message (completion detection, a prompt key, an overlay) did it.
 		nm.armAutoBreakIfReady(nm.mode, nm.completedType)
+		// A completed work session's git summary is fetched off the loop.
+		if gitCmd := nm.gitSummaryCmd(); gitCmd != nil {
+			cmd = tea.Batch(cmd, gitCmd)
+		}
 		return nm, cmd
 	}
 	return next, cmd
@@ -858,6 +869,10 @@ func (m InlineModel) viewInlineDefaultComplete(accent, dim lipgloss.Style) strin
 		b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Session complete!"))))
 	}
 	b.WriteString("\n")
+	if vd.gitSummary != "" {
+		b.WriteString(dim.Render("  " + vd.gitSummary))
+		b.WriteString("\n")
+	}
 
 	b.WriteString(dim.Render(fmt.Sprintf("  %s %s",
 		m.theme.IconStats, i18n.T("%d sessions, %s today", vd.statsWorkSessions, formatMinutesCompact(vd.statsTotalWorkTime)))))
@@ -884,6 +899,10 @@ func (m InlineModel) viewInlineDeepWorkComplete(accent, dim lipgloss.Style) stri
 	var b strings.Builder
 	b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Deep Work Session Complete."))))
 	b.WriteString("\n")
+	if vd.gitSummary != "" {
+		b.WriteString(dim.Render("  " + vd.gitSummary))
+		b.WriteString("\n")
+	}
 
 	if vd.intendedOutcome != "" {
 		b.WriteString(dim.Render("  " + i18n.T("Goal: %s", vd.intendedOutcome)))
@@ -978,6 +997,10 @@ func (m InlineModel) viewInlineMakeTimeComplete(accent, dim lipgloss.Style) stri
 	var b strings.Builder
 	b.WriteString(accent.Render(fmt.Sprintf("  %s %s", m.theme.IconApp, i18n.T("Session complete!"))))
 	b.WriteString("\n")
+	if vd.gitSummary != "" {
+		b.WriteString(dim.Render("  " + vd.gitSummary))
+		b.WriteString("\n")
+	}
 
 	if vd.hasHighlightTask {
 		b.WriteString(accent.Render("  " + i18n.T("You made time for your Highlight today.")))

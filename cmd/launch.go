@@ -253,6 +253,10 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 		FetchCompletionInfo: func(fresh *domain.CurrentState) *domain.CompletionInfo {
 			return completionInfoFor(ctx, fresh.TodayStats.WorkSessions)
 		},
+		FetchGitSummary: func(sessionID string) string {
+			return app.pomodoro.GitSummaryFor(ctx, sessionID).String()
+		},
+		SuggestedTaskTitle: branchTaskTitle(workingDir),
 		// Inline-specific fields (zero/nil values are ignored by fullscreen mode).
 		Presets:        presets,
 		BreakInfo:      currentBreakInfo(),

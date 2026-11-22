@@ -14,6 +14,7 @@ type Report struct {
 	Daily         []DayRow          `json:"daily"`
 	Heatmap       []HourBucket      `json:"heatmap"`
 	Tags          []TagStat         `json:"tags"`
+	Branches      []BranchStat      `json:"branches"`
 	Methodologies []MethodologyStat `json:"methodologies"`
 	Streaks       StreakInfo        `json:"streaks"`
 }

@@ -156,11 +156,19 @@ func isTimerMsg(msg tea.Msg) bool {
 
 // Update handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if gm, ok := msg.(gitSummaryMsg); ok {
+		m.applyGitSummary(gm)
+		return m, nil
+	}
 	next, cmd := m.update(msg)
 	if nm, ok := next.(Model); ok {
 		// Arm auto-break once the completion prompts are satisfied, whichever
 		// message (completion detection, a prompt key, an overlay) did it.
 		nm.armAutoBreakIfReady(nm.mode, nm.completedSessionType)
+		// A completed work session's git summary is fetched off the loop.
+		if gitCmd := nm.gitSummaryCmd(); gitCmd != nil {
+			cmd = tea.Batch(cmd, gitCmd)
+		}
 		return nm, cmd
 	}
 	return next, cmd
@@ -663,6 +671,9 @@ func (m Model) viewDefaultWorkComplete(sections []string) []string {
 		sections = append(sections, statusStyle.Render(i18n.T("Session complete! Great work.")))
 	}
 	sections = append(sections, m.progress.ViewAs(1.0))
+	if vd.gitSummary != "" {
+		sections = append(sections, helpStyle.Render(vd.gitSummary))
+	}
 
 	// Show break info
 	if vd.hasBreakInfo {
@@ -712,6 +723,9 @@ func (m Model) viewDeepWorkComplete(sections []string) []string {
 		sections = append(sections, helpStyle.Render(i18n.T("Goal: %s", vd.intendedOutcome)))
 	}
 	sections = append(sections, m.progress.ViewAs(1.0))
+	if vd.gitSummary != "" {
+		sections = append(sections, helpStyle.Render(vd.gitSummary))
+	}
 
 	if vd.distractionCount > 0 {
 		sections = append(sections, "")
@@ -799,6 +813,9 @@ func (m Model) viewMakeTimeComplete(sections []string) []string {
 	sections = append(sections, "")
 	sections = append(sections, statusStyle.Render(i18n.T("Session complete!")))
 	sections = append(sections, m.progress.ViewAs(1.0))
+	if vd.gitSummary != "" {
+		sections = append(sections, helpStyle.Render(vd.gitSummary))
+	}
 
 	if vd.hasHighlightTask {
 		sections = append(sections, "")

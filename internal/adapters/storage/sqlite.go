@@ -171,8 +171,10 @@ const (
 	// schemaVersionOneActive replaces the per-status "one active session"
 	// index with one on a constant, and re-splits comma-joined tags.
 	schemaVersionOneActive = 3
+	// schemaVersionGitSummary adds sessions.git_summary (JSON).
+	schemaVersionGitSummary = 4
 	// schemaVersionLatest is the newest schema this binary understands.
-	schemaVersionLatest = schemaVersionOneActive
+	schemaVersionLatest = schemaVersionGitSummary
 )
 
 // errSchemaTooNew is returned by Migrate when the database was migrated by a
@@ -280,6 +282,11 @@ func (s *sqliteStorage) Migrate() error {
 	}
 	if version < schemaVersionOneActive {
 		if err := s.migrateOneActive(); err != nil {
+			return err
+		}
+	}
+	if version < schemaVersionGitSummary {
+		if err := s.migrateGitSummary(); err != nil {
 			return err
 		}
 	}
@@ -405,6 +412,31 @@ func (s *sqliteStorage) migrateOneActive() error {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit one-active migration: %w", err)
+	}
+	return nil
+}
+
+// migrateGitSummary runs the version-4 step: a nullable JSON column holding
+// each session's git summary. Existing rows keep NULL (no summary). A column
+// left behind by a half-applied run is tolerated, so the step is re-runnable.
+func (s *sqliteStorage) migrateGitSummary() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin git summary migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
+
+	if _, err := tx.Exec("ALTER TABLE sessions ADD COLUMN git_summary TEXT"); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("failed to add git_summary column: %w", err)
+	}
+
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersionGitSummary)); err != nil {
+		return fmt.Errorf("failed to set schema version: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit git summary migration: %w", err)
 	}
 	return nil
 }

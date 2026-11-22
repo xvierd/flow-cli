@@ -21,6 +21,8 @@ type Timer struct {
 	commandCallback         func(ports.TimerCommand) error
 	onSessionComplete       func(sessionType domain.SessionType, worked time.Duration)
 	fetchCompletionInfo     func(*domain.CurrentState) *domain.CompletionInfo
+	fetchGitSummary         func(sessionID string) string
+	suggestedTaskTitle      string
 	fetchBreakInfo          func() string
 	onStartSessionForTask   func(presetIndex int, taskID, taskName, intendedOutcome string) error
 	distractionCallback     func(string, string) error
@@ -81,6 +83,12 @@ type TimerConfig struct {
 	FetchCompletionInfo func(state *domain.CurrentState) *domain.CompletionInfo
 	// FetchBreakInfo recomputes the inline break-info line after a mode switch.
 	FetchBreakInfo func() string
+	// FetchGitSummary returns the git summary line ("3 commits · dir/ (+1 −2)")
+	// of an ended session, or "" for none. It runs off the update loop.
+	FetchGitSummary func(sessionID string) string
+	// SuggestedTaskTitle pre-fills the inline setup's new-task name (the
+	// title derived from the git branch; "" for none).
+	SuggestedTaskTitle string
 	// OnStartSessionForTask, when set, replaces OnStartSession and also receives
 	// the ID of an existing task picked in the inline setup ("" for a new task).
 	OnStartSessionForTask   func(presetIndex int, taskID, taskName, intendedOutcome string) error
@@ -116,6 +124,8 @@ func (t *Timer) Configure(cfg TimerConfig) {
 	}
 	t.fetchCompletionInfo = cfg.FetchCompletionInfo
 	t.fetchBreakInfo = cfg.FetchBreakInfo
+	t.fetchGitSummary = cfg.FetchGitSummary
+	t.suggestedTaskTitle = cfg.SuggestedTaskTitle
 	t.onStartSessionForTask = cfg.OnStartSessionForTask
 	t.distractionCallback = cfg.DistractionCallback
 	t.accomplishmentCallback = cfg.AccomplishmentCallback
@@ -167,6 +177,7 @@ func (t *Timer) Run(ctx context.Context, initialState *domain.CurrentState) erro
 	model.commandCallback = t.commandCallback
 	model.onSessionComplete = t.onSessionComplete
 	model.fetchCompletionInfo = t.fetchCompletionInfo
+	model.fetchGitSummary = t.fetchGitSummary
 	model.distractionCallback = t.distractionCallback
 	model.accomplishmentCallback = t.accomplishmentCallback
 	model.shutdownRitualCallback = t.shutdownRitualCallback
@@ -211,6 +222,7 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.commandCallback = t.commandCallback
 	model.onSessionComplete = t.onSessionComplete
 	model.fetchCompletionInfo = t.fetchCompletionInfo
+	model.fetchGitSummary = t.fetchGitSummary
 	model.distractionCallback = t.distractionCallback
 	model.accomplishmentCallback = t.accomplishmentCallback
 	model.shutdownRitualCallback = t.shutdownRitualCallback
@@ -227,6 +239,7 @@ func (t *Timer) runInline(ctx context.Context, initialState *domain.CurrentState
 	model.onModeSelected = t.onModeSelected
 	model.fetchRecentTasks = t.fetchRecentTasks
 	model.fetchYesterdayHighlight = t.fetchYesterdayHighlight
+	model.suggestedTaskTitle = t.suggestedTaskTitle
 	model.autoBreak = t.autoBreak
 	model.notificationsEnabled = t.notificationsEnabled
 	model.notificationToggle = t.notificationToggle

@@ -340,9 +340,32 @@ func (m InlineModel) advanceToTaskPhase() (tea.Model, tea.Cmd) {
 	}
 	// No recent tasks, skip to task name input
 	m.phase = phaseTaskName
-	m.taskInput.SetValue(m.lastTaskTitle)
+	m.taskInput.SetValue(m.defaultTaskName())
 	m.taskInput.Focus()
 	return m, m.taskInput.Cursor.BlinkCmd()
+}
+
+// defaultTaskName is the editable default of the task name input: the
+// previous (chained) task, else the title suggested by the git branch.
+func (m InlineModel) defaultTaskName() string {
+	if m.lastTaskTitle != "" {
+		return m.lastTaskTitle
+	}
+	return m.suggestedTitle()
+}
+
+// suggestedTitle returns the branch-derived task title, unless a recent task
+// already has it (picking that task avoids a duplicate).
+func (m InlineModel) suggestedTitle() string {
+	if m.suggestedTaskTitle == "" {
+		return ""
+	}
+	for _, t := range m.recentTasks {
+		if strings.EqualFold(t.Title, m.suggestedTaskTitle) {
+			return ""
+		}
+	}
+	return m.suggestedTaskTitle
 }
 
 // repeatTaskCursor returns the task-select index of the last chained task, defaulting to fallback.
@@ -501,6 +524,9 @@ func (m InlineModel) updateTaskSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// "New task" selected
 			m.selectedTaskID, m.selectedTaskTitle = "", ""
 			m.phase = phaseTaskName
+			if m.taskInput.Value() == "" {
+				m.taskInput.SetValue(m.suggestedTitle())
+			}
 			m.taskInput.Focus()
 			return m, m.taskInput.Cursor.BlinkCmd()
 		case "esc":
@@ -789,7 +815,7 @@ func (m InlineModel) advanceFromLaserChecklist() (tea.Model, tea.Cmd) {
 	}
 	// No recent tasks, skip to task name input
 	m.phase = phaseTaskName
-	m.taskInput.SetValue(m.lastTaskTitle)
+	m.taskInput.SetValue(m.defaultTaskName())
 	m.taskInput.Focus()
 	return m, m.taskInput.Cursor.BlinkCmd()
 }

@@ -70,8 +70,11 @@ type SessionRepository interface {
 	// FindByTask retrieves all sessions associated with a task.
 	FindByTask(ctx context.Context, taskID string) ([]*domain.PomodoroSession, error)
 
-	// Update modifies an existing session.
+	// Update modifies an existing session. It does not write GitSummary.
 	Update(ctx context.Context, session *domain.PomodoroSession) error
+
+	// UpdateGitSummary stores (or, with nil, clears) a session's git summary.
+	UpdateGitSummary(ctx context.Context, sessionID string, summary *domain.GitSummary) error
 
 	// GetDailyStats returns aggregated session statistics for a specific date.
 	// It reports session data only; DailyStats.TasksCompleted is populated by

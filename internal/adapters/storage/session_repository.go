@@ -124,7 +124,7 @@ func (r *sessionRepository) FindByID(ctx context.Context, id string) (*domain.Po
 			s.completed_at, s.git_branch, s.git_commit, s.git_modified, s.notes,
 			s.methodology, s.focus_score, s.distractions, s.accomplishment, s.intended_outcome,
 			COALESCE(GROUP_CONCAT(st.tag), ''),
-			s.energize_activity, s.shutdown_ritual, s.outcome_achieved
+			s.energize_activity, s.shutdown_ritual, s.outcome_achieved, s.git_summary
 		FROM sessions s
 		LEFT JOIN session_tags st ON st.session_id = s.id
 		WHERE s.id = ?
@@ -142,7 +142,7 @@ func (r *sessionRepository) FindActive(ctx context.Context) (*domain.PomodoroSes
 			s.completed_at, s.git_branch, s.git_commit, s.git_modified, s.notes,
 			s.methodology, s.focus_score, s.distractions, s.accomplishment, s.intended_outcome,
 			COALESCE(GROUP_CONCAT(st.tag), ''),
-			s.energize_activity, s.shutdown_ritual, s.outcome_achieved
+			s.energize_activity, s.shutdown_ritual, s.outcome_achieved, s.git_summary
 		FROM sessions s
 		LEFT JOIN session_tags st ON st.session_id = s.id
 		WHERE s.status IN (?, ?)
@@ -164,7 +164,7 @@ func (r *sessionRepository) FindRecent(ctx context.Context, since time.Time) ([]
 			s.completed_at, s.git_branch, s.git_commit, s.git_modified, s.notes,
 			s.methodology, s.focus_score, s.distractions, s.accomplishment, s.intended_outcome,
 			COALESCE(GROUP_CONCAT(st.tag), ''),
-			s.energize_activity, s.shutdown_ritual, s.outcome_achieved
+			s.energize_activity, s.shutdown_ritual, s.outcome_achieved, s.git_summary
 		FROM sessions s
 		LEFT JOIN session_tags st ON st.session_id = s.id
 		WHERE s.started_at >= ?
@@ -189,7 +189,7 @@ func (r *sessionRepository) FindByTask(ctx context.Context, taskID string) ([]*d
 			s.completed_at, s.git_branch, s.git_commit, s.git_modified, s.notes,
 			s.methodology, s.focus_score, s.distractions, s.accomplishment, s.intended_outcome,
 			COALESCE(GROUP_CONCAT(st.tag), ''),
-			s.energize_activity, s.shutdown_ritual, s.outcome_achieved
+			s.energize_activity, s.shutdown_ritual, s.outcome_achieved, s.git_summary
 		FROM sessions s
 		LEFT JOIN session_tags st ON st.session_id = s.id
 		WHERE s.task_id = ?
@@ -265,6 +265,41 @@ func (r *sessionRepository) Update(ctx context.Context, session *domain.Pomodoro
 
 		return replaceSessionTags(ctx, ex, session.ID, session.Tags)
 	})
+}
+
+// UpdateGitSummary stores the git summary of a session. Session Update leaves
+// the column alone, so a summary written after the session ended survives
+// later updates (focus score, shutdown ritual, …).
+func (r *sessionRepository) UpdateGitSummary(ctx context.Context, sessionID string, summary *domain.GitSummary) error {
+	var value *string
+	if summary != nil {
+		data, err := json.Marshal(summary)
+		if err != nil {
+			return fmt.Errorf("failed to encode git summary: %w", err)
+		}
+		value = nullableString(data)
+	}
+	result, err := r.db.ExecContext(ctx, "UPDATE sessions SET git_summary = ? WHERE id = ?", value, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to update git summary: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return fmt.Errorf("session not found: %s: %w", sessionID, domain.ErrSessionNotFound)
+	}
+	return nil
+}
+
+// unmarshalGitSummary decodes the git_summary column; NULL, empty or
+// unreadable JSON yields nil (no summary).
+func unmarshalGitSummary(col sql.NullString) *domain.GitSummary {
+	if !col.Valid || col.String == "" {
+		return nil
+	}
+	var summary domain.GitSummary
+	if err := json.Unmarshal([]byte(col.String), &summary); err != nil {
+		return nil
+	}
+	return &summary
 }
 
 // GetDailyStats returns aggregated session statistics for a specific date.
@@ -597,6 +632,7 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 	var energizeActivity sql.NullString
 	var shutdownRitualStr sql.NullString
 	var outcomeAchieved sql.NullString
+	var gitSummaryStr sql.NullString
 
 	err := row.Scan(
 		&session.ID,
@@ -620,6 +656,7 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 		&energizeActivity,
 		&shutdownRitualStr,
 		&outcomeAchieved,
+		&gitSummaryStr,
 	)
 
 	if err == sql.ErrNoRows {
@@ -682,6 +719,7 @@ func (r *sessionRepository) scanSession(row *sql.Row) (*domain.PomodoroSession, 
 	if outcomeAchieved.Valid {
 		session.OutcomeAchieved = outcomeAchieved.String
 	}
+	session.GitSummary = unmarshalGitSummary(gitSummaryStr)
 
 	return &session, nil
 }
@@ -707,6 +745,7 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 		var energizeActivity sql.NullString
 		var shutdownRitualStr sql.NullString
 		var outcomeAchieved sql.NullString
+		var gitSummaryStr sql.NullString
 
 		err := rows.Scan(
 			&session.ID,
@@ -730,6 +769,7 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 			&energizeActivity,
 			&shutdownRitualStr,
 			&outcomeAchieved,
+			&gitSummaryStr,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
@@ -788,6 +828,7 @@ func (r *sessionRepository) scanSessions(rows *sql.Rows) ([]*domain.PomodoroSess
 		if outcomeAchieved.Valid {
 			session.OutcomeAchieved = outcomeAchieved.String
 		}
+		session.GitSummary = unmarshalGitSummary(gitSummaryStr)
 
 		sessions = append(sessions, &session)
 	}

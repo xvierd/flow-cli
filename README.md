@@ -123,15 +123,15 @@ Breaks follow the active mode (`methodology` in config, or `--mode`). In Pomodor
 | `flow` | Interactive wizard: main menu, mode picker, duration, task, start (offers Resume / Stop if a session is active) |
 | `flow add "title" [-t tag1,tag2]` | Create a new task (`-t` is repeatable or comma-separated: `-t a,b -t c`) |
 | `flow list [--all] [--status pending]` | List tasks |
-| `flow start [task-id]` | Start a work session and open the timer (`--task <id>`, `--tags a,b` also work; `--detach` / `-d` skips the timer). Length: `work_duration` in Pomodoro, the first preset in Deep Work / Make Time |
+| `flow start [task-id]` | Start a work session and open the timer (`--task <id>`, `--tags a,b` also work; `--detach` / `-d` skips the timer; without a task it is named after the git branch, see [Git Awareness](#git-awareness)). Length: `work_duration` in Pomodoro, the first preset in Deep Work / Make Time |
 | `flow stop` | Complete the active session, recording the time actually worked; then runs the mode's prompts (notes / shutdown ritual / focus score) |
 | `flow pause` / `flow resume` | Pause / resume the active session |
 | `flow break [--detach]` | Start a short or long break and open the timer |
 | `flow void` | Void a session due to interruption (not counted in stats) |
-| `flow status [--json]` | One-shot view of the current session + today's stats (`active_task` is `null` when no session is active) |
+| `flow status [--json]` | One-shot view of the current session + today's stats, and the git summary of the last session (`active_task` is `null` when no session is active) |
 | `flow stats [--period week|month]` | Productivity dashboard: sessions by mode, focus scores, heatmap |
 | `flow reflect [--today]` | Weekly reflection: day-by-day breakdown, highlights, focus |
-| `flow report [--week\|--month] [--format terminal\|md\|csv] [--out file] [--json]` | Aggregated report: daily breakdown, 24h heatmap, top tags, methodology focus. In `--json`, each duration comes as a Go duration string (`"total_work_time": "1h15m0s"`) plus a number of minutes (`"total_work_minutes": 75`); heatmap `minutes` is a number |
+| `flow report [--week\|--month] [--format terminal\|md\|csv] [--out file] [--json]` | Aggregated report: daily breakdown, 24h heatmap, top tags, focus by git branch, methodology focus. In `--json`, each duration comes as a Go duration string (`"total_work_time": "1h15m0s"`) plus a number of minutes (`"total_work_minutes": 75`); heatmap `minutes` is a number |
 | `flow export [--format md|csv] [--period week|month|all]` | Raw session history dump |
 | `flow complete <id>` | Mark a task as completed |
 | `flow edit <id> [--title t] [--description d] [--tags a,b] [--reopen]` | Edit a task; `--tags` replaces all tags (`--tags ""` clears them), `--reopen` moves a completed task back to pending |
@@ -174,6 +174,23 @@ on_end   = "echo \"$FLOW_EVENT $FLOW_SESSION_TYPE $FLOW_DURATION $FLOW_TASK\" >>
 ```
 
 Commands run through `sh -c` (`cmd /C` on Windows) with a 10 s timeout and their output discarded. They receive `FLOW_EVENT` (`start` / `end`), `FLOW_SESSION_ID`, `FLOW_SESSION_TYPE` (`work`, `short_break`, `long_break`), `FLOW_METHODOLOGY`, `FLOW_DURATION` and `FLOW_TASK`. `on_start` fires for sessions started from the CLI, the timer or MCP; `on_end` fires when a session completes (timer ran out or stopped), not when it is voided or cancelled.
+
+## Git Awareness
+
+Inside a git repository, Flow ties your focus time to the code you touched. Everything is best-effort: outside a repository, without the `git` binary, or for sessions recorded by older versions, Flow behaves exactly as before.
+
+**Task from the branch.** Start a session without a task and Flow names it after the branch: `feat/auth-refresh` → *auth refresh*, `fix/ABC-123-login-bug` → *login bug* (branch-type prefixes such as `feat/`, `fix/`, `chore/` and ticket IDs such as `ABC-123-` are dropped). In the `flow` wizard it is the editable default of the new task's name (not offered when a recent task already has that name); `flow start` uses it directly, reusing a pending task of the same name instead of creating duplicates (`--no-branch-task` turns this off). Nothing is suggested on `main`, `master`, `develop`, `trunk` or a detached HEAD.
+
+**End-of-session summary.** Each work session records the commit it started on. When it ends (stopped, voided or run out), Flow counts the commits made since then and the lines changed, plus changes still uncommitted when the session has just ended, and stores the summary with the session:
+
+```
+  Session complete — 38m worked
+  3 commits · internal/auth/ (+120 −40)
+```
+
+It appears on the end-of-session screen, in `flow status` (`Last session: 38m · 3 commits · internal/auth/ (+120 −40)`, plus `Git so far` for the running session; `last_session.git_summary` and `active_session.git_summary` in `--json`), in `flow export`, and in the MCP `get_recent_sessions` tool as `git_summary` (`commits`, `files_changed`, `insertions`, `deletions`, `dirs_changed`, `top_dirs`, `uncommitted`) and `git_summary_text`. A session that ended while nothing was watching gets its summary the next time it is listed, counting only commits made before it ended. git runs outside database transactions with a 5 s limit per command, so a slow repository never blocks other Flow processes.
+
+**Focus by branch.** `flow report` and `flow export` add up completed work sessions per branch (`feat/auth-refresh: 4 sessions, 2h50m · 3 commits`); in `flow report --json` this is the `branches` array, and in CSV a `branch,sessions,work_min,commits,insertions,deletions` table. `flow export --format csv` adds `git_branch`, `git_commits`, `git_insertions`, `git_deletions` and `git_top_dir` columns.
 
 ## Session Chaining
 
@@ -301,7 +318,7 @@ Works with Claude Code, Cursor, and any MCP-compatible client.
 
 **Sessions** — `start_session` (`methodology`, `task_id` or `task_title`, `duration_minutes`, `tags`, `intended_outcome`), `start_break`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `cancel_session`, `void_session`, and `start_pomodoro` (deprecated alias of `start_session`).
 
-**Reviews & insights** — `get_current_state`, `get_recent_sessions`, `get_daily_summary`, `get_period_stats`, `get_focus_report`, `get_today_highlight`.
+**Reviews & insights** — `get_current_state`, `get_recent_sessions` (with each ended session's `git_summary`), `get_daily_summary`, `get_period_stats`, `get_focus_report`, `get_today_highlight`.
 
 **Tasks** — `get_task`, `list_tasks`, `get_task_history`, `create_task`, `complete_task`, `delete_task`, `start_task`.
 
@@ -321,7 +338,7 @@ Flow stores config at `~/.flow/config.toml` (created with defaults on first run)
 
 If the config file cannot be parsed, Flow prints a warning on stderr and runs with the defaults without touching the file. Until you fix or remove it, `flow config` refuses to save, and settings changed elsewhere (such as the TUI notification toggle) are not persisted.
 
-The database schema migrates automatically on startup (current version: 3). A database written by a newer flow is rejected with a message asking you to upgrade. The database uses WAL and a busy timeout, so the TUI, the MCP server and CLI commands can share it at the same time.
+The database schema migrates automatically on startup (current version: 4). A database written by a newer flow is rejected with a message asking you to upgrade. The database uses WAL and a busy timeout, so the TUI, the MCP server and CLI commands can share it at the same time.
 
 ```toml
 methodology = "pomodoro"  # default mode: pomodoro, deepwork, maketime
@@ -409,7 +426,7 @@ internal/
     ├── storage/  # SQLite (versioned migrations, transactions, normalized tags)
     ├── tui/      # Bubbletea
     ├── mcp/      # MCP server
-    ├── git/      # Git context detection
+    ├── git/      # Git context detection and end-of-session summaries
     └── notification/
 ```
 

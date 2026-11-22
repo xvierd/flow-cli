@@ -423,7 +423,7 @@ func (s *Server) registerTools() {
 	// Tool: get_recent_sessions
 	getRecentTool := mcp.NewTool(
 		"get_recent_sessions",
-		mcp.WithDescription("Get recent pomodoro sessions"),
+		mcp.WithDescription("Get recent sessions, newest first. Ended work sessions include git_summary (commits, files and lines changed, most changed directories) when they ran in a git repository."),
 		mcp.WithNumber(
 			"limit",
 			mcp.Description("Maximum number of sessions to return (default: 10)"),
@@ -1159,7 +1159,25 @@ func sessionSummary(s *domain.PomodoroSession) map[string]interface{} {
 	if len(s.Tags) > 0 {
 		sd["tags"] = s.Tags
 	}
+	addGitFields(sd, s)
 	return sd
+}
+
+// addGitFields adds a session's git context and end-of-session git summary
+// (commits, files, lines, most changed directories) to sd.
+func addGitFields(sd map[string]interface{}, s *domain.PomodoroSession) {
+	if s.GitBranch != "" {
+		sd["git_branch"] = s.GitBranch
+	}
+	if s.GitCommit != "" {
+		sd["git_commit"] = s.GitCommit
+	}
+	if s.GitSummary != nil {
+		sd["git_summary"] = s.GitSummary
+		if line := domain.SessionGitLine(s); line != "" {
+			sd["git_summary_text"] = line
+		}
+	}
 }
 
 // jsonResult marshals data into an MCP tool result.

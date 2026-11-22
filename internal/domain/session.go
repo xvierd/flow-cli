@@ -67,6 +67,9 @@ type PomodoroSession struct {
 	Tags             []string
 	EnergizeActivity string
 	OutcomeAchieved  string // y/p/n for Deep Work outcome review
+	// GitSummary is what changed in git during the session; nil when it was
+	// not computed (no git, an old session, or a session still running).
+	GitSummary *GitSummary
 }
 
 // PomodoroConfig holds configuration for pomodoro sessions.

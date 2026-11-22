@@ -60,6 +60,23 @@ func (s *TaskService) addTask(ctx context.Context, storage ports.Storage, req Ad
 	return task, nil
 }
 
+// FindOrAddTaskWith returns the pending task titled title (compared without
+// regard to case), creating it when there is none. It runs against the given
+// storage, which may be transaction-scoped. Starting several sessions from
+// the same branch thus reuses one task instead of piling up duplicates.
+func (s *TaskService) FindOrAddTaskWith(ctx context.Context, storage ports.Storage, title string) (*domain.Task, error) {
+	pending, err := storage.Tasks().FindPending(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pending tasks: %w", err)
+	}
+	for _, task := range pending {
+		if strings.EqualFold(strings.TrimSpace(task.Title), strings.TrimSpace(title)) {
+			return task, nil
+		}
+	}
+	return s.addTask(ctx, storage, AddTaskRequest{Title: title})
+}
+
 // ListTasksRequest contains filters for listing tasks.
 type ListTasksRequest struct {
 	Status      *domain.TaskStatus

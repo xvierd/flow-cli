@@ -82,6 +82,13 @@ type completionState struct {
 	// none), used to tell whether the user worked on today's Highlight.
 	completedTaskID string
 
+	// fetchGitSummary returns the git summary line of an ended session
+	// ("" for none); gitSummary is the line for the completed session, and
+	// gitSummaryPending asks the Update wrapper to fetch it.
+	fetchGitSummary   func(sessionID string) string
+	gitSummary        string
+	gitSummaryPending bool
+
 	// discardedSessionID is the ID of a session the user ended without
 	// completing it (void, or inline mode-switch cancel). Its disappearance from
 	// the state is a return to idle, not a completion. It is deliberately not
@@ -137,6 +144,8 @@ func (c *completionState) captureCompletion(prev *domain.PomodoroSession) time.D
 		c.completedTaskID = *prev.TaskID
 	}
 	c.completed = true
+	c.gitSummary = ""
+	c.gitSummaryPending = prev.IsWorkSession()
 	// The distraction input belongs to the active session; it is not rendered
 	// on the completion screen, so close it rather than capture keys invisibly.
 	c.distractionMode = false
@@ -209,6 +218,8 @@ func (c *completionState) reset() {
 	c.shutdownComplete = false
 	c.completedIntendedOutcome = ""
 	c.completedSessionID = ""
+	c.gitSummary = ""
+	c.gitSummaryPending = false
 }
 
 // strictWorkBlocked reports whether strict focus mode locks early disengagement:

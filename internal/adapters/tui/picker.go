@@ -273,12 +273,19 @@ func (m textPromptModel) View() string {
 
 // RunTextPrompt launches a styled text input prompt.
 func RunTextPrompt(title string, placeholder string, theme *config.ThemeConfig) TextPromptResult {
+	return RunTextPromptWithValue(title, placeholder, "", theme)
+}
+
+// RunTextPromptWithValue is RunTextPrompt with an editable default value
+// already in the input.
+func RunTextPromptWithValue(title, placeholder, value string, theme *config.ThemeConfig) TextPromptResult {
 	resolved := resolveTheme(theme)
 
 	ti := textinput.New()
 	ti.Placeholder = placeholder
 	ti.CharLimit = 120
 	ti.Width = 50
+	ti.SetValue(value)
 	ti.Focus()
 
 	m := textPromptModel{

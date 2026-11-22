@@ -15,8 +15,10 @@ import (
 type PomodoroService struct {
 	storage     ports.Storage
 	gitDetector ports.GitDetector
-	config      domain.PomodoroConfig
-	strictMode  bool
+	// gitSummarizer computes end-of-session git summaries; nil disables them.
+	gitSummarizer ports.GitSummarizer
+	config        domain.PomodoroConfig
+	strictMode    bool
 	// methodology is the configured methodology: it is recorded on breaks
 	// and on StateService sessions whose request omits one.
 	methodology domain.Methodology
@@ -26,12 +28,23 @@ type PomodoroService struct {
 }
 
 // NewPomodoroService creates a new pomodoro service.
+// When gitDetector also implements ports.GitSummarizer, sessions get a git
+// summary when they end.
 func NewPomodoroService(storage ports.Storage, gitDetector ports.GitDetector) *PomodoroService {
-	return &PomodoroService{
+	s := &PomodoroService{
 		storage:     storage,
 		gitDetector: gitDetector,
 		config:      domain.DefaultPomodoroConfig(),
 	}
+	if summarizer, ok := gitDetector.(ports.GitSummarizer); ok {
+		s.gitSummarizer = summarizer
+	}
+	return s
+}
+
+// SetGitSummarizer replaces the git summarizer (nil disables summaries).
+func (s *PomodoroService) SetGitSummarizer(summarizer ports.GitSummarizer) {
+	s.gitSummarizer = summarizer
 }
 
 // SetConfig updates the pomodoro configuration. A non-positive
@@ -134,6 +147,8 @@ func (s *PomodoroService) CompleteIfExpired(ctx context.Context) (*domain.Pomodo
 	if err != nil {
 		return nil, err
 	}
+	// Git runs after the transaction, which holds the write lock.
+	s.recordGitSummary(ctx, done)
 	return done, nil
 }
 
@@ -420,6 +435,8 @@ func (s *PomodoroService) StopSession(ctx context.Context) (*domain.PomodoroSess
 	if err != nil {
 		return nil, err
 	}
+	// Git runs after the transaction, which holds the write lock.
+	s.recordGitSummary(ctx, session)
 	return session, nil
 }
 
@@ -470,6 +487,8 @@ func (s *PomodoroService) VoidSession(ctx context.Context) (*domain.PomodoroSess
 	if err != nil {
 		return nil, err
 	}
+	// Git runs after the transaction, which holds the write lock.
+	s.recordGitSummary(ctx, session)
 	return session, nil
 }
 
@@ -606,7 +625,9 @@ func (s *PomodoroService) GetRecentSessions(ctx context.Context, limit int) ([]*
 	}
 
 	if len(sessions) > limit {
-		return sessions[:limit], nil
+		sessions = sessions[:limit]
 	}
+	// Sessions that ended unobserved get their git summary now.
+	s.EnsureGitSummaries(ctx, sessions)
 	return sessions, nil
 }

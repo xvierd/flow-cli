@@ -30,6 +30,7 @@ var statusCmd = &cobra.Command{
 
 		// Use the TUI to display the status
 		tui.ShowStatus(state, &app.config.Theme)
+		printStatusGit(ctx, state)
 
 		// Show today's Highlight for Make Time mode
 		if app.methodology == domain.MethodologyMakeTime {
@@ -87,7 +88,27 @@ func outputStatusJSON(state *domain.CurrentState) error {
 		if session.TaskID != nil {
 			sessionData["task_id"] = *session.TaskID
 		}
+		if live := app.pomodoro.LiveGitSummary(ctx, session); live != nil {
+			sessionData["git_summary"] = live
+		}
 		result["active_session"] = sessionData
+	}
+
+	result["last_session"] = nil
+	if last := app.pomodoro.LastEndedWorkSession(ctx); last != nil {
+		lastData := map[string]interface{}{
+			"id":         last.ID,
+			"status":     string(last.Status),
+			"duration":   last.Duration.String(),
+			"started_at": last.StartedAt.Format(time.RFC3339),
+			"git_branch": last.GitBranch,
+			"git_commit": last.GitCommit,
+		}
+		if last.GitSummary != nil {
+			lastData["git_summary"] = last.GitSummary
+			lastData["git_summary_text"] = domain.SessionGitLine(last)
+		}
+		result["last_session"] = lastData
 	}
 
 	// Include highlight for Make Time mode
@@ -103,4 +124,19 @@ func outputStatusJSON(state *domain.CurrentState) error {
 	}
 
 	return jsonOut(result)
+}
+
+// printStatusGit prints what changed in git: so far in the active work
+// session, and in the last ended work session. Nothing is printed without git.
+func printStatusGit(ctx context.Context, state *domain.CurrentState) {
+	if active := state.ActiveSession; active != nil {
+		if live := app.pomodoro.LiveGitSummary(ctx, active); !live.IsEmpty() {
+			fmt.Printf("\n%s\n", i18n.T("Git so far: %s", live.String()))
+		}
+	}
+	if last := app.pomodoro.LastEndedWorkSession(ctx); last != nil {
+		if line := domain.SessionGitLine(last); line != "" {
+			fmt.Printf("\n%s\n", i18n.T("Last session: %s", line))
+		}
+	}
 }

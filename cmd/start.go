@@ -10,12 +10,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/i18n"
+	"github.com/xvierd/flow-cli/internal/ports"
 	"github.com/xvierd/flow-cli/internal/services"
 )
 
 var startTaskID string
 var startTags []string
 var startDetach bool
+var startNoBranchTask bool
 
 // startCmd represents the start command
 var startCmd = &cobra.Command{
@@ -23,8 +25,11 @@ var startCmd = &cobra.Command{
 	Short: "Start a work session",
 	Long: `Start a work session in the current methodology and open the timer.
 Optionally pass a task ID (the short ID from "flow list" works) as an argument
-or with --task. The length is the configured work duration in Pomodoro, or the
-first preset in Deep Work and Make Time.
+or with --task. Without one, inside a git repository the session is named
+after the branch ("feat/auth-refresh" → task "auth refresh", reusing a pending
+task of that name); --no-branch-task turns this off. Nothing is suggested on
+main, master or a detached HEAD. The length is the configured work duration
+in Pomodoro, or the first preset in Deep Work and Make Time.
 
 With --detach, or when there is no terminal (scripts, editors), the timer is
 not opened: the session runs in the background and you are notified when it
@@ -93,15 +98,36 @@ ends.`,
 		// Start the pomodoro session
 		// Record the methodology on the session: storage would otherwise
 		// default it to Pomodoro, and resuming adopts the session's one.
+		// Git runs before the transaction, which holds the write lock.
 		req := services.StartPomodoroRequest{
 			TaskID:      taskID,
 			WorkingDir:  workingDir,
 			Tags:        tags,
 			Methodology: app.methodology,
 			Duration:    defaultSessionDuration(),
+			Git:         app.pomodoro.DetectGit(ctx, workingDir),
 		}
 
-		session, err := app.pomodoro.StartPomodoro(ctx, req)
+		// Without a task, the git branch names one ("feat/auth-refresh" →
+		// "auth refresh"); an existing pending task of that name is reused.
+		// Finding or creating it and starting the session are one unit.
+		branchTitle := ""
+		if taskID == nil && !startNoBranchTask {
+			branchTitle = branchTaskTitle(workingDir)
+		}
+		var session *domain.PomodoroSession
+		err = app.storage.WithTx(ctx, func(tx ports.Storage) error {
+			if branchTitle != "" {
+				task, err := app.tasks.FindOrAddTaskWith(ctx, tx, branchTitle)
+				if err != nil {
+					return fmt.Errorf("%s: %w", i18n.T("failed to create task"), err)
+				}
+				req.TaskID = &task.ID
+			}
+			var err error
+			session, err = app.pomodoro.StartPomodoroWith(ctx, tx, req)
+			return err
+		})
 		if err != nil {
 			return fmt.Errorf("%s: %w", i18n.T("failed to start pomodoro"), err)
 		}
@@ -133,6 +159,7 @@ ends.`,
 func init() {
 	startCmd.Flags().StringVarP(&startTaskID, "task", "t", "", "Task ID to associate with this session")
 	startCmd.Flags().BoolVarP(&startDetach, "detach", "d", false, "Start the session without opening the timer (it keeps running in the background)")
+	startCmd.Flags().BoolVar(&startNoBranchTask, "no-branch-task", false, "Without a task, do not name one after the git branch")
 	startCmd.Flags().StringSliceVar(&startTags, "tags", nil, "Tags for this session (repeatable or comma-separated, e.g. coding,backend)")
 }
 

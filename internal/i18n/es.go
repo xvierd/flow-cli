@@ -516,4 +516,18 @@ var esCatalog = map[string]string{
 	"↑/↓ navigate · enter select · esc cancel": "↑/↓ navegar · enter elegir · esc cancelar",
 	"←/→ navigate · enter select · esc cancel": "←/→ navegar · enter elegir · esc cancelar",
 	"enter confirm · esc cancel":               "enter confirmar · esc cancelar",
+
+	// -- git-aware sessions -------------------------------------------------------------------
+	"1 commit":                               "1 commit",
+	"%d commits":                             "%d commits",
+	"no commits":                             "sin commits",
+	"+%d more":                               "+%d más",
+	"uncommitted changes":                    "cambios sin commitear",
+	"Git so far: %s":                         "Git hasta ahora: %s",
+	"Last session: %s":                       "Última sesión: %s",
+	"Type a name (from branch: %s)":          "Escribe un nombre (de la rama: %s)",
+	"Focus by branch":                        "Foco por rama",
+	"| Branch | Time | Sessions | Commits |": "| Rama | Tiempo | Sesiones | Commits |",
+	"Branch: %s":                             "Rama: %s",
+	"Git: %s":                                "Git: %s",
 }

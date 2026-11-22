@@ -148,6 +148,16 @@ func renderMarkdownReport(w *bytes.Buffer, r *domain.Report) {
 		fmt.Fprintln(w)
 	}
 
+	if len(r.Branches) > 0 {
+		fmt.Fprintf(w, "## %s\n\n", i18n.T("Focus by branch"))
+		fmt.Fprintf(w, "%s\n", i18n.T("| Branch | Time | Sessions | Commits |"))
+		fmt.Fprintf(w, "|---|---|---|---|\n")
+		for _, b := range r.Branches {
+			fmt.Fprintf(w, "| %s | %s | %d | %d |\n", b.Branch, formatMinutes(b.TotalTime), b.SessionCount, b.Commits)
+		}
+		fmt.Fprintln(w)
+	}
+
 	if len(r.Methodologies) > 0 {
 		fmt.Fprintf(w, "## %s\n\n", i18n.T("By methodology"))
 		fmt.Fprintf(w, "%s\n", i18n.T("| Methodology | Sessions | Work time | Avg focus |"))
@@ -263,6 +273,18 @@ func renderTerminalReport(w *bytes.Buffer, r *domain.Report) {
 		fmt.Fprintln(w)
 	}
 
+	// Branches
+	if len(r.Branches) > 0 {
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render(i18n.T("Focus by branch")))
+		for _, b := range r.Branches {
+			fmt.Fprintf(w, "  %s %s\n",
+				dimStyle.Render(b.Branch+":"),
+				valueStyle.Render(branchStatLine(b)),
+			)
+		}
+		fmt.Fprintln(w)
+	}
+
 	// Methodologies
 	if len(r.Methodologies) > 0 {
 		fmt.Fprintf(w, "  %s\n", dimStyle.Render(i18n.T("By methodology")))
@@ -348,6 +370,35 @@ func renderCSVReport(w *bytes.Buffer, r *domain.Report) error {
 			return err
 		}
 	}
+
+	if len(r.Branches) > 0 {
+		if err := cw.Write([]string{}); err != nil {
+			return err
+		}
+		if err := cw.Write([]string{"branch", "sessions", "work_min", "commits", "insertions", "deletions"}); err != nil {
+			return err
+		}
+		for _, b := range r.Branches {
+			if err := cw.Write([]string{
+				b.Branch, fmt.Sprintf("%d", b.SessionCount), fmt.Sprintf("%.0f", b.TotalTime.Minutes()),
+				fmt.Sprintf("%d", b.Commits), fmt.Sprintf("%d", b.Insertions), fmt.Sprintf("%d", b.Deletions),
+			}); err != nil {
+				return err
+			}
+		}
+	}
 	cw.Flush()
 	return cw.Error()
+}
+
+// branchStatLine renders "4 sessions, 2h50m · 3 commits" for a branch.
+func branchStatLine(b domain.BranchStat) string {
+	line := fmt.Sprintf("%s, %s", sessionCountLabel(b.SessionCount), formatMinutes(b.TotalTime))
+	switch {
+	case b.Commits == 1:
+		line += " · " + i18n.T("1 commit")
+	case b.Commits > 1:
+		line += " · " + i18n.T("%d commits", b.Commits)
+	}
+	return line
 }

@@ -76,6 +76,12 @@ func exportMarkdown(sessions []*domain.PomodoroSession) error {
 		}
 		fmt.Printf("## %s — %s\n", s.StartedAt.Format("2006-01-02"), s.Methodology)
 		fmt.Printf("- %s\n", i18n.T("Duration: %s", s.Duration.String()))
+		if s.GitBranch != "" {
+			fmt.Printf("- %s\n", i18n.T("Branch: %s", s.GitBranch))
+		}
+		if !s.GitSummary.IsEmpty() {
+			fmt.Printf("- %s\n", i18n.T("Git: %s", s.GitSummary.String()))
+		}
 		if s.IntendedOutcome != "" {
 			fmt.Printf("- %s\n", i18n.T("Goal: %s", s.IntendedOutcome))
 		}
@@ -114,6 +120,14 @@ func exportMarkdown(sessions []*domain.PomodoroSession) error {
 		}
 		fmt.Println()
 	}
+
+	if branches := domain.BranchStats(sessions); len(branches) > 0 {
+		fmt.Printf("## %s\n\n", i18n.T("Focus by branch"))
+		for _, b := range branches {
+			fmt.Printf("- %s: %s\n", b.Branch, branchStatLine(b))
+		}
+		fmt.Println()
+	}
 	return nil
 }
 
@@ -124,6 +138,7 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 		"date", "methodology", "duration_min", "goal", "accomplished",
 		"focus_score", "tags", "energize_activity", "distraction_count",
 		"distractions", "pending_tasks_review", "calendar_review", "tomorrow_plan",
+		"git_branch", "git_commits", "git_insertions", "git_deletions", "git_top_dir",
 	}); err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to write CSV header"), err)
 	}
@@ -140,6 +155,16 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 		var distractionTexts []string
 		for _, d := range s.Distractions {
 			distractionTexts = append(distractionTexts, d.Text)
+		}
+		// Git summary columns stay empty when no summary was recorded.
+		gitCommits, gitInsertions, gitDeletions, gitTopDir := "", "", "", ""
+		if g := s.GitSummary; g != nil {
+			gitCommits = fmt.Sprintf("%d", g.Commits)
+			gitInsertions = fmt.Sprintf("%d", g.Insertions)
+			gitDeletions = fmt.Sprintf("%d", g.Deletions)
+			if len(g.TopDirs) > 0 {
+				gitTopDir = g.TopDirs[0].Path
+			}
 		}
 		pendingTasksReview, calendarReview, tomorrowPlan := "", "", ""
 		if s.ShutdownRitual != nil {
@@ -161,6 +186,11 @@ func exportCSV(sessions []*domain.PomodoroSession) error {
 			pendingTasksReview,
 			calendarReview,
 			tomorrowPlan,
+			s.GitBranch,
+			gitCommits,
+			gitInsertions,
+			gitDeletions,
+			gitTopDir,
 		}); err != nil {
 			return fmt.Errorf("%s: %w", i18n.T("failed to write CSV row"), err)
 		}
