@@ -31,6 +31,7 @@ type Config struct {
 	Notifications NotificationConfig `mapstructure:"notifications"`
 	Focus         FocusConfig        `mapstructure:"focus"`
 	Hooks         HooksConfig        `mapstructure:"hooks"`
+	Integrations  IntegrationsConfig `mapstructure:"integrations"`
 	MCP           MCPConfig          `mapstructure:"mcp"`
 	Storage       StorageConfig      `mapstructure:"storage"`
 	Theme         ThemeConfig        `mapstructure:"theme"`
@@ -288,6 +289,7 @@ func DefaultConfig() *Config {
 			AutoStart:      false,
 			InjectGuidance: true,
 		},
+		Integrations: DefaultIntegrationsConfig(),
 	}
 }
 
@@ -485,6 +487,7 @@ func setDefaults() {
 	viper.SetDefault("focus.strict", false)
 	viper.SetDefault("hooks.on_start", "")
 	viper.SetDefault("hooks.on_end", "")
+	setIntegrationsDefaults()
 	viper.SetDefault("mcp.enabled", true)
 	viper.SetDefault("mcp.auto_start", false)
 	viper.SetDefault("storage.data_dir", "~/.flow")
