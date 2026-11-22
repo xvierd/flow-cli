@@ -266,14 +266,20 @@ func runHook(ctx context.Context, event string, s *domain.PomodoroSession) error
 	ctx, cancel := context.WithTimeout(ctx, hookTimeout)
 	defer cancel()
 
+	return hookCommand(ctx, command, hookEnv(ctx, event, s)).Run()
+}
+
+// hookCommand builds the shell invocation of a hook command with env added
+// to the environment.
+func hookCommand(ctx context.Context, command string, env []string) *exec.Cmd {
 	shell, flag := "sh", "-c"
 	if runtime.GOOS == "windows" {
 		shell, flag = "cmd", "/C"
 	}
 	// #nosec G204 -- the command comes from the user's own config file.
 	c := exec.CommandContext(ctx, shell, flag, command)
-	c.Env = append(os.Environ(), hookEnv(ctx, event, s)...)
-	return c.Run()
+	c.Env = append(os.Environ(), env...)
+	return c
 }
 
 // hookEnv describes the session for a hook command.

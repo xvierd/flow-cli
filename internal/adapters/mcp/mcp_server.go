@@ -70,10 +70,13 @@ func NewServer(stateProvider ports.MCPStateProvider, version string) *Server {
 		version,
 		server.WithLogging(),
 		server.WithToolHandlerMiddleware(s.toolMiddleware),
+		server.WithResourceCapabilities(false, false),
+		server.WithResourceHandlerMiddleware(s.resourceMiddleware),
 	)
 
 	// Register tools
 	s.registerTools()
+	s.registerResources()
 
 	return s
 }

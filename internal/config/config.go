@@ -34,6 +34,20 @@ type Config struct {
 	MCP           MCPConfig          `mapstructure:"mcp"`
 	Storage       StorageConfig      `mapstructure:"storage"`
 	Theme         ThemeConfig        `mapstructure:"theme"`
+	Claude        ClaudeConfig       `mapstructure:"claude"`
+}
+
+// ClaudeConfig controls the Claude Code hooks installed by
+// `flow claude install`. The hooks do nothing until they are installed.
+type ClaudeConfig struct {
+	// AutoStart starts a background work session, named after the repository
+	// and branch, when a Claude Code session starts and no Flow session is
+	// active.
+	AutoStart bool `mapstructure:"auto_start"`
+	// InjectGuidance adds the current focus guidance (see flow://focus) to
+	// Claude's context at session start and on every prompt while a Flow
+	// session is active.
+	InjectGuidance bool `mapstructure:"inject_guidance"`
 }
 
 // FocusConfig holds focus mode settings.
@@ -270,6 +284,10 @@ func DefaultConfig() *Config {
 			DataDir: "~/.flow",
 		},
 		Theme: DefaultThemeConfig(),
+		Claude: ClaudeConfig{
+			AutoStart:      false,
+			InjectGuidance: true,
+		},
 	}
 }
 
@@ -470,6 +488,8 @@ func setDefaults() {
 	viper.SetDefault("mcp.enabled", true)
 	viper.SetDefault("mcp.auto_start", false)
 	viper.SetDefault("storage.data_dir", "~/.flow")
+	viper.SetDefault("claude.auto_start", false)
+	viper.SetDefault("claude.inject_guidance", true)
 
 	// Theme defaults
 	defaults := DefaultThemeConfig()
