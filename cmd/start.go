@@ -15,15 +15,23 @@ import (
 
 var startTaskID string
 var startTags []string
+var startDetach bool
 
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start [task-id]",
-	Short: "Start a pomodoro session",
-	Long: `Start a new pomodoro work session. Optionally specify a task ID
-to associate with the session (as an argument or with --task). The session
-uses the current methodology: the configured work duration in Pomodoro, or
-the first preset in Deep Work and Make Time.`,
+	Short: "Start a work session",
+	Long: `Start a work session in the current methodology and open the timer.
+Optionally pass a task ID (the short ID from "flow list" works) as an argument
+or with --task. The length is the configured work duration in Pomodoro, or the
+first preset in Deep Work and Make Time.
+
+With --detach, or when there is no terminal (scripts, editors), the timer is
+not opened: the session runs in the background and you are notified when it
+ends.`,
+	Example: `  flow start
+  flow start 4f894d3e --tags backend
+  flow --mode deepwork start --detach`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
@@ -98,9 +106,18 @@ the first preset in Deep Work and Make Time.`,
 			return fmt.Errorf("%s: %w", i18n.T("failed to start pomodoro"), err)
 		}
 
-		fmt.Printf("🍅 %s\n", i18n.T("Pomodoro started! Duration: %s", session.Duration))
-		if taskID != nil {
-			fmt.Printf("%s\n", i18n.T("   Task ID: %s", *taskID))
+		fmt.Printf("▶️  %s\n", i18n.T("%s session started! Duration: %s", app.methodology.Label(), session.Duration))
+		if session.TaskID != nil {
+			if task, err := app.tasks.GetTask(ctx, *session.TaskID); err == nil {
+				fmt.Printf("%s\n", i18n.T("   Task: %s (ID: %s)", task.Title, task.ID[:8]))
+			}
+		}
+
+		background := startDetach || !interactiveTerminal()
+		sessionStarted(ctx, session, background)
+		if background {
+			printBackgroundHint()
+			return nil
 		}
 
 		// Refresh state and launch TUI
@@ -115,6 +132,7 @@ the first preset in Deep Work and Make Time.`,
 
 func init() {
 	startCmd.Flags().StringVarP(&startTaskID, "task", "t", "", "Task ID to associate with this session")
+	startCmd.Flags().BoolVarP(&startDetach, "detach", "d", false, "Start the session without opening the timer (it keeps running in the background)")
 	startCmd.Flags().StringSliceVar(&startTags, "tags", nil, "Tags for this session (repeatable or comma-separated, e.g. coding,backend)")
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/adapters/mcp"
+	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
@@ -29,6 +30,16 @@ Diagnostics are written to stderr; stdout carries only protocol messages.`,
 
 		// Create and start the MCP server
 		server := mcp.NewServer(app.state, Version)
+		server.OnSessionEvent(func(ctx context.Context, event string, session *domain.PomodoroSession) {
+			switch event {
+			case "start":
+				sessionStarted(ctx, session, true)
+			case "resume":
+				ensureWatcher()
+			case "end":
+				announceSessionEnd(ctx, session, session.Duration)
+			}
+		})
 		if err := server.Start(ctx); err != nil {
 			return fmt.Errorf("%s: %w", i18n.T("MCP server error"), err)
 		}

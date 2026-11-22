@@ -15,7 +15,7 @@ import (
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show current status",
-	Long:  `Display the current pomodoro session status and today's statistics.`,
+	Long:  `Display the active session (time left, task, git branch) and today's statistics.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 

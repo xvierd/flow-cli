@@ -120,6 +120,14 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 	var lastWork lastWorkSession
 	lastWork.observe(state.ActiveSession)
 
+	// The session the TUI opens with already ran its on_start hook.
+	var seen seenSessions
+	seen.observe(state.ActiveSession)
+
+	// While the TUI runs it owns end-of-session announcements.
+	tuiHeartbeat := heartbeatPath("tui")
+	touchHeartbeat(tuiHeartbeat)
+
 	// FetchState runs every second; report a failure once instead of
 	// printing over the TUI on every tick.
 	var fetchWarnOnce sync.Once
@@ -150,6 +158,7 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 		},
 		Strict: app.config.Focus.Strict || strictFlag,
 		FetchState: func() *domain.CurrentState {
+			touchHeartbeat(tuiHeartbeat)
 			newState, err := app.state.GetCurrentState(ctx)
 			if err != nil {
 				fetchWarnOnce.Do(func() {
@@ -158,6 +167,9 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 				return nil
 			}
 			lastWork.observe(newState.ActiveSession)
+			if started := seen.observe(newState.ActiveSession); started != nil {
+				go func() { _ = runHook(ctx, "start", started) }()
+			}
 			return newState
 		},
 		CommandCallback: func(cmd ports.TimerCommand) error {
@@ -230,20 +242,9 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 			return app.pomodoro.SetOutcomeAchieved(ctx, sessionID, achieved)
 		},
 		OnSessionCompleted: func(sessionType domain.SessionType, worked time.Duration) {
-			if app.notifier == nil || !app.notifier.IsEnabled() {
-				return
-			}
-			var err error
-			switch sessionType {
-			case domain.SessionTypeWork:
-				err = app.notifier.NotifyWorkComplete(app.methodology.Label(), formatMinutes(worked))
-			case domain.SessionTypeShortBreak:
-				err = app.notifier.NotifyBreakComplete("Short")
-			case domain.SessionTypeLongBreak:
-				err = app.notifier.NotifyBreakComplete("Long")
-			}
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", i18n.T("Warning: notification failed: %v", err))
+			notifySessionEnd(sessionType, app.methodology, worked)
+			if ended := seen.last(); ended != nil {
+				go func() { _ = runHook(ctx, "end", ended) }()
 			}
 		},
 		// Initial context for the upcoming completion (this session included);
@@ -318,9 +319,51 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 		FirstRun: firstRun,
 	})
 
-	if err := timer.Run(ctx, state); err != nil {
-		return fmt.Errorf("%s: %w", i18n.T("timer error"), err)
+	runErr := timer.Run(ctx, state)
+	if tuiHeartbeat != "" {
+		_ = os.Remove(tuiHeartbeat)
 	}
 
+	// A session still active when the timer closes (c, ctrl+c, or a TUI that
+	// failed to start) is announced by the background watcher instead.
+	if current, err := app.state.GetCurrentState(context.Background()); err == nil && current.ActiveSession != nil {
+		ensureWatcher()
+	}
+
+	if runErr != nil {
+		return fmt.Errorf("%s: %w", i18n.T("timer error"), runErr)
+	}
 	return nil
+}
+
+// seenSessions tracks the active sessions the TUI has shown, to run the
+// on_start hook for sessions it starts and to know which session just ended.
+type seenSessions struct {
+	mu       sync.Mutex
+	activeID string
+	lastSeen *domain.PomodoroSession
+}
+
+// observe records the active session s and returns it when it is a session
+// not seen before (one that just started), nil otherwise.
+func (t *seenSessions) observe(s *domain.PomodoroSession) *domain.PomodoroSession {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if s == nil {
+		t.activeID = ""
+		return nil
+	}
+	t.lastSeen = s
+	if s.ID == t.activeID {
+		return nil
+	}
+	t.activeID = s.ID
+	return s
+}
+
+// last returns the most recent active session observed.
+func (t *seenSessions) last() *domain.PomodoroSession {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.lastSeen
 }

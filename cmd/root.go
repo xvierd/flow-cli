@@ -4,6 +4,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/i18n"
@@ -28,11 +29,14 @@ var (
 // at init time, before the display language is resolved, so they stay English.
 var rootCmd = &cobra.Command{
 	Use:   "flow",
-	Short: "Flow - A Pomodoro CLI timer with task tracking",
-	Long: `Flow is a command-line Pomodoro timer that helps you stay focused
-and track your work sessions with optional git integration.
+	Short: "Flow - focus sessions (Pomodoro, Deep Work, Make Time) from your terminal",
+	Long: `Flow runs focus sessions from your terminal with three methodologies:
+Pomodoro, Deep Work and Make Time. It tracks tasks, knows your git branch,
+keeps everything in a local SQLite database, and exposes an MCP server so AI
+agents can read and drive your focus state.
 
-Run "flow" with no arguments to start a quick session interactively.`,
+Run "flow" with no arguments to start a session interactively.
+Task and session IDs can be shortened to the 8 characters "flow list" shows.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -42,6 +46,21 @@ Run "flow" with no arguments to start a quick session interactively.`,
 		return cleanupServices()
 	},
 	RunE: runWizard,
+}
+
+// resolveVersion returns the version injected at build time or, for binaries
+// built with `go install module@version` (no ldflags), the module version
+// recorded by the Go toolchain.
+func resolveVersion(injected string) string {
+	if injected != "dev" {
+		return injected
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return injected
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -61,6 +80,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&strictFlag, "strict", false, "Strict focus mode: lock pause/finish/void/cancel during work sessions (overrides config)")
 
 	// Set version - cobra handles --version automatically
+	Version = resolveVersion(Version)
 	rootCmd.Version = Version
 	rootCmd.SetVersionTemplate("Flow CLI\nVersion: {{.Version}}\n")
 
@@ -83,4 +103,6 @@ func init() {
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(editCmd)
+	rootCmd.AddCommand(watchCmd)
 }

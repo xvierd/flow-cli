@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/domain"
@@ -39,7 +40,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			var taskList []map[string]interface{}
+			taskList := []map[string]interface{}{}
 			for _, task := range tasks {
 				taskList = append(taskList, map[string]interface{}{
 					"id":          task.ID,
@@ -47,7 +48,7 @@ var listCmd = &cobra.Command{
 					"description": task.Description,
 					"status":      string(task.Status),
 					"tags":        task.Tags,
-					"created_at":  task.CreatedAt.Format("2006-01-02T15:04:05"),
+					"created_at":  task.CreatedAt.Format(time.RFC3339),
 				})
 			}
 			data := map[string]interface{}{

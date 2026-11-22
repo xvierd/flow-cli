@@ -5,6 +5,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
@@ -82,7 +83,7 @@ func (s *TaskService) GetTask(ctx context.Context, id string) (*domain.Task, err
 func (s *TaskService) CompleteTask(ctx context.Context, id string) error {
 	task, err := s.storage.Tasks().FindByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to find task: %w", err)
+		return err
 	}
 
 	task.Complete()
@@ -98,7 +99,7 @@ func (s *TaskService) DeleteTask(ctx context.Context, id string) error {
 func (s *TaskService) StartTask(ctx context.Context, id string) error {
 	task, err := s.storage.Tasks().FindByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to find task: %w", err)
+		return err
 	}
 
 	task.Start()
@@ -158,6 +159,55 @@ func setHighlight(ctx context.Context, storage ports.Storage, taskID string) (*d
 
 	task.SetAsHighlight()
 	if err := storage.Tasks().Update(ctx, task); err != nil {
+		return nil, err
+	}
+	return task, nil
+}
+
+// UpdateTaskRequest lists the task fields to change; nil fields are kept.
+type UpdateTaskRequest struct {
+	Title       *string
+	Description *string
+	// Tags, when set, replaces the task's tags (an empty slice clears them).
+	Tags *[]string
+	// Reopen moves a completed or cancelled task back to pending.
+	Reopen bool
+}
+
+// UpdateTask edits a task (id may be a unique ID prefix) and returns it.
+func (s *TaskService) UpdateTask(ctx context.Context, id string, req UpdateTaskRequest) (*domain.Task, error) {
+	var task *domain.Task
+	err := s.storage.WithTx(ctx, func(tx ports.Storage) error {
+		var err error
+		task, err = tx.Tasks().FindByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if req.Title != nil {
+			title := strings.TrimSpace(*req.Title)
+			if title == "" {
+				return domain.ErrEmptyTaskTitle
+			}
+			task.Title = title
+		}
+		if req.Description != nil {
+			task.Description = *req.Description
+		}
+		if req.Tags != nil {
+			task.Tags = nil
+			for _, tag := range *req.Tags {
+				if tag = strings.TrimSpace(tag); tag != "" {
+					task.AddTag(tag)
+				}
+			}
+		}
+		if req.Reopen && (task.Status == domain.StatusCompleted || task.Status == domain.StatusCancelled) {
+			task.Status = domain.StatusPending
+			task.CompletedAt = nil
+		}
+		return tx.Tasks().Update(ctx, task)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return task, nil

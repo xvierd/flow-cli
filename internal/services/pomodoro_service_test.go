@@ -884,3 +884,89 @@ func TestPomodoroService_ExpiredSessionDoesNotBlock(t *testing.T) {
 		assertCompleted(t, store, ctx, expired.ID)
 	})
 }
+
+func TestPomodoroService_StartPomodoro_TaskIDPrefix(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	task, _ := domain.NewTask("Short ID task")
+	if err := store.Tasks().Save(ctx, task); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	prefix := task.ID[:8]
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &prefix, WorkingDir: "."})
+	if err != nil {
+		t.Fatalf("StartPomodoro(prefix) error = %v", err)
+	}
+	if session.TaskID == nil || *session.TaskID != task.ID {
+		t.Fatalf("session.TaskID = %v, want full ID %s", session.TaskID, task.ID)
+	}
+	got, err := store.Tasks().FindByID(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("FindByID() error = %v", err)
+	}
+	if got.Status != domain.StatusInProgress {
+		t.Errorf("task status = %s, want in_progress", got.Status)
+	}
+}
+
+func TestPomodoroService_CompleteIfExpired(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	if done, err := service.CompleteIfExpired(ctx); err != nil || done != nil {
+		t.Fatalf("no session: CompleteIfExpired() = %v, %v; want nil, nil", done, err)
+	}
+
+	session, err := service.StartPomodoro(ctx, StartPomodoroRequest{WorkingDir: "."})
+	if err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+	if done, err := service.CompleteIfExpired(ctx); err != nil || done != nil {
+		t.Fatalf("time left: CompleteIfExpired() = %v, %v; want nil, nil", done, err)
+	}
+
+	session.StartedAt = time.Now().Add(-session.Duration - time.Second)
+	if err := store.Sessions().Update(ctx, session); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	done, err := service.CompleteIfExpired(ctx)
+	if err != nil {
+		t.Fatalf("expired: CompleteIfExpired() error = %v", err)
+	}
+	if done == nil || done.ID != session.ID || done.Status != domain.SessionStatusCompleted {
+		t.Fatalf("expired: CompleteIfExpired() = %+v, want the completed session", done)
+	}
+	// Only the first caller gets it.
+	if again, err := service.CompleteIfExpired(ctx); err != nil || again != nil {
+		t.Errorf("second call = %v, %v; want nil, nil", again, err)
+	}
+}
+
+func TestPomodoroService_GetTaskHistory_Prefix(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+	service := NewPomodoroService(store, nil)
+	ctx := context.Background()
+
+	task, _ := domain.NewTask("History")
+	if err := store.Tasks().Save(ctx, task); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if _, err := service.StartPomodoro(ctx, StartPomodoroRequest{TaskID: &task.ID, WorkingDir: "."}); err != nil {
+		t.Fatalf("StartPomodoro() error = %v", err)
+	}
+	history, err := service.GetTaskHistory(ctx, task.ID[:8])
+	if err != nil {
+		t.Fatalf("GetTaskHistory(prefix) error = %v", err)
+	}
+	if len(history) != 1 {
+		t.Errorf("GetTaskHistory(prefix) = %d sessions, want 1", len(history))
+	}
+}

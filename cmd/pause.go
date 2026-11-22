@@ -11,8 +11,8 @@ import (
 // pauseCmd represents the pause command
 var pauseCmd = &cobra.Command{
 	Use:   "pause",
-	Short: "Pause the current pomodoro session",
-	Long:  `Pause the currently running pomodoro session.`,
+	Short: "Pause the current session",
+	Long:  `Pause the running session; paused time does not count as worked.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 

@@ -18,8 +18,8 @@ import (
 // stopCmd represents the stop command
 var stopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Stop the current pomodoro session",
-	Long:  `Complete the current active pomodoro session.`,
+	Short: "Stop the current session",
+	Long:  `Complete the active session now, recording the time actually worked, then run the methodology's closing prompts.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
@@ -129,23 +129,14 @@ var stopCmd = &cobra.Command{
 			}
 		}
 
-		// Send notification if enabled
-		if app.notifier != nil && app.notifier.IsEnabled() {
-			switch session.Type {
-			case domain.SessionTypeWork:
-				_ = app.notifier.NotifyPomodoroComplete(session.Duration.String())
-			case domain.SessionTypeShortBreak:
-				_ = app.notifier.NotifyBreakComplete("Short")
-			case domain.SessionTypeLongBreak:
-				_ = app.notifier.NotifyBreakComplete("Long")
-			}
-		}
+		// Notification and on_end hook, as for any completed session.
+		announceSessionEnd(ctx, session, session.Duration)
 
 		if jsonOutput {
 			return outputJSON(session)
 		}
 
-		fmt.Printf("%s\n", i18n.T("Session completed! Duration: %s", session.Duration))
+		fmt.Printf("%s\n", i18n.T("Session completed! Duration: %s", formatCmdDuration(session.Duration)))
 		if session.TaskID != nil {
 			fmt.Printf("%s\n", i18n.T("   Task ID: %s", *session.TaskID))
 		}

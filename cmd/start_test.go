@@ -11,8 +11,8 @@ func TestStartCmd(t *testing.T) {
 			t.Errorf("startCmd.Use = %q, want %q", startCmd.Use, "start [task-id]")
 		}
 
-		if startCmd.Short != "Start a pomodoro session" {
-			t.Errorf("startCmd.Short = %q, want %q", startCmd.Short, "Start a pomodoro session")
+		if startCmd.Short != "Start a work session" {
+			t.Errorf("startCmd.Short = %q, want %q", startCmd.Short, "Start a work session")
 		}
 	})
 

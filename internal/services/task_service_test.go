@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -219,5 +220,51 @@ func TestTaskService_SetHighlightWith_InTx(t *testing.T) {
 	gotA, _ := store.Tasks().FindByID(ctx, a.ID)
 	if gotA.HighlightDate != nil {
 		t.Errorf("A.HighlightDate = %v, want nil", gotA.HighlightDate)
+	}
+}
+
+func TestTaskService_UpdateTask(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+	service := NewTaskService(store)
+	ctx := context.Background()
+
+	task, err := service.AddTask(ctx, AddTaskRequest{Title: "Old", Tags: []string{"a"}})
+	if err != nil {
+		t.Fatalf("AddTask() error = %v", err)
+	}
+
+	title, desc, tags := "  New title ", "details", []string{"x", "y"}
+	got, err := service.UpdateTask(ctx, task.ID[:8], UpdateTaskRequest{Title: &title, Description: &desc, Tags: &tags})
+	if err != nil {
+		t.Fatalf("UpdateTask() error = %v", err)
+	}
+	if got.Title != "New title" || got.Description != "details" || len(got.Tags) != 2 {
+		t.Errorf("UpdateTask() = %+v", got)
+	}
+	stored, _ := service.GetTask(ctx, task.ID)
+	if stored.Title != "New title" || len(stored.Tags) != 2 {
+		t.Errorf("stored task = %+v", stored)
+	}
+
+	empty := " "
+	if _, err := service.UpdateTask(ctx, task.ID, UpdateTaskRequest{Title: &empty}); !errors.Is(err, domain.ErrEmptyTaskTitle) {
+		t.Errorf("empty title error = %v, want ErrEmptyTaskTitle", err)
+	}
+
+	none := []string{}
+	if got, _ := service.UpdateTask(ctx, task.ID, UpdateTaskRequest{Tags: &none}); len(got.Tags) != 0 {
+		t.Errorf("clearing tags left %v", got.Tags)
+	}
+
+	if err := service.CompleteTask(ctx, task.ID); err != nil {
+		t.Fatalf("CompleteTask() error = %v", err)
+	}
+	got, err = service.UpdateTask(ctx, task.ID, UpdateTaskRequest{Reopen: true})
+	if err != nil {
+		t.Fatalf("UpdateTask(reopen) error = %v", err)
+	}
+	if got.Status != domain.StatusPending || got.CompletedAt != nil {
+		t.Errorf("reopened task = %s / %v, want pending with no completion time", got.Status, got.CompletedAt)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/i18n"
@@ -48,7 +49,7 @@ var addCmd = &cobra.Command{
 				"description": task.Description,
 				"status":      string(task.Status),
 				"tags":        task.Tags,
-				"created_at":  task.CreatedAt.Format("2006-01-02T15:04:05"),
+				"created_at":  task.CreatedAt.Format(time.RFC3339),
 			}
 			jsonData, err := json.MarshalIndent(data, "", "  ")
 			if err != nil {
@@ -58,7 +59,7 @@ var addCmd = &cobra.Command{
 			return nil
 		}
 
-		fmt.Printf("✅ %s\n", i18n.T("Task added: %s (ID: %s)", task.Title, task.ID))
+		fmt.Printf("✅ %s\n", i18n.T("Task added: %s (ID: %s)", task.Title, task.ID[:8]))
 		return nil
 	},
 }

@@ -15,8 +15,8 @@ func TestStopCmd(t *testing.T) {
 			t.Errorf("stopCmd.Use = %q, want %q", stopCmd.Use, "stop")
 		}
 
-		if stopCmd.Short != "Stop the current pomodoro session" {
-			t.Errorf("stopCmd.Short = %q, want %q", stopCmd.Short, "Stop the current pomodoro session")
+		if stopCmd.Short != "Stop the current session" {
+			t.Errorf("stopCmd.Short = %q, want %q", stopCmd.Short, "Stop the current session")
 		}
 	})
 }

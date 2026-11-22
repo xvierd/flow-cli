@@ -11,8 +11,8 @@ import (
 // resumeCmd represents the resume command
 var resumeCmd = &cobra.Command{
 	Use:   "resume",
-	Short: "Resume the paused pomodoro session",
-	Long:  `Resume a previously paused pomodoro session.`,
+	Short: "Resume the paused session",
+	Long:  `Resume the paused session; you are notified when it ends.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
@@ -21,7 +21,8 @@ var resumeCmd = &cobra.Command{
 			return fmt.Errorf("%s: %w", i18n.T("failed to resume session"), err)
 		}
 
-		fmt.Printf("▶️  %s\n", i18n.T("Session resumed. Remaining: %s", session.RemainingTime()))
+		fmt.Printf("▶️  %s\n", i18n.T("Session resumed. Remaining: %s", formatCmdDuration(session.RemainingTime())))
+		ensureWatcher()
 		return nil
 	},
 }

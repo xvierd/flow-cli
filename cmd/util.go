@@ -3,10 +3,24 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/xvierd/flow-cli/internal/i18n"
 )
+
+// interactiveTerminal reports whether stdin and stdout are both terminals,
+// that is, whether the timer TUI can run. It is a variable so tests can
+// replace it.
+var interactiveTerminal = func() bool {
+	return term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd())
+}
+
+// printBackgroundHint tells the user the session runs without a timer view.
+func printBackgroundHint() {
+	fmt.Println(i18n.T("   Running in the background: \"flow status\" shows the time left, \"flow\" opens the timer. You will be notified when it ends."))
+}
 
 // jsonOut prints a value as indented JSON. Returns the marshal error so callers
 // surface it instead of silently dropping invalid output.

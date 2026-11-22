@@ -17,7 +17,7 @@ import (
 var deleteCmd = &cobra.Command{
 	Use:   "delete [task-id]",
 	Short: "Delete a task",
-	Long:  `Delete a task by its ID. Use with caution - this cannot be undone.`,
+	Long:  `Delete a task by its ID (the short ID from "flow list" works). This cannot be undone.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
@@ -45,7 +45,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		// Delete the task
-		err = app.tasks.DeleteTask(ctx, taskID)
+		err = app.tasks.DeleteTask(ctx, task.ID)
 		if err != nil {
 			if errors.Is(err, domain.ErrTaskNotFound) {
 				return fmt.Errorf("%s", i18n.T("task not found: %s", taskID))
@@ -56,7 +56,7 @@ var deleteCmd = &cobra.Command{
 		if jsonOutput {
 			return jsonOut(map[string]interface{}{
 				"deleted": true,
-				"task_id": taskID,
+				"task_id": task.ID,
 			})
 		}
 		fmt.Printf("✅ %s\n", i18n.T("Task '%s' deleted successfully.", task.Title))

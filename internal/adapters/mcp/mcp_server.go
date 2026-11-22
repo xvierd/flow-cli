@@ -25,10 +25,28 @@ type Server struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 
+	// onSessionEvent, when set, is told about sessions this server starts
+	// ("start"), resumes ("resume") or stops ("end"), so the host can run
+	// hooks and announce the end of sessions no TUI is showing.
+	onSessionEvent func(ctx context.Context, event string, session *domain.PomodoroSession)
+
 	// toolMu serializes tool handlers. mcp-go dispatches tools/call to a
 	// worker pool, and the service layer's read-modify-write updates are not
 	// atomic, so concurrent calls would otherwise lose writes.
 	toolMu sync.Mutex
+}
+
+// OnSessionEvent registers fn to be told about sessions this server starts,
+// resumes or stops; event is "start", "resume" or "end".
+func (s *Server) OnSessionEvent(fn func(ctx context.Context, event string, session *domain.PomodoroSession)) {
+	s.onSessionEvent = fn
+}
+
+// sessionEvent reports event for session to the registered observer.
+func (s *Server) sessionEvent(ctx context.Context, event string, session *domain.PomodoroSession) {
+	if s.onSessionEvent != nil && session != nil {
+		s.onSessionEvent(ctx, event, session)
+	}
 }
 
 // Duration bounds accepted for the duration_minutes tool argument.
@@ -705,6 +723,7 @@ func (s *Server) handleStartPomodoro(ctx context.Context, request mcp.CallToolRe
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to start pomodoro: %v", err)), nil
 	}
+	s.sessionEvent(ctx, "start", session)
 
 	result := map[string]interface{}{
 		"id":         session.ID,
@@ -732,6 +751,7 @@ func (s *Server) handleStopPomodoro(ctx context.Context, request mcp.CallToolReq
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to stop pomodoro: %v", err)), nil
 	}
+	s.sessionEvent(ctx, "end", session)
 
 	result := map[string]interface{}{
 		"id":         session.ID,
@@ -785,6 +805,7 @@ func (s *Server) handleResumePomodoro(ctx context.Context, request mcp.CallToolR
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to resume pomodoro: %v", err)), nil
 	}
+	s.sessionEvent(ctx, "resume", session)
 
 	result := map[string]interface{}{
 		"id":             session.ID,
@@ -1219,6 +1240,7 @@ func (s *Server) handleStartSession(ctx context.Context, request mcp.CallToolReq
 	if err != nil {
 		return toolError("failed to start session", err)
 	}
+	s.sessionEvent(ctx, "start", session)
 	return jsonResult(sessionSummary(session))
 }
 
@@ -1228,6 +1250,7 @@ func (s *Server) handleStartBreak(ctx context.Context, request mcp.CallToolReque
 	if err != nil {
 		return toolError("failed to start break", err)
 	}
+	s.sessionEvent(ctx, "start", session)
 	return jsonResult(sessionSummary(session))
 }
 

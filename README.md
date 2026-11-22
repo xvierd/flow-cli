@@ -61,8 +61,11 @@ Most productivity timers are either too heavy (Electron apps with accounts, clou
 # Go
 go install github.com/xvierd/flow-cli/cmd/flow@latest
 
-# Script (installs to ~/.local/bin)
+# Script (Linux / macOS, installs to ~/.local/bin)
 curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main/install.sh | sh
+
+# Windows: download flow-windows-amd64.zip (or arm64) from the latest release
+# https://github.com/xvierd/flow-cli/releases/latest and put flow.exe on your PATH
 
 # From source
 git clone https://github.com/xvierd/flow-cli.git
@@ -75,17 +78,21 @@ Uninstall with `curl -sSL https://raw.githubusercontent.com/xvierd/flow-cli/main
 
 ```bash
 flow                        # interactive wizard (main menu, task, session)
-flow add "Fix auth bug"     # create a task
-flow start                  # start a work session (optionally: flow start <task-id>)
+flow add "Fix auth bug"     # create a task (prints its short ID, e.g. 4f894d3e)
+flow start 4f894d3e         # start a work session on that task and open the timer
+flow start --detach         # start without the timer: runs in the background, notifies at the end
 flow status                 # one-shot view of the current session + today's stats
 flow stats                  # productivity dashboard
 flow reflect                # weekly reflection
 flow report --week          # aggregated weekly report (terminal / md / csv / json)
 flow report --week -fmd -o report.md
 flow break                   # take a break
-flow complete <id>           # mark a task done
+flow complete 4f894d3e       # mark a task done
+flow edit 4f894d3e --tags docs,backend
 flow mcp                     # start the MCP server
 ```
+
+Task and session IDs can be shortened: the 8 characters `flow list` shows (or any unique prefix of at least 4) work everywhere a full ID does, in the CLI and the MCP tools.
 
 Add `#tags` inline when naming a task to tag the session:
 
@@ -116,21 +123,24 @@ Breaks follow the active mode (`methodology` in config, or `--mode`). In Pomodor
 | `flow` | Interactive wizard: main menu, mode picker, duration, task, start (offers Resume / Stop if a session is active) |
 | `flow add "title" [-t tag1,tag2]` | Create a new task (`-t` is repeatable or comma-separated: `-t a,b -t c`) |
 | `flow list [--all] [--status pending]` | List tasks |
-| `flow start [task-id]` | Start a work session and open the timer (`--task <id>`, `--tags a,b` also work). Length: `work_duration` in Pomodoro, the first preset in Deep Work / Make Time |
+| `flow start [task-id]` | Start a work session and open the timer (`--task <id>`, `--tags a,b` also work; `--detach` / `-d` skips the timer). Length: `work_duration` in Pomodoro, the first preset in Deep Work / Make Time |
 | `flow stop` | Complete the active session, recording the time actually worked; then runs the mode's prompts (notes / shutdown ritual / focus score) |
 | `flow pause` / `flow resume` | Pause / resume the active session |
-| `flow break` | Start a short or long break and open the timer |
+| `flow break [--detach]` | Start a short or long break and open the timer |
 | `flow void` | Void a session due to interruption (not counted in stats) |
 | `flow status [--json]` | One-shot view of the current session + today's stats (`active_task` is `null` when no session is active) |
 | `flow stats [--period week|month]` | Productivity dashboard: sessions by mode, focus scores, heatmap |
 | `flow reflect [--today]` | Weekly reflection: day-by-day breakdown, highlights, focus |
-| `flow report [--week\|--month] [--format terminal\|md\|csv] [--out file] [--json]` | Aggregated report: daily breakdown, 24h heatmap, top tags, methodology focus |
+| `flow report [--week\|--month] [--format terminal\|md\|csv] [--out file] [--json]` | Aggregated report: daily breakdown, 24h heatmap, top tags, methodology focus. In `--json`, each duration comes as a Go duration string (`"total_work_time": "1h15m0s"`) plus a number of minutes (`"total_work_minutes": 75`); heatmap `minutes` is a number |
 | `flow export [--format md|csv] [--period week|month|all]` | Raw session history dump |
 | `flow complete <id>` | Mark a task as completed |
+| `flow edit <id> [--title t] [--description d] [--tags a,b] [--reopen]` | Edit a task; `--tags` replaces all tags (`--tags ""` clears them), `--reopen` moves a completed task back to pending |
 | `flow delete <id>` | Delete a task |
 | `flow config` | Configure presets, breaks, methodology, notifications |
 | `flow reset [--force]` | Wipe the database |
 | `flow mcp` | Start the MCP server |
+
+Without a terminal (scripts, editor tasks, `flow start | …`) `flow start` and `flow break` behave as with `--detach`: the session is saved, the command exits 0, and the background timer notifies you when it ends.
 
 Only one session (running or paused) can be active at a time; `flow start` offers to stop the current one first. A running session whose timer has already run out is completed automatically and never blocks a new start. Stopping records the time actually worked (paused time is not counted), and when a session ends (stopped, voided, cancelled or run out, from the CLI, TUI or MCP) its in-progress task returns to pending.
 
@@ -143,6 +153,27 @@ Only one session (running or paused) can be active at a time; `flow start` offer
 | `--inline`, `-i` | Compact inline timer (narrow terminals / non-TTY) |
 | `--json` | Machine-readable output |
 | `--db <path>` | Custom database path |
+
+## Notifications & Background Timer
+
+You get a desktop notification when a session ends, whether or not the timer is on screen:
+
+- While the timer TUI is open, it announces the end of the session itself.
+- When nothing is showing the session — you closed the timer with `c`, started it with `--detach` or from a script, or an AI agent started it over MCP — a small detached `flow` process waits for it to run out, completes it and notifies you. It exits as soon as no session is active (or after 48 h), never shows a window, and only one runs per database.
+
+Turn notifications off with `[notifications] enabled = false` (or `tab` in the timer). Set `FLOW_NO_WATCHER=1` to never start the background process.
+
+## Hooks
+
+Run your own commands when sessions start and end — pause music, set Slack to "focusing", log to a time tracker:
+
+```toml
+[hooks]
+on_start = "osascript -e 'tell application \"Music\" to pause'"
+on_end   = "echo \"$FLOW_EVENT $FLOW_SESSION_TYPE $FLOW_DURATION $FLOW_TASK\" >> ~/flow-hooks.log"
+```
+
+Commands run through `sh -c` (`cmd /C` on Windows) with a 10 s timeout and their output discarded. They receive `FLOW_EVENT` (`start` / `end`), `FLOW_SESSION_ID`, `FLOW_SESSION_TYPE` (`work`, `short_break`, `long_break`), `FLOW_METHODOLOGY`, `FLOW_DURATION` and `FLOW_TASK`. `on_start` fires for sessions started from the CLI, the timer or MCP; `on_end` fires when a session completes (timer ran out or stopped), not when it is voided or cancelled.
 
 ## Session Chaining
 
@@ -265,8 +296,10 @@ Works with Claude Code, Cursor, and any MCP-compatible client.
 - `duration_minutes` must be a whole number from 1 to 1440. Omit it for the methodology's default: `work_duration` in Pomodoro, the first preset in Deep Work / Make Time. `start_session` without `methodology` uses the configured one.
 - Invalid arguments and storage failures come back as tool errors (`isError: true`); a panic inside a tool is reported the same way instead of killing the server.
 - Tool calls are serialized, and the CLI, TUI and MCP server can all use the same database at once.
+- Sessions an agent starts or resumes are covered by the background timer, so you are notified when they end even with no Flow window open; `on_start` / `on_end` hooks run for them too.
+- `task_id` and `session_id` arguments accept the short IDs shown by `flow list`.
 
-**Sessions** — `start_session` (methodology, task, duration, tags, intended outcome), `start_break`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `cancel_session`, `void_session`, and `start_pomodoro` (deprecated alias of `start_session`).
+**Sessions** — `start_session` (`methodology`, `task_id` or `task_title`, `duration_minutes`, `tags`, `intended_outcome`), `start_break`, `stop_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `cancel_session`, `void_session`, and `start_pomodoro` (deprecated alias of `start_session`).
 
 **Reviews & insights** — `get_current_state`, `get_recent_sessions`, `get_daily_summary`, `get_period_stats`, `get_focus_report`, `get_today_highlight`.
 
@@ -297,6 +330,10 @@ first_run = true
 
 [focus]
 strict = false           # strict focus mode (see above)
+
+[hooks]
+on_start = ""            # shell command run when a session starts (see Hooks)
+on_end = ""              # shell command run when a session completes
 
 [pomodoro]
 work_duration = "25m0s"   # default length of Pomodoro sessions (`flow start`, MCP)
@@ -391,11 +428,7 @@ Install the pre-commit hook (runs `gofmt` + `go vet`):
 git config core.hooksPath .githooks
 ```
 
-> 🎬 Suggested demo (manual): record `flow`, `flow report --week`, and an MCP session with [asciinema](https://asciinema.org) or [vhs](https://github.com/charmbracelet/vhs).
-
-## GitHub Topics
-
-`productivity` `pomodoro` `cli` `tui` `golang` `mcp` `mcp-server` `deep-work` `make-time` `ai-agents` `terminal` `focus`
+The README demo is recorded with [vhs](https://github.com/charmbracelet/vhs) from [`docs/demo.tape`](docs/demo.tape) on a throwaway database: `go build -o flow ./cmd/flow && vhs docs/demo.tape`.
 
 ## License
 

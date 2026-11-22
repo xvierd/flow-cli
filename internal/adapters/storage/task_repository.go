@@ -51,7 +51,13 @@ func (r *taskRepository) Save(ctx context.Context, task *domain.Task) error {
 }
 
 // FindByID retrieves a task by its unique identifier.
+// A unique ID prefix (as shown by `flow list`) is accepted too.
 func (r *taskRepository) FindByID(ctx context.Context, id string) (*domain.Task, error) {
+	id, err := resolveID(ctx, r.db, "tasks", id, domain.ErrTaskNotFound)
+	if err != nil {
+		return nil, err
+	}
+
 	query := `
 		SELECT t.id, t.title, t.description, t.status, COALESCE(GROUP_CONCAT(tt.tag), ''), t.created_at, t.updated_at, t.completed_at, t.highlight_date
 		FROM tasks t
@@ -65,7 +71,7 @@ func (r *taskRepository) FindByID(ctx context.Context, id string) (*domain.Task,
 	var completedAt sql.NullTime
 	var highlightDate sql.NullTime
 
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err = r.db.QueryRowContext(ctx, query, id).Scan(
 		&task.ID,
 		&task.Title,
 		&task.Description,
@@ -240,6 +246,11 @@ func (r *taskRepository) FindByTitle(ctx context.Context, query string) ([]*doma
 
 // Delete removes a task from storage.
 func (r *taskRepository) Delete(ctx context.Context, id string) error {
+	id, err := resolveID(ctx, r.db, "tasks", id, domain.ErrTaskNotFound)
+	if err != nil {
+		return err
+	}
+
 	query := `DELETE FROM tasks WHERE id = ?`
 
 	result, err := r.db.ExecContext(ctx, query, id)

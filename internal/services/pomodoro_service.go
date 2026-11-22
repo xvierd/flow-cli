@@ -111,6 +111,32 @@ func findActiveSession(ctx context.Context, storage ports.Storage) (*domain.Pomo
 	return active, nil
 }
 
+// CompleteIfExpired completes the active session when it is running with its
+// timer fully elapsed, and returns that session. It returns nil when there is
+// no such session (none active, paused, or time left). The check and the
+// write run in one transaction, so across processes (TUI, MCP server,
+// background watcher) exactly one caller gets the completed session and can
+// announce it.
+func (s *PomodoroService) CompleteIfExpired(ctx context.Context) (*domain.PomodoroSession, error) {
+	var done *domain.PomodoroSession
+	err := s.storage.WithTx(ctx, func(tx ports.Storage) error {
+		session, err := tx.Sessions().FindActive(ctx)
+		if err != nil || !isExpired(session) {
+			return err
+		}
+		session.Complete()
+		if err := endSession(ctx, tx, session); err != nil {
+			return fmt.Errorf("failed to complete expired session: %w", err)
+		}
+		done = session
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return done, nil
+}
+
 // endSession persists an ended session and releases its task: starting a
 // session marks its task in_progress, so a task still in_progress when its
 // session ends goes back to pending. A task in any other state (for example
@@ -229,8 +255,11 @@ func (s *PomodoroService) startPomodoro(ctx context.Context, storage ports.Stora
 	if req.TaskID != nil {
 		task, err := storage.Tasks().FindByID(ctx, *req.TaskID)
 		if err != nil {
-			return nil, fmt.Errorf("task not found: %w", err)
+			return nil, err
 		}
+		// A short ID prefix resolves to the full one; the session stores that.
+		fullID := task.ID
+		req.TaskID = &fullID
 		task.Start()
 		if err := storage.Tasks().Update(ctx, task); err != nil {
 			return nil, fmt.Errorf("failed to update task: %w", err)
@@ -556,7 +585,14 @@ func (s *PomodoroService) GetDeepWorkStreak(ctx context.Context, threshold time.
 }
 
 // GetTaskHistory retrieves session history for a specific task.
+// taskID may be a unique ID prefix; a task that no longer exists is looked
+// up by the given ID as is (its sessions keep the ID).
 func (s *PomodoroService) GetTaskHistory(ctx context.Context, taskID string) ([]*domain.PomodoroSession, error) {
+	if task, err := s.storage.Tasks().FindByID(ctx, taskID); err == nil {
+		taskID = task.ID
+	} else if !errors.Is(err, domain.ErrTaskNotFound) {
+		return nil, err
+	}
 	return s.storage.Sessions().FindByTask(ctx, taskID)
 }
 

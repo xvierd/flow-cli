@@ -14,7 +14,10 @@ import (
 var breakCmd = &cobra.Command{
 	Use:   "break",
 	Short: "Start a break session",
-	Long:  `Start a pomodoro break session (short or long depending on work completed).`,
+	Long: `Start a break. Its length follows the current methodology: in Pomodoro a
+short break, or a long one after every 4th work session of the day.
+With --detach (or without a terminal) the timer is not opened and you are
+notified when the break ends.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		workingDir, _ := os.Getwd()
@@ -29,6 +32,13 @@ var breakCmd = &cobra.Command{
 			session.Duration,
 			getBreakTypeLabel(session.Type)))
 
+		background := breakDetach || !interactiveTerminal()
+		sessionStarted(ctx, session, background)
+		if background {
+			printBackgroundHint()
+			return nil
+		}
+
 		// Get the current state for the TUI
 		state, err := app.state.GetCurrentState(ctx)
 		if err != nil {
@@ -37,6 +47,12 @@ var breakCmd = &cobra.Command{
 
 		return runSessions(state, workingDir)
 	},
+}
+
+var breakDetach bool
+
+func init() {
+	breakCmd.Flags().BoolVarP(&breakDetach, "detach", "d", false, "Start the break without opening the timer (it keeps running in the background)")
 }
 
 func getBreakTypeLabel(sessionType domain.SessionType) string {

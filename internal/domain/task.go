@@ -13,6 +13,7 @@ var (
 	ErrInvalidTaskID        = errors.New("invalid task ID")
 	ErrEmptyTaskTitle       = errors.New("task title cannot be empty")
 	ErrTaskNotFound         = errors.New("task not found")
+	ErrAmbiguousID          = errors.New("ambiguous ID prefix: matches more than one record, type more characters")
 	ErrSessionNotFound      = errors.New("session not found")
 	ErrInvalidDuration      = errors.New("invalid duration")
 	ErrSessionAlreadyActive = errors.New("session already active")

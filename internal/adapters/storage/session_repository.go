@@ -111,7 +111,13 @@ func unmarshalDistractions(data string) []domain.Distraction {
 }
 
 // FindByID retrieves a session by its unique identifier.
+// A unique ID prefix is accepted too.
 func (r *sessionRepository) FindByID(ctx context.Context, id string) (*domain.PomodoroSession, error) {
+	id, err := resolveID(ctx, r.db, "sessions", id, domain.ErrSessionNotFound)
+	if err != nil {
+		return nil, err
+	}
+
 	query := `
 		SELECT
 			s.id, s.task_id, s.type, s.status, s.duration_ms, s.started_at, s.paused_at,

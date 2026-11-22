@@ -56,8 +56,15 @@ var esCatalog = map[string]string{
 	"Warning: using default settings, config file could not be read: %v": "Aviso: se usa la configuración por defecto, no se pudo leer el archivo de configuración: %v",
 
 	// -- Task commands --------------------------------------------------------
-	"Task added: %s (ID: %s)":         "Tarea agregada: %s (ID: %s)",
-	"Task completed (ID: %s)":         "Tarea completada (ID: %s)",
+	"Task added: %s (ID: %s)":   "Tarea agregada: %s (ID: %s)",
+	"Task updated: %s (ID: %s)": "Tarea actualizada: %s (ID: %s)",
+	"   Tags: %s":               "   Etiquetas: %s",
+	"   Task: %s (ID: %s)":      "   Tarea: %s (ID: %s)",
+	"failed to edit task":       "no se pudo editar la tarea",
+	"nothing to change: use --title, --description, --tags or --reopen":                                                               "nada que cambiar: usa --title, --description, --tags o --reopen",
+	"   Running in the background: \"flow status\" shows the time left, \"flow\" opens the timer. You will be notified when it ends.": "   Corre en segundo plano: \"flow status\" muestra el tiempo restante y \"flow\" abre el temporizador. Recibirás un aviso al terminar.",
+	"Warning: could not start the background timer, you will not be notified when the session ends: %v":                               "Aviso: no se pudo iniciar el temporizador en segundo plano, no recibirás aviso al terminar la sesión: %v",
+	"Task completed: %s (ID: %s)":     "Tarea completada: %s (ID: %s)",
 	"Task '%s' deleted successfully.": "Tarea '%s' eliminada.",
 	"No tasks found.":                 "No hay tareas.",
 	"Tasks (%d):":                     "Tareas (%d):",
@@ -66,7 +73,7 @@ var esCatalog = map[string]string{
 	"Deletion cancelled.": "Eliminación cancelada.",
 
 	// -- Session commands -----------------------------------------------------
-	"Pomodoro started! Duration: %s":                      "¡Pomodoro iniciado! Duración: %s",
+	"%s session started! Duration: %s":                    "¡Sesión de %s iniciada! Duración: %s",
 	"Session completed! Duration: %s":                     "¡Sesión completada! Duración: %s",
 	"Session paused. Remaining: %s":                       "Sesión pausada. Restante: %s",
 	"Session resumed. Remaining: %s":                      "Sesión reanudada. Restante: %s",

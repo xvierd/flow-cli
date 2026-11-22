@@ -278,6 +278,7 @@ func (w *sessionWizard) startSession(ctx context.Context) (*domain.CurrentState,
 	// start are one atomic unit. Git runs before the transaction, which
 	// holds the write lock.
 	gitInfo := app.pomodoro.DetectGit(ctx, w.workingDir)
+	var started *domain.PomodoroSession
 	err := app.storage.WithTx(ctx, func(tx ports.Storage) error {
 		if taskName != "" && taskID == nil {
 			task, err := app.tasks.AddTaskWith(ctx, tx, services.AddTaskRequest{
@@ -305,12 +306,15 @@ func (w *sessionWizard) startSession(ctx context.Context) (*domain.CurrentState,
 			Tags:            sessionTags,
 			Git:             gitInfo,
 		}
-		_, err := app.pomodoro.StartPomodoroWith(ctx, tx, req)
+		var err error
+		started, err = app.pomodoro.StartPomodoroWith(ctx, tx, req)
 		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", i18n.T("failed to start pomodoro"), err)
 	}
+	// The TUI opening next treats this session as already announced.
+	sessionStarted(ctx, started, false)
 
 	state, err := app.state.GetCurrentState(ctx)
 	if err != nil {

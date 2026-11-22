@@ -30,6 +30,7 @@ type Config struct {
 	MakeTime      MakeTimeConfig     `mapstructure:"maketime"`
 	Notifications NotificationConfig `mapstructure:"notifications"`
 	Focus         FocusConfig        `mapstructure:"focus"`
+	Hooks         HooksConfig        `mapstructure:"hooks"`
 	MCP           MCPConfig          `mapstructure:"mcp"`
 	Storage       StorageConfig      `mapstructure:"storage"`
 	Theme         ThemeConfig        `mapstructure:"theme"`
@@ -40,6 +41,17 @@ type FocusConfig struct {
 	// Strict locks pause/finish/void/cancel during active work sessions,
 	// forcing them to run to completion.
 	Strict bool `mapstructure:"strict"`
+}
+
+// HooksConfig holds shell commands run on session events. Each command runs
+// through the shell with FLOW_EVENT, FLOW_SESSION_ID, FLOW_SESSION_TYPE,
+// FLOW_METHODOLOGY, FLOW_DURATION and FLOW_TASK set; an empty command is
+// skipped.
+type HooksConfig struct {
+	// OnStart runs when a work session or break starts.
+	OnStart string `mapstructure:"on_start"`
+	// OnEnd runs when a session completes (timer ran out or stopped).
+	OnEnd string `mapstructure:"on_end"`
 }
 
 // DefaultFocusConfig returns the default focus mode configuration.
@@ -453,6 +465,8 @@ func setDefaults() {
 	viper.SetDefault("notifications.enabled", true)
 	viper.SetDefault("notifications.sound", true)
 	viper.SetDefault("focus.strict", false)
+	viper.SetDefault("hooks.on_start", "")
+	viper.SetDefault("hooks.on_end", "")
 	viper.SetDefault("mcp.enabled", true)
 	viper.SetDefault("mcp.auto_start", false)
 	viper.SetDefault("storage.data_dir", "~/.flow")
