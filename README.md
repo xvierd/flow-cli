@@ -613,7 +613,6 @@ internal/
     ├── tui/      # Bubbletea
     ├── mcp/      # MCP server
     ├── git/      # Git context detection and end-of-session summaries
-    ├── git/      # Git context detection
     ├── integrations/ # flow integrate: DND, Slack, music, tmux and status-bar plugins
     └── notification/
 ```
