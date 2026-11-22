@@ -297,6 +297,7 @@ func bigText(s string) string {
 		if !ok {
 			return s
 		}
+		//nolint:gosec // G602 false positive: k ranges over the fixed [3] rows and glyphs.
 		for k := range rows {
 			if i > 0 {
 				_, _ = rows[k].WriteString(" ")
