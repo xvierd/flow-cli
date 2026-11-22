@@ -1,59 +1,49 @@
 # Demo recording for the README. Requires vhs (https://github.com/charmbracelet/vhs):
 #   brew install vhs
 #   go build -o flow ./cmd/flow && vhs docs/demo.tape
-# Uses a throwaway HOME and database, so your real ~/.flow is never touched.
+#
+# Uses a throwaway HOME and an explicit --db seeded with a year of fake,
+# deterministic history (scripts/demoseed), so your real ~/.flow is never
+# touched. The seeder refuses to write to an existing file.
 
 Output docs/demo.gif
 
 Set Shell "bash"
-Set FontSize 16
-Set Width 1100
-Set Height 640
-Set Padding 20
+Set FontSize 15
+Set Width 1000
+Set Height 720
+Set Padding 24
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 45ms
 
 Hide
-Type `export HOME=$(mktemp -d) PATH="$PWD:$PATH" FLOW_NO_WATCHER=1 && alias flow='flow --db $HOME/demo.db' && clear`
+Type `D=$(mktemp -d) && go run ./scripts/demoseed --db "$D/demo.db" >/dev/null && export HOME="$D" PATH="$PWD:$PATH" FLOW_NO_WATCHER=1 && alias flow='flow --db "$HOME/demo.db"' && cd "$D" && clear`
+Enter
+Wait
+Sleep 500ms
+Show
+
+Type "flow wrapped --year"
+Sleep 300ms
+Enter
+Sleep 5s
+
+Hide
+Type "clear"
 Enter
 Show
 
-Type `flow add "Write API docs" -t docs,backend`
+Type "flow stats --year"
+Sleep 300ms
 Enter
-Sleep 1s
-Type "flow list"
-Enter
-Sleep 2s
+Sleep 5s
 
-Type "flow"
+Hide
+Type "clear"
 Enter
-Sleep 1500ms
-Enter
-Sleep 1s
-Enter
-Sleep 1s
-Enter
-Sleep 1s
-Type "Write API docs #docs"
-Sleep 500ms
-Enter
-Sleep 4s
-Type "p"
-Sleep 2s
-Type "p"
-Sleep 2s
-Type "c"
-Sleep 1s
+Show
 
-Type "flow status"
+Type "flow badge -o focus.svg && flow wrapped --png wrapped.png"
+Sleep 300ms
 Enter
-Sleep 3s
-
-Type "flow stop"
-Enter
-Sleep 500ms
-Enter
-Sleep 1s
-Type "flow report --week"
-Enter
-Sleep 4s
+Sleep 5s
