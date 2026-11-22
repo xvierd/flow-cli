@@ -21,6 +21,9 @@ disrupted and the session no longer represents focused work.`,
 		if err != nil {
 			return fmt.Errorf("%s: %w", i18n.T("failed to void session"), err)
 		}
+		// on_end does not fire for a voided session; still undo DND, Slack
+		// status and paused music.
+		endIntegrations(ctx)
 
 		fmt.Printf("%s\n", i18n.T("Session voided. Duration: %s (not counted in stats)", session.Duration))
 		return nil

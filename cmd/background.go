@@ -248,13 +248,16 @@ func notifySessionEnd(t domain.SessionType, m domain.Methodology, worked time.Du
 }
 
 // runHook runs the configured hook command for event ("start" or "end")
-// with the session described in FLOW_* environment variables. Output is
-// discarded (it would corrupt the TUI or the MCP stream). An unset hook is a
-// no-op.
+// with the session described in FLOW_* environment variables, and the
+// enabled built-in integrations next to it. Output is discarded (it would
+// corrupt the TUI or the MCP stream). An unset hook is a no-op.
 func runHook(ctx context.Context, event string, s *domain.PomodoroSession) error {
 	if app.config == nil || s == nil {
 		return nil
 	}
+	// Built-in integrations ([integrations]) run alongside the user's hook.
+	defer startIntegrations(ctx, event, s)()
+
 	command := app.config.Hooks.OnStart
 	if event == "end" {
 		command = app.config.Hooks.OnEnd

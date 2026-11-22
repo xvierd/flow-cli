@@ -139,6 +139,8 @@ Breaks follow the active mode (`methodology` in config, or `--mode`). In Pomodor
 | `flow config` | Configure presets, breaks, methodology, notifications |
 | `flow reset [--force]` | Wipe the database |
 | `flow mcp` | Start the MCP server |
+| `flow integrate [list\|enable\|disable] <name> [--dry-run] [--yes]` | Built-in integrations: Do Not Disturb, Slack status, music, tmux, status bars (see Integrations) |
+| `flow tmux-status` | Short timer for status bars (`🍅 12:34`), empty when idle |
 
 Without a terminal (scripts, editor tasks, `flow start | …`) `flow start` and `flow break` behave as with `--detach`: the session is saved, the command exits 0, and the background timer notifies you when it ends.
 
@@ -174,6 +176,73 @@ on_end   = "echo \"$FLOW_EVENT $FLOW_SESSION_TYPE $FLOW_DURATION $FLOW_TASK\" >>
 ```
 
 Commands run through `sh -c` (`cmd /C` on Windows) with a 10 s timeout and their output discarded. They receive `FLOW_EVENT` (`start` / `end`), `FLOW_SESSION_ID`, `FLOW_SESSION_TYPE` (`work`, `short_break`, `long_break`), `FLOW_METHODOLOGY`, `FLOW_DURATION` and `FLOW_TASK`. `on_start` fires for sessions started from the CLI, the timer or MCP; `on_end` fires when a session completes (timer ran out or stopped), not when it is voided or cancelled.
+
+## Integrations
+
+Ready-made recipes you switch on with one command instead of writing hook scripts. They run next to your own `[hooks]` (never instead of them), with the same rules: a few seconds' timeout each, errors ignored, never blocking a session from starting or ending.
+
+```bash
+flow integrate list                 # what is available, enabled and ready on this machine
+flow integrate enable dnd --dry-run # show what would change, change nothing
+flow integrate enable dnd
+flow integrate disable dnd          # also undoes it now if a session turned it on
+```
+
+| Name | What it does | Setup |
+|------|--------------|-------|
+| `dnd` | Do Not Disturb / Focus on while a work session runs, off when it ends | macOS: two Shortcuts (below). Linux: `dunstctl` or GNOME `gsettings`, nothing to set up |
+| `slack` | Status `:tomato: Focusing until 15:30` during work sessions, cleared at the end | A user token with `users.profile:write`, from `FLOW_SLACK_TOKEN` or the keychain |
+| `music` | Pauses Spotify / Music when a work session starts, resumes what it paused | macOS only; macOS asks once to allow automation |
+| `tmux` | `flow tmux-status` in tmux's `status-right` | Adds a marked block to `~/.tmux.conf` (or `~/.config/tmux/tmux.conf` if that is the one you use) after asking |
+| `sketchybar` | Plugin script reading `flow status --json` | Writes `~/.config/sketchybar/plugins/flow.sh`; add the item to `sketchybarrc` |
+| `waybar` | Custom module reading `flow status --json` | Writes `~/.config/waybar/scripts/flow.sh`; add `custom/flow` to your config |
+| `xbar` | Menu-bar plugin (xbar / SwiftBar) reading `flow status --json` | Writes `~/Library/Application Support/xbar/plugins/flow.5s.sh` |
+
+Session integrations (`dnd`, `slack`, `music`) act when a **work** session starts and undo what they did when it ends (wherever `on_end` fires), and also when it is voided or cancelled from the CLI or the timer. Undo is targeted: flow remembers in `integrations.json` (next to the database) what it changed, so it never turns off a Focus, clears a status or resumes a player that you set yourself.
+
+**dnd on macOS.** macOS has no supported command-line switch for Focus, so flow runs two Shortcuts with `shortcuts run`. Create them once in the Shortcuts app (`flow integrate enable dnd` prints these steps):
+
+1. A shortcut named **Flow Focus On** with the action *Set Focus* → *Turn Do Not Disturb On* (until turned off).
+2. A shortcut named **Flow Focus Off** with *Set Focus* → *Turn Do Not Disturb Off*.
+
+You can use another Focus (Work, Coding…) in the same action, or other shortcut names with `dnd_on_shortcut` / `dnd_off_shortcut`. `flow integrate list` says whether both shortcuts exist.
+
+**slack.** Create a Slack app at <https://api.slack.com/apps>, add the *user* token scope `users.profile:write`, install it to your workspace and copy the `xoxp-…` token. Flow never writes it to `config.toml`; give it one of these ways:
+
+```bash
+security add-generic-password -a "$USER" -s flow-cli-slack -w   # macOS Keychain (prompts for the token)
+secret-tool store --label="flow Slack token" service flow-cli-slack   # Linux Secret Service
+export FLOW_SLACK_TOKEN=xoxp-…                                   # or an environment variable
+```
+
+The status expires at the session's planned end, so it clears itself even if flow never sees the end (an MCP void, a closed laptop).
+
+**tmux.** `flow integrate enable tmux` shows the snippet and asks before adding it to `~/.tmux.conf` (`--yes` skips the question; answer no to copy it yourself):
+
+```tmux
+set -g status-interval 5
+set -ga status-right " #(/path/to/flow tmux-status)"
+```
+
+Reload with `tmux source-file ~/.tmux.conf`. `-ga` appends, so sourcing the file again adds a second copy until tmux restarts. `disable` removes the block.
+
+**Status bars.** The generated scripts call `flow status --json` (parsed with `jq` when present, otherwise falling back to `flow tmux-status`), use the absolute path of the `flow` binary that installed them, and carry a marker so `disable` only ever removes files flow wrote; replacing a file flow did not write asks first. `flow integrate enable sketchybar|waybar|xbar` prints the line to add to the bar's own config.
+
+```toml
+[integrations]
+dnd = false
+dnd_on_shortcut = "Flow Focus On"
+dnd_off_shortcut = "Flow Focus Off"
+slack = false
+slack_emoji = ":tomato:"
+music = false
+tmux = false        # tmux / bar flags record what `flow integrate enable` installed
+sketchybar = false
+waybar = false
+xbar = false
+```
+
+Not covered yet: sessions voided or cancelled over MCP do not undo DND or music (the Slack status still expires on its own).
 
 ## Session Chaining
 
@@ -335,6 +404,11 @@ strict = false           # strict focus mode (see above)
 on_start = ""            # shell command run when a session starts (see Hooks)
 on_end = ""              # shell command run when a session completes
 
+[integrations]           # built-in integrations (see Integrations)
+dnd = false
+slack = false
+music = false
+
 [pomodoro]
 work_duration = "25m0s"   # default length of Pomodoro sessions (`flow start`, MCP)
 short_break = "5m0s"
@@ -410,6 +484,7 @@ internal/
     ├── tui/      # Bubbletea
     ├── mcp/      # MCP server
     ├── git/      # Git context detection
+    ├── integrations/ # flow integrate: DND, Slack, music, tmux and status-bar plugins
     └── notification/
 ```
 
