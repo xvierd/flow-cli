@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
@@ -23,17 +24,15 @@ func runWizard(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	workingDir, _ := os.Getwd()
 
-	// Show welcome screen on first run
-	if app.config.FirstRun {
-		printWelcome()
-		app.config.FirstRun = false
-		_ = saveConfig(app.config)
-	}
-
 	// Check for active session
 	state, err := app.state.GetCurrentState(ctx)
 	if err != nil {
 		return fmt.Errorf("%s: %w", i18n.T("failed to get current state"), err)
+	}
+
+	sessions, err := allSessions(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Inline mode: entire flow runs inside a single bubbletea program
@@ -77,10 +76,25 @@ func runWizard(cmd *cobra.Command, args []string) error {
 	// --- Wizard prompts ---
 	fmt.Println()
 
-	// Main menu (skip if --mode was explicitly passed — user wants to start a session)
-	if modeFlag == "" {
+	// First run (empty database): one welcome screen that can start right away.
+	if len(sessions) == 0 {
+		switch runWelcome() {
+		case welcomeAbort:
+			return nil
+		case welcomeStartNow:
+			return runQuickStart(ctx, quickStart{}, false)
+		}
+		fmt.Println()
+	} else if modeFlag == "" {
+		// Main menu (skipped when --mode was passed: the user wants a session).
+		plan, ok := lastSessionPlan(sessions)
+		nowDesc := describePlan(ctx, plan, ok)
+		if ok {
+			nowDesc = i18n.T("Repeat last: %s", nowDesc)
+		}
 		menuItems := []tui.PickerItem{
-			{Label: i18n.T("Start session"), Desc: i18n.T("Begin a new focus session")},
+			{Label: i18n.T("Start now"), Desc: nowDesc},
+			{Label: i18n.T("New session"), Desc: i18n.T("Pick duration and task")},
 			{Label: i18n.T("View stats"), Desc: i18n.T("Show your productivity dashboard")},
 			{Label: i18n.T("Reflect"), Desc: i18n.T("Weekly reflection on your work")},
 			{Label: i18n.T("Report"), Desc: i18n.T("Aggregated weekly or monthly report")},
@@ -90,53 +104,27 @@ func runWizard(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		switch menuResult.Index {
-		case 1: // View stats
+		case 0: // Start now: what "flow go" does
+			return goCmd.RunE(cmd, nil)
+		case 2:
 			return statsCmd.RunE(cmd, args)
-		case 2: // Reflect
+		case 3:
 			return reflectCmd.RunE(cmd, args)
-		case 3: // Report
+		case 4:
 			return reportCmd.RunE(cmd, args)
 		}
-		// Index 0: Start session — continue to mode picker
+		// Index 1: New session — continue to the duration picker
 		fmt.Println()
 	}
 
-	// Mode picker (skip if --mode was explicitly passed)
-	if modeFlag == "" {
-		// Methodology names stay untranslated (proper nouns).
-		modeItems := []tui.PickerItem{
-			{Label: "Pomodoro", Desc: i18n.T("Classic 25/5 timer")},
-			{Label: "Deep Work", Desc: i18n.T("Longer sessions, distraction tracking")},
-			{Label: "Make Time", Desc: i18n.T("Daily Highlight, focus scoring")},
-		}
-		modeResult := tui.RunPicker(i18n.T("Mode:"), modeItems, "", &app.config.Theme)
-		if modeResult.Aborted {
+	// The mode step is only a step when no default methodology is
+	// configured; otherwise [m] on the duration picker changes it.
+	if modeFlag == "" && app.config.Methodology == "" {
+		if !pickMethodology() {
 			return nil
 		}
-		methodologies := []domain.Methodology{domain.MethodologyPomodoro, domain.MethodologyDeepWork, domain.MethodologyMakeTime}
-		setMethodology(methodologies[modeResult.Index])
-		fmt.Println()
-	}
-
-	// Deep Work: check if philosophy needs to be configured
-	if app.mode.Name() == domain.MethodologyDeepWork {
-		if app.config.DeepWork.Philosophy == "" {
-			philosophyItems := []tui.PickerItem{
-				{Label: i18n.T("Rhythmic"), Desc: i18n.T("Daily habit, same time each day")},
-				{Label: i18n.T("Bimodal"), Desc: i18n.T("Alternate deep/shallow periods")},
-				{Label: i18n.T("Journalistic"), Desc: i18n.T("Grab depth whenever possible")},
-				{Label: i18n.T("Monastic"), Desc: i18n.T("Deep work is your primary work")},
-			}
-			result := tui.RunPicker(i18n.T("Deep Work philosophy:"), philosophyItems, "", &app.config.Theme)
-			if !result.Aborted {
-				philosophies := []string{"rhythmic", "bimodal", "journalistic", "monastic"}
-				app.config.DeepWork.Philosophy = philosophies[result.Index]
-				_ = saveConfig(app.config)
-				// Refresh mode to pick up new philosophy
-				app.mode = methodology.ForMethodology(app.methodology, app.config)
-			}
-			fmt.Println()
-		}
+	} else {
+		ensureDeepWorkPhilosophy()
 	}
 
 	wizard := newSessionWizard(workingDir)
@@ -168,25 +156,93 @@ func launchInlineTUI(cmd *cobra.Command, ctx context.Context, state *domain.Curr
 	return nil
 }
 
-// printWelcome shows the first-run welcome screen explaining the three methodologies.
-// Methodology names are kept as-is (proper nouns); only descriptions translate.
-func printWelcome() {
+// pickMethodology runs the mode picker (Pomodoro first as the default, the
+// other two as advanced modes) and the Deep Work philosophy setup. It reports
+// false when the user cancelled the picker.
+func pickMethodology() bool {
+	// Methodology names stay untranslated (proper nouns).
+	modeItems := []tui.PickerItem{
+		{Label: "Pomodoro", Desc: i18n.T("Default · classic 25/5 timer")},
+		{Label: "Deep Work", Desc: i18n.T("Advanced · longer sessions, distraction tracking")},
+		{Label: "Make Time", Desc: i18n.T("Advanced · daily Highlight, focus scoring")},
+	}
+	methodologies := []domain.Methodology{domain.MethodologyPomodoro, domain.MethodologyDeepWork, domain.MethodologyMakeTime}
+	cursor := 0
+	for i, m := range methodologies {
+		if m == app.methodology {
+			cursor = i
+		}
+	}
+	modeResult := tui.RunPickerWith(i18n.T("Mode:"), modeItems, "", &app.config.Theme, tui.PickerOptions{Cursor: cursor})
+	if modeResult.Aborted {
+		return false
+	}
+	setMethodology(methodologies[modeResult.Index])
 	fmt.Println()
-	fmt.Println("  " + i18n.T("Welcome to Flow!"))
+	ensureDeepWorkPhilosophy()
+	return true
+}
+
+// ensureDeepWorkPhilosophy asks once, in Deep Work, for the philosophy.
+func ensureDeepWorkPhilosophy() {
+	if app.mode.Name() != domain.MethodologyDeepWork || app.config.DeepWork.Philosophy != "" {
+		return
+	}
+	philosophyItems := []tui.PickerItem{
+		{Label: i18n.T("Rhythmic"), Desc: i18n.T("Daily habit, same time each day")},
+		{Label: i18n.T("Bimodal"), Desc: i18n.T("Alternate deep/shallow periods")},
+		{Label: i18n.T("Journalistic"), Desc: i18n.T("Grab depth whenever possible")},
+		{Label: i18n.T("Monastic"), Desc: i18n.T("Deep work is your primary work")},
+	}
+	result := tui.RunPicker(i18n.T("Deep Work philosophy:"), philosophyItems, "", &app.config.Theme)
+	if !result.Aborted {
+		philosophies := []string{"rhythmic", "bimodal", "journalistic", "monastic"}
+		app.config.DeepWork.Philosophy = philosophies[result.Index]
+		_ = saveConfig(app.config)
+		// Refresh mode to pick up new philosophy
+		app.mode = methodology.ForMethodology(app.methodology, app.config)
+	}
 	fmt.Println()
-	fmt.Println("  " + i18n.T("Flow supports three productivity methodologies:"))
-	fmt.Println()
-	fmt.Println("    Pomodoro    " + i18n.T("Classic 25-minute focus sprints with short breaks."))
-	fmt.Println("                " + i18n.T("Great for staying fresh across many tasks."))
-	fmt.Println()
-	fmt.Println("    Deep Work   " + i18n.T("Long uninterrupted blocks (90m+) for cognitively"))
-	fmt.Println("                " + i18n.T("demanding work. Tracks distractions and ends with a"))
-	fmt.Println("                " + i18n.T("shutdown ritual (Cal Newport)."))
-	fmt.Println()
-	fmt.Println("    Make Time   " + i18n.T("Choose a daily Highlight you'll laser-focus on. Rate"))
-	fmt.Println("                " + i18n.T("your focus after each session and log how you'll"))
-	fmt.Println("                " + i18n.T("recharge (Knapp & Zeratsky)."))
-	fmt.Println()
-	fmt.Println("  " + i18n.T("You can change methodology anytime with \"flow config\"."))
-	fmt.Println()
+}
+
+// welcomeChoice is the outcome of the first-run welcome screen.
+type welcomeChoice int
+
+const (
+	welcomeStartNow welcomeChoice = iota
+	welcomeSetup
+	welcomeAbort
+)
+
+// runWelcome shows the first-run screen: what Flow does in three lines, an
+// immediate start, and three commands worth knowing.
+func runWelcome() welcomeChoice {
+	fmt.Print(welcomeText())
+	items := []tui.PickerItem{
+		{Label: i18n.T("Start now"), Desc: i18n.T("%s · %s · no questions asked", app.methodology.Label(), formatMinutes(defaultDurationFor(app.methodology)))},
+		{Label: i18n.T("Set up"), Desc: i18n.T("Pick duration and task first")},
+	}
+	result := tui.RunPicker(i18n.T("Ready?"), items, "", &app.config.Theme)
+	switch {
+	case result.Aborted:
+		return welcomeAbort
+	case result.Index == 0:
+		return welcomeStartNow
+	default:
+		return welcomeSetup
+	}
+}
+
+// welcomeText is the body of the first-run welcome screen.
+func welcomeText() string {
+	var b strings.Builder
+	b.WriteString("  " + i18n.T("Welcome to Flow!") + "\n\n")
+	b.WriteString("  " + i18n.T("Flow times focused work sessions from your terminal, with breaks in between.") + "\n")
+	b.WriteString("  " + i18n.T("Pomodoro (25 min) is the default; Deep Work and Make Time are advanced modes.") + "\n")
+	b.WriteString("  " + i18n.T("Everything stays in a local database; your git branch is recorded with each session.") + "\n\n")
+	b.WriteString("  " + i18n.T("Useful commands:") + "\n")
+	b.WriteString("    flow go                    " + i18n.T("repeat your last session") + "\n")
+	b.WriteString("    flow 25 \"fix auth #api\"    " + i18n.T("start 25 min on a task, tagged #api") + "\n")
+	b.WriteString("    flow stats                 " + i18n.T("see how your week went") + "\n")
+	return b.String()
 }

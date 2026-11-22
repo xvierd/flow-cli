@@ -139,6 +139,12 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 		app.config.FirstRun = false
 		_ = saveConfig(app.config)
 	}
+	// The inline welcome screen is for an empty database with nothing running.
+	var sessions []*domain.PomodoroSession
+	if inlineMode {
+		sessions, _ = app.storage.Sessions().FindRecent(ctx, time.Time{})
+	}
+	firstRun = inlineMode && state.ActiveSession == nil && (firstRun || len(sessions) == 0)
 
 	timer.Configure(tui.TimerConfig{
 		Mode:       app.mode,
@@ -329,7 +335,15 @@ func launchTUI(_ context.Context, state *domain.CurrentState, workingDir string)
 				return err
 			})
 		},
-		FirstRun: firstRun,
+		FirstRun:       firstRun,
+		SkipModePicker: app.config.Methodology != "",
+		LastDuration: func(m domain.Methodology) time.Duration {
+			recent, err := app.storage.Sessions().FindRecent(ctx, time.Time{})
+			if err != nil {
+				return 0
+			}
+			return lastPlannedDuration(recent, m)
+		},
 	})
 
 	runErr := timer.Run(ctx, state)

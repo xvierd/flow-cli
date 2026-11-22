@@ -31,6 +31,12 @@ type InlineModel struct {
 	modeCursor     int
 	modeLocked     bool
 	onModeSelected func(domain.Methodology) methodology.Mode
+	// skipModePicker sends "Start session" straight to the duration picker
+	// (a default methodology is configured); [m] there opens the mode picker.
+	skipModePicker bool
+	// lastDuration returns the last planned work duration in a mode (0 if
+	// none) so the duration picker preselects it.
+	lastDuration func(domain.Methodology) time.Duration
 
 	// Setup: duration picker
 	presets        []config.SessionPreset

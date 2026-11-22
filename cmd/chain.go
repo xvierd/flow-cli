@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/xvierd/flow-cli/internal/adapters/tui"
+	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/i18n"
 	"github.com/xvierd/flow-cli/internal/ports"
@@ -182,9 +183,23 @@ func (w *sessionWizard) startSession(ctx context.Context) (*domain.CurrentState,
 		footer = i18n.T("Break: %s · \"flow config\" to customize", formatMinutes(shortBreak))
 	}
 
-	result := tui.RunPicker(i18n.T("Duration:"), items, footer, &app.config.Theme)
+	// Preselect the last duration used in this methodology; [m] changes the
+	// methodology without a mandatory mode step.
+	opts := tui.PickerOptions{Cursor: w.lastPresetIndex(ctx, presets)}
+	if modeFlag == "" {
+		opts.Hotkeys = []tui.PickerHotkey{{Key: "m", Help: i18n.T("m change mode")}}
+	}
+	result := tui.RunPickerWith(i18n.T("%s · duration:", app.methodology.Label()), items, footer, &app.config.Theme, opts)
 	if result.Aborted {
 		return nil, nil
+	}
+	if result.Hotkey == "m" {
+		fmt.Println()
+		if !pickMethodology() {
+			return nil, nil
+		}
+		// Presets, footer and the Make Time Highlight depend on the mode.
+		return w.startSession(ctx)
 	}
 
 	customDuration := presets[result.Index].Duration
@@ -327,6 +342,30 @@ func (w *sessionWizard) startSession(ctx context.Context) (*domain.CurrentState,
 		return nil, fmt.Errorf("%s: %w", i18n.T("failed to get current state"), err)
 	}
 	return state, nil
+}
+
+// lastPresetIndex returns the index of the preset matching the planned
+// planned duration of the last work session in the current methodology,
+// or 0 when there is none or it matches no preset.
+func (w *sessionWizard) lastPresetIndex(ctx context.Context, presets []config.SessionPreset) int {
+	sessions, err := app.storage.Sessions().FindRecent(ctx, time.Time{})
+	if err != nil {
+		return 0
+	}
+	return presetIndexFor(presets, lastPlannedDuration(sessions, app.methodology))
+}
+
+// presetIndexFor returns the index of the preset lasting d, or 0.
+func presetIndexFor(presets []config.SessionPreset, d time.Duration) int {
+	if d == 0 {
+		return 0
+	}
+	for i, p := range presets {
+		if p.Duration == d {
+			return i
+		}
+	}
+	return 0
 }
 
 // promptTomorrowHighlight asks, in Make Time, for tomorrow's Highlight and

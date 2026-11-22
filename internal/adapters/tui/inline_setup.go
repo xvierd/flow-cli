@@ -58,9 +58,39 @@ type modeOption struct {
 }
 
 var modeOptions = []modeOption{
-	{domain.MethodologyPomodoro, "Pomodoro", "Classic 25/5 timer"},
-	{domain.MethodologyDeepWork, "Deep Work", "Longer sessions, distraction tracking"},
-	{domain.MethodologyMakeTime, "Make Time", "Daily Highlight, focus scoring"},
+	{domain.MethodologyPomodoro, "Pomodoro", "Default · classic 25/5 timer"},
+	{domain.MethodologyDeepWork, "Deep Work", "Advanced · longer sessions, distraction tracking"},
+	{domain.MethodologyMakeTime, "Make Time", "Advanced · daily Highlight, focus scoring"},
+}
+
+// enterPickDuration moves to the duration picker with the preset of the
+// last duration used in the current mode preselected.
+func (m InlineModel) enterPickDuration() InlineModel {
+	m.phase = phasePickDuration
+	m.presetCursor = 0
+	if m.lastDuration == nil || m.mode == nil {
+		return m
+	}
+	if d := m.lastDuration(m.mode.Name()); d > 0 {
+		for i, p := range m.presets {
+			if p.Duration == d {
+				m.presetCursor = i
+				break
+			}
+		}
+	}
+	return m
+}
+
+// setupPhaseAfterMenu is where "Start session" leads: the duration picker
+// when the mode is fixed (--mode) or a default is configured, else the mode
+// picker.
+func (m InlineModel) setupPhaseAfterMenu() InlineModel {
+	if m.modeLocked || m.skipModePicker {
+		return m.enterPickDuration()
+	}
+	m.phase = phasePickMode
+	return m
 }
 
 func (m InlineModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -68,11 +98,14 @@ func (m InlineModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter", " ":
+			// Start the default session right away.
+			m.presetCursor = 0
+			return m.startSession("", "")
+		case "s":
 			if m.modeLocked {
-				m.phase = phasePickDuration
-			} else {
-				m.phase = phaseMainMenu
+				return m.enterPickDuration(), nil
 			}
+			m.phase = phaseMainMenu
 			return m, nil
 		case "c", "ctrl+c", "esc":
 			return m, tea.Quit
@@ -85,20 +118,26 @@ func (m InlineModel) viewWelcome() string {
 	accent := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorWork)).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.ColorHelp))
 
+	startLabel := ""
+	if len(m.presets) > 0 {
+		startLabel = formatMinutesCompact(m.presets[0].Duration)
+	}
+
 	var b strings.Builder
 	b.WriteString(accent.Render("  " + i18n.T("Welcome to Flow!")))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  " + i18n.T("Three methodologies to choose from:")))
+	b.WriteString(dim.Render("  " + i18n.T("Flow times focused work sessions from your terminal, with breaks in between.")))
 	b.WriteString("\n")
-	b.WriteString(accent.Render("  Pomodoro   ") + dim.Render(i18n.T("25m sprints, short breaks — frictionless and fast")))
+	b.WriteString(dim.Render("  " + i18n.T("Pomodoro (25 min) is the default; Deep Work and Make Time are advanced modes.")))
 	b.WriteString("\n")
-	b.WriteString(accent.Render("  Deep Work  ") + dim.Render(i18n.T("long blocks, distraction tracking, shutdown ritual (Newport)")))
+	b.WriteString(dim.Render("  " + i18n.T("Everything stays in a local database; your git branch is recorded with each session.")))
 	b.WriteString("\n")
-	b.WriteString(accent.Render("  Make Time  ") + dim.Render(i18n.T("daily Highlight, focus score, energize (Knapp)")))
+	b.WriteString(dim.Render("  "+i18n.T("Useful commands:")) + " " +
+		accent.Render("flow go") + dim.Render(" · ") +
+		accent.Render("flow 25 \"task #tag\"") + dim.Render(" · ") +
+		accent.Render("flow stats"))
 	b.WriteString("\n")
-	b.WriteString(dim.Render("  " + i18n.T("Change anytime with \"flow config\"")))
-	b.WriteString("\n")
-	b.WriteString(dim.Render("  " + i18n.T("enter continue · c close")))
+	b.WriteString(dim.Render("  " + i18n.T("enter start %s now · s set up · c close", startLabel)))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -144,13 +183,8 @@ func (m InlineModel) selectMainMenu() (tea.Model, tea.Cmd) {
 	case MainMenuViewStats, MainMenuReflect:
 		return m, tea.Quit
 	default:
-		// Start session → advance to mode picker
-		if m.modeLocked {
-			m.phase = phasePickDuration
-		} else {
-			m.phase = phasePickMode
-		}
-		return m, nil
+		// Start session → duration picker (or the mode picker without a default)
+		return m.setupPhaseAfterMenu(), nil
 	}
 }
 
@@ -187,9 +221,7 @@ func (m InlineModel) updatePickMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				m.onboardingMode = false
-				m.phase = phasePickDuration
-				m.presetCursor = 0
-				return m, nil
+				return m.enterPickDuration(), nil
 			case "esc":
 				// Go back to mode picker
 				m.onboardingMode = false
@@ -273,9 +305,7 @@ func (m InlineModel) selectMode() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.phase = phasePickDuration
-	m.presetCursor = 0
-	return m, nil
+	return m.enterPickDuration(), nil
 }
 
 func (m InlineModel) viewPickMode() string {
@@ -408,9 +438,18 @@ func (m InlineModel) updatePickDuration(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			return m.advanceToTaskPhase()
-		case "esc":
+		case "m":
 			if !m.modeLocked {
 				m.phase = phasePickMode
+				return m, nil
+			}
+		case "esc":
+			if !m.modeLocked {
+				if m.skipModePicker {
+					m.phase = phaseMainMenu
+				} else {
+					m.phase = phasePickMode
+				}
 				return m, nil
 			}
 		case "c", "ctrl+c":
@@ -448,7 +487,7 @@ func (m InlineModel) viewPickDuration() string {
 		b.WriteString(dimStyle.Render("  "+m.breakInfo) + "\n")
 	}
 
-	hint := i18n.T("←/→ select · enter confirm · esc back · c close")
+	hint := i18n.T("←/→ select · enter confirm · m mode · esc back · c close")
 	if m.modeLocked {
 		hint = i18n.T("←/→ select · enter confirm · c close")
 	}
