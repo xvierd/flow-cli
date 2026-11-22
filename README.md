@@ -150,6 +150,7 @@ Breaks follow the active mode (`methodology` in config, or `--mode`). In Pomodor
 | `flow config` | Configure presets, breaks, methodology, notifications |
 | `flow reset [--force]` | Wipe the database |
 | `flow mcp` | Start the MCP server |
+| `flow claude install [--dry-run] [--statusline]` / `flow claude uninstall [--dry-run]` | Add / remove Flow's focus-aware hooks (and status line) in Claude Code's `settings.json` (see [Claude Code Integration](#claude-code-integration)) |
 
 Without a terminal (scripts, editor tasks, `flow start | …`) `flow start` and `flow break` behave as with `--detach`: the session is saved, the command exits 0, and the background timer notifies you when it ends.
 
@@ -339,6 +340,24 @@ The main insight also shows as one dim line at the end of `flow report` and on t
 
 ## Claude Code Integration
 
+### Focus-aware Claude (hooks)
+
+```bash
+flow claude install --dry-run   # preview the merged settings.json
+flow claude install             # add the hooks
+flow claude install --statusline  # …and the status line below
+flow claude uninstall           # remove only what Flow added
+```
+
+`flow claude install` adds two hooks to Claude Code's user settings (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`):
+
+- **`SessionStart`**: when a Claude Code conversation starts (or is resumed or cleared) and no Flow session is active, and `[claude] auto_start = true`, Flow starts a background work session in your configured methodology, on a task named after the repository and branch (`flow-cli: feat/login`; just `flow-cli` on `main`/`master`). An open task with that name is reused. You are notified when it ends, like any `flow start --detach`.
+- **`UserPromptSubmit`** (and `SessionStart`): while a session or break is active and `[claude] inject_guidance = true`, the current focus guidance is added to Claude's context, for example *"The user is in deep focus (Deep Work, 40 min left) on the task 'Refactor auth'. Keep answers concise, do not propose work outside the current task, and capture side ideas with log_distraction or create_task instead of digressing."* On a break Claude is asked to encourage rest; near the end of a session, to help reach a clean stopping point. With no active session the hook prints nothing, so idle prompts cost no context.
+
+The settings file is merged, not replaced: other keys and hooks are kept, a timestamped backup (`settings.json.flow-backup-…`) is written before any change, running install twice changes nothing, and invalid JSON aborts without writing. An existing status line that is not Flow's is left alone. The hooks call the `flow` binary that ran `install` (and pass `--db` if you gave one).
+
+The hook handler (`flow claude hook <event>`, hidden) reads Claude Code's JSON on stdin, never fails or blocks a prompt (errors go to stderr, exit code is always 0), reads git information straight from `.git` (worktrees included), and only starts the background timer when it actually starts a session; it typically runs in well under 100 ms.
+
 ### Status Line
 
 See your timer in Claude Code's status bar:
@@ -346,6 +365,8 @@ See your timer in Claude Code's status bar:
 ```
 [Opus 4.6] 12% ctx | 🍅 18:52 ███░░ Write API docs
 ```
+
+`flow claude install --statusline` installs it for you. To do it by hand:
 
 ```bash
 cp scripts/claude-statusline.sh ~/.claude/flow-statusline.sh
@@ -395,6 +416,8 @@ Works with Claude Code, Cursor, and any MCP-compatible client.
 **Tasks** — `get_task`, `list_tasks`, `get_task_history`, `create_task`, `complete_task`, `delete_task`, `start_task`.
 
 **Methodology ceremonies** — `set_highlight`, `log_distraction`, `set_focus_score`, `set_accomplishment`, `set_shutdown_ritual`, `set_energize_activity`, `set_outcome_achieved`, `add_session_notes`.
+
+**Resources** — `flow://focus`: the current focus state as JSON (`mode`: `idle`, `pomodoro`, `deep_work`, `make_time`, `break` or `paused`; the active `task` and `session` with `remaining_seconds` and `ends_at`) plus a `guidance` text telling the agent how to behave, the same text the Claude Code hooks inject. `flow://today`: today's completed sessions, focused minutes, breaks, distractions, average focus score, highlight, open tasks and the current guidance. The server does not push change notifications (resource subscriptions are not supported by the MCP library Flow uses), so agents re-read the resource when they need fresh state.
 
 Example: an agent asks you to log a distraction:
 
@@ -464,6 +487,10 @@ sound = true
 
 [storage]
 data_dir = "~/.flow"     # "~" is expanded to your home directory
+
+[claude]                 # Claude Code hooks (only active after `flow claude install`)
+auto_start = false       # start a background session when Claude Code starts and none is active
+inject_guidance = true   # add the focus guidance to Claude's context while a session is active
 
 [theme]
 color_work = "#7C6FE0"
