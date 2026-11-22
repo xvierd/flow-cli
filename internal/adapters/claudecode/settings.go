@@ -128,6 +128,13 @@ func isFlowStatusLine(v interface{}) bool {
 	return strings.Contains(cmd, StatusLineScript)
 }
 
+// HasFlowStatusLine reports whether settings.json content has Flow's status
+// line installed.
+func HasFlowStatusLine(data []byte) bool {
+	settings, err := parse(data)
+	return err == nil && isFlowStatusLine(settings["statusLine"])
+}
+
 // removeFlowHooks drops Flow's hook entries from every event, then drops
 // matcher groups and events left empty. Entries it does not recognize are
 // kept untouched.
@@ -290,6 +297,11 @@ func normalize(v interface{}) interface{} {
 // written atomically, keeping the file's mode. A missing file is treated as
 // empty settings. Invalid JSON aborts without writing anything.
 func EditFile(path string, dryRun bool, edit func([]byte) (Result, error)) (res Result, backup string, err error) {
+	// Edit the target of a symlinked settings.json (dotfile repos) instead of
+	// replacing the link with a regular file.
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
+	}
 	data, err := os.ReadFile(path) // #nosec G304 -- the user's own settings file
 	exists := err == nil
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

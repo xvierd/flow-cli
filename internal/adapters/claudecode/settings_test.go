@@ -222,6 +222,26 @@ func TestEditFile_BackupsNeverOverwrite(t *testing.T) {
 	}
 }
 
+func TestEditFile_FollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles", "claude-settings.json")
+	_ = os.MkdirAll(filepath.Dir(target), 0o750)
+	_ = os.WriteFile(target, []byte(`{"a":1}`), 0o600)
+	link := filepath.Join(dir, "settings.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("symlinks unsupported:", err)
+	}
+	if _, _, err := EditFile(link, false, func(d []byte) (Result, error) { return Install(d, Options{FlowCommand: flowCmd}) }); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("settings.json is no longer a symlink: %v", err)
+	}
+	if data, _ := os.ReadFile(target); !strings.Contains(string(data), "claude hook") {
+		t.Errorf("target not updated: %s", data)
+	}
+}
+
 func TestEditFile_MissingAndInvalid(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "settings.json")

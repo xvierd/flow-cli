@@ -84,7 +84,9 @@ var claudeInstallCmd = &cobra.Command{
 		return editClaudeSettings(cmd.OutOrStdout(), dir, func(data []byte) (claudecode.Result, error) {
 			return claudecode.Install(data, opts)
 		}, func(res claudecode.Result) error {
-			if !claudeStatusLine || claudeDryRun || len(StatusLineScript) == 0 {
+			// Only write the script when the status line is Flow's (not when
+			// the user's own one was kept).
+			if !claudeStatusLine || claudeDryRun || len(StatusLineScript) == 0 || !claudecode.HasFlowStatusLine(res.Data) {
 				return nil
 			}
 			return claudecode.WriteAtomic(scriptPath, StatusLineScript, 0o755)
@@ -121,7 +123,14 @@ var claudeHookCmd = &cobra.Command{
 	Args:   cobra.ExactArgs(1),
 	// The hook never fails: an error would surface in Claude Code (and exit
 	// code 2 would block the user's prompt). Diagnostics go to stderr.
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
+		// A Go panic exits with status 2, which would block the prompt.
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "flow: internal error in claude hook: %v\n", r)
+				err = nil
+			}
+		}()
 		if err := initializeServices(); err != nil {
 			fmt.Fprintf(os.Stderr, "flow: %v\n", err)
 			return nil
@@ -313,8 +322,8 @@ func claudeTaskTitle(cwd string, gi *ports.GitInfo) string {
 	if gi == nil {
 		return filepath.Base(filepath.Clean(cwd))
 	}
-	repo := gi.Repository
-	if i := strings.LastIndex(repo, "/"); i >= 0 {
+	repo := strings.TrimSuffix(gi.Repository, ".git")
+	if i := strings.LastIndexAny(repo, "/:"); i >= 0 {
 		repo = repo[i+1:]
 	}
 	if repo == "" {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xvierd/flow-cli/internal/domain"
 	"github.com/xvierd/flow-cli/internal/ports"
@@ -196,6 +197,51 @@ func TestClaudeHook_BadInput(t *testing.T) {
 	}
 }
 
+// TestClaudeHook_WatcherAndOnStartOnlyWhenStarted checks the background
+// watcher is spawned (and on_start runs, detached) only when the hook starts
+// a session.
+func TestClaudeHook_WatcherAndOnStartOnlyWhenStarted(t *testing.T) {
+	setupClaudeHookApp(t, true, true)
+	t.Setenv(noWatcherEnv, "")
+	spawns := 0
+	oldSpawn := spawnWatcher
+	spawnWatcher = func() error { spawns++; return nil }
+	t.Cleanup(func() { spawnWatcher = oldSpawn })
+	marker := filepath.Join(t.TempDir(), "started")
+	app.config.Hooks.OnStart = `printf '%s' "$FLOW_TASK" > "` + marker + `"`
+
+	ctx := context.Background()
+	repo := fakeRepo(t, "svc", "main")
+	var out bytes.Buffer
+	_ = runClaudeHook(ctx, "user-prompt-submit", hookInput(t, map[string]string{"cwd": repo}), &out)
+	if spawns != 0 {
+		t.Fatalf("idle prompt spawned the watcher")
+	}
+	if err := runClaudeHook(ctx, "session-start", hookInput(t, map[string]string{"cwd": repo, "source": "startup"}), &out); err != nil {
+		t.Fatal(err)
+	}
+	if spawns != 1 {
+		t.Fatalf("auto-start spawns = %d, want 1", spawns)
+	}
+	_ = runClaudeHook(ctx, "user-prompt-submit", hookInput(t, map[string]string{"cwd": repo}), &out)
+	_ = runClaudeHook(ctx, "session-start", hookInput(t, map[string]string{"cwd": repo, "source": "startup"}), &out)
+	if spawns != 1 {
+		t.Errorf("guidance-only hooks spawned the watcher (spawns = %d)", spawns)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, err := os.ReadFile(marker)
+		if err == nil && string(data) == "svc" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("on_start hook did not run: %q, %v", data, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // TestClaudeHookCmd_NeverFails runs the hidden command end to end: even with
 // garbage input it exits successfully with nothing on stdout.
 func TestClaudeHookCmd_NeverFails(t *testing.T) {
@@ -218,6 +264,7 @@ func TestClaudeTaskTitle(t *testing.T) {
 		{&ports.GitInfo{Repository: "me/app", Branch: "main"}, "app"},
 		{&ports.GitInfo{Repository: "app", Branch: "fix/bug"}, "app: fix/bug"},
 		{&ports.GitInfo{Branch: "HEAD detached"}, "dir"},
+		{&ports.GitInfo{Repository: "ssh://host/srv/repo.git", Branch: "main"}, "repo"},
 	} {
 		if got := claudeTaskTitle("/x/dir", tt.gi); got != tt.want {
 			t.Errorf("claudeTaskTitle(%+v) = %q, want %q", tt.gi, got, tt.want)
@@ -274,5 +321,27 @@ func TestClaudeInstallCmd(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "flow-statusline.sh")); err == nil {
 		t.Error("uninstall left the status line script")
+	}
+}
+
+// TestClaudeInstallCmd_KeepsUserStatusLine checks that --statusline neither
+// replaces a user's status line nor leaves an unused script behind.
+func TestClaudeInstallCmd_KeepsUserStatusLine(t *testing.T) {
+	isolateApp(t)
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	t.Cleanup(func() { claudeDryRun, claudeStatusLine = false, false })
+	settings := filepath.Join(dir, "settings.json")
+	_ = os.WriteFile(settings, []byte(`{"statusLine":{"type":"command","command":"mine.sh"}}`), 0o600)
+
+	out, _, err := executeCmd(rootCmd, "claude", "install", "--statusline")
+	if err != nil || !strings.Contains(out, "left unchanged") {
+		t.Fatalf("install = %q, %v", out, err)
+	}
+	if data, _ := os.ReadFile(settings); !strings.Contains(string(data), "mine.sh") {
+		t.Errorf("user status line replaced: %s", data)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "flow-statusline.sh")); err == nil {
+		t.Error("unused status line script written")
 	}
 }
