@@ -1,0 +1,81 @@
+# GoReleaser config: builds the release archives and publishes the Homebrew
+# formula to the xvierd/homebrew-tap repository.
+#
+# Archive names match what install.sh downloads (flow-<os>-<arch>.tar.gz,
+# .zip on Windows) and checksums.txt keeps sha256 sums, so existing installs
+# keep working.
+#
+# One-time setup on GitHub (see README "Homebrew"):
+#   1. Create the public repo xvierd/homebrew-tap (it may be empty).
+#   2. Create a fine-grained token with Contents: read & write on that repo
+#      only, and store it as the HOMEBREW_TAP_GITHUB_TOKEN secret of
+#      xvierd/flow-cli.
+# Without the secret the release still runs; only the formula upload is skipped.
+#
+# Validate locally:  goreleaser check
+# Dry run:           goreleaser release --snapshot --clean
+version: 2
+
+project_name: flow
+
+builds:
+  - id: flow
+    main: ./cmd/flow
+    binary: flow
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/xvierd/flow-cli/cmd.Version={{ .Tag }}
+      - -X github.com/xvierd/flow-cli/cmd.GitCommit={{ .ShortCommit }}
+      - -X github.com/xvierd/flow-cli/cmd.BuildDate={{ .Date }}
+
+archives:
+  - id: flow
+    ids: [flow]
+    name_template: "flow-{{ .Os }}-{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: xvierd
+    name: flow-cli
+
+brews:
+  - name: flow
+    ids: [flow]
+    repository:
+      owner: xvierd
+      name: homebrew-tap
+      branch: main
+      token: '{{ index .Env "HOMEBREW_TAP_GITHUB_TOKEN" }}'
+    directory: Formula
+    homepage: https://github.com/xvierd/flow-cli
+    description: Terminal focus timer with Pomodoro, Deep Work and Make Time modes
+    license: MIT
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "flow {{ .Tag }}"
+    # Skip the tap upload when the secret is not configured.
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
+    install: |
+      bin.install "flow"
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/flow --version")
