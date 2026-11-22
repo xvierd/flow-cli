@@ -4,7 +4,7 @@ package i18n
 // built-in integrations. It is kept apart from es.go and merged into
 // esCatalog at init, so the same printf-verb drift test covers it.
 //
-//nolint:misspell // Spanish catalog — the misspell linter only knows English.
+//nolint:misspell,gosec // Spanish catalog: misspell only knows English; G101 flags "token" in UI strings.
 var esIntegrations = map[string]string{
 	// -- flow integrate ------------------------------------------------------
 	"Integrations": "Integraciones",

@@ -35,7 +35,7 @@ func QuickInfo(dir string) *ports.GitInfo {
 	// Linked worktrees keep HEAD in their own git dir and refs/config in the
 	// common one.
 	commonDir := gitDir
-	if content, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil { // #nosec G304
+	if content, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil { // #nosec G304 G703 -- files inside the repo's own .git dir
 		c := strings.TrimSpace(string(content))
 		if !filepath.IsAbs(c) {
 			c = filepath.Join(gitDir, c)
@@ -44,7 +44,7 @@ func QuickInfo(dir string) *ports.GitInfo {
 	}
 
 	info := &ports.GitInfo{}
-	if head, err := os.ReadFile(filepath.Join(gitDir, "HEAD")); err == nil { // #nosec G304
+	if head, err := os.ReadFile(filepath.Join(gitDir, "HEAD")); err == nil { // #nosec G304 G703 -- files inside the repo's own .git dir
 		h := strings.TrimSpace(string(head))
 		if ref, ok := strings.CutPrefix(h, "ref: "); ok {
 			info.Branch = strings.TrimPrefix(ref, "refs/heads/")
@@ -71,11 +71,11 @@ func QuickInfo(dir string) *ports.GitInfo {
 // packed-refs, or "" when it cannot be found.
 func resolveRef(gitDir, commonDir, ref string) string {
 	for _, d := range []string{gitDir, commonDir} {
-		if b, err := os.ReadFile(filepath.Join(d, filepath.FromSlash(ref))); err == nil { // #nosec G304
+		if b, err := os.ReadFile(filepath.Join(d, filepath.FromSlash(ref))); err == nil { // #nosec G304 G703 -- files inside the repo's own .git dir
 			return strings.TrimSpace(string(b))
 		}
 	}
-	f, err := os.Open(filepath.Join(commonDir, "packed-refs")) // #nosec G304
+	f, err := os.Open(filepath.Join(commonDir, "packed-refs")) // #nosec G304 G703 -- files inside the repo's own .git dir
 	if err != nil {
 		return ""
 	}
@@ -92,7 +92,7 @@ func resolveRef(gitDir, commonDir, ref string) string {
 // originName returns the repository name (owner/repo) of the "origin"
 // remote, or of the first remote, in a git config file.
 func originName(configPath string) string {
-	f, err := os.Open(configPath) // #nosec G304
+	f, err := os.Open(configPath) // #nosec G304 G703 -- files inside the repo's own .git dir
 	if err != nil {
 		return ""
 	}

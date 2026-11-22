@@ -207,21 +207,21 @@ func editClaudeSettings(out io.Writer, dir string, edit func([]byte) (claudecode
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	for _, n := range res.Notes {
-		fmt.Fprintf(out, "%s\n", i18n.T("Note: %s", n))
+		_, _ = fmt.Fprintf(out, "%s\n", i18n.T("Note: %s", n))
 	}
 	switch {
 	case claudeDryRun && res.Changed:
-		fmt.Fprintf(out, "%s\n", i18n.T("Dry run: %s would become:", path))
+		_, _ = fmt.Fprintf(out, "%s\n", i18n.T("Dry run: %s would become:", path))
 		_, _ = out.Write(res.Data)
 	case claudeDryRun:
-		fmt.Fprintf(out, "%s\n", i18n.T("Dry run: %s is already up to date.", path))
+		_, _ = fmt.Fprintf(out, "%s\n", i18n.T("Dry run: %s is already up to date.", path))
 	case res.Changed:
-		fmt.Fprintf(out, "%s\n", i18n.T("✅ Updated %s", path))
+		_, _ = fmt.Fprintf(out, "%s\n", i18n.T("✅ Updated %s", path))
 		if backup != "" {
-			fmt.Fprintf(out, "%s\n", i18n.T("   Backup: %s", backup))
+			_, _ = fmt.Fprintf(out, "%s\n", i18n.T("   Backup: %s", backup))
 		}
 	default:
-		fmt.Fprintf(out, "%s\n", i18n.T("%s is already up to date.", path))
+		_, _ = fmt.Fprintf(out, "%s\n", i18n.T("%s is already up to date.", path))
 	}
 	return after(res)
 }

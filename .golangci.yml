@@ -12,6 +12,11 @@ linters:
   settings:
     staticcheck:
       checks: ["all"]
+  exclusions:
+    rules:
+      # Tests read and write temp-dir fixtures through variable paths.
+      - path: _test\.go
+        linters: [gosec]
 
 issues:
   max-issues-per-linter: 0

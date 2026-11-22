@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -102,6 +103,9 @@ func TestVoid_UndoesIntegrations(t *testing.T) {
 }
 
 func TestIntegrate_EnableDisableXbar(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("xbar is macOS-only")
+	}
 	home := setupIntegrateApp(t)
 	plugin := filepath.Join(home, "Library", "Application Support", "xbar", "plugins", "flow.5s.sh")
 

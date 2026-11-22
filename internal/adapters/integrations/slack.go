@@ -20,7 +20,7 @@ const SlackTimeout = 4 * time.Second
 
 // Where the Slack token is looked up. It is never stored in config.toml.
 const (
-	SlackTokenEnv     = "FLOW_SLACK_TOKEN"
+	SlackTokenEnv     = "FLOW_SLACK_TOKEN" // #nosec G101 -- the env var name, not a credential
 	SlackKeychainItem = "flow-cli-slack"
 )
 

@@ -195,13 +195,6 @@ func clamp01(v float64) float64 { return math.Max(0, math.Min(1, v)) }
 
 func minutes(d time.Duration) float64 { return d.Minutes() }
 
-func pct(part, whole int) float64 {
-	if whole == 0 {
-		return 0
-	}
-	return float64(part) / float64(whole) * 100
-}
-
 func hoursLabel(d time.Duration) string { return fmt.Sprintf("%.1fh", d.Hours()) }
 
 // slotOf maps a local hour to a 3-hour slot (0..7).

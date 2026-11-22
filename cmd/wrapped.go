@@ -299,9 +299,9 @@ func bigText(s string) string {
 		}
 		for k := range rows {
 			if i > 0 {
-				rows[k].WriteString(" ")
+				_, _ = rows[k].WriteString(" ")
 			}
-			rows[k].WriteString(g[k])
+			_, _ = rows[k].WriteString(g[k])
 		}
 	}
 	return rows[0].String() + "\n" + rows[1].String() + "\n" + rows[2].String()

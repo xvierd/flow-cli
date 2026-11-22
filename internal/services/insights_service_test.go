@@ -67,15 +67,6 @@ func (s *seed) analyze() *domain.InsightsReport {
 	return AnalyzeInsights(ReportPeriodWeek, start, end, insightRef, s.history)
 }
 
-func findInsight(r *domain.InsightsReport, kind domain.InsightKind) *domain.Insight {
-	for i := range r.Insights {
-		if r.Insights[i].Kind == kind {
-			return &r.Insights[i]
-		}
-	}
-	return nil
-}
-
 func findGap(r *domain.InsightsReport, kind domain.InsightKind) *domain.InsightGap {
 	for i := range r.Gaps {
 		if r.Gaps[i].Kind == kind {

@@ -114,7 +114,7 @@ func (c Change) Apply() error {
 		if info, statErr := os.Stat(c.Path); statErr == nil {
 			mode = info.Mode().Perm()
 		}
-		return os.WriteFile(c.Path, []byte(out), mode)
+		return os.WriteFile(c.Path, []byte(out), mode) // #nosec G703 -- a config file the user confirmed
 	}
 	return fmt.Errorf("unknown change kind %d", c.Kind)
 }
@@ -166,7 +166,7 @@ func removeBlock(text, name string) string {
 
 // ownedByFlow reports whether path is missing or a file flow wrote.
 func ownedByFlow(path string) (exists, owned bool) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- a config file flow itself manages
 	if err != nil {
 		return false, true
 	}
