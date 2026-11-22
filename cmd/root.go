@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/spf13/cobra"
+	"github.com/xvierd/flow-cli/internal/config"
 	"github.com/xvierd/flow-cli/internal/i18n"
 )
 
@@ -76,6 +77,14 @@ func Execute() {
 }
 
 func init() {
+	// A quoted --db "~/x" reaches us unexpanded; expand it once, before any
+	// command runs, so nothing ever creates a literal "~" directory.
+	cobra.OnInitialize(func() {
+		if expanded, err := config.ExpandHome(dbPath); err == nil {
+			dbPath = expanded
+		}
+	})
+
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to the database file (default: ~/.flow/flow.db)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
